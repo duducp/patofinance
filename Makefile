@@ -78,4 +78,4 @@ status: ## Show Supabase project status
 	supabase status
 
 open: ## Open Supabase Dashboard
-	open "https://supabase.com/dashboard/project/$$(supabase status | grep 'Project URL' | awk '{print $$NF}' | sed 's|https://||' | sed 's|\.supabase\.co||')"
+	open "https://supabase.com/dashboard/project/zjcfjqtlijktrikgvwrv"
