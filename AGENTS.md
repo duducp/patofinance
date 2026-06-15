@@ -235,6 +235,36 @@ const { data } = await supabase.from("transactions").select(..."data"...);
 
 Applied in: `handleListTransactions` (COUNT + items), `handleListByTag` (COUNT + items), `handleStatement` (COUNT + items).
 
+### 7. Plural Pattern: Full Words, Not Concatenation
+
+When building user-facing strings with conditional plurals in Portuguese, **always write the full singular and plural words** instead of concatenating suffixes.
+
+**Wrong** -- concatenates "ões" to "transação", producing "transaçãoões" (a real bug):
+```typescript
+`${count} transação${count !== 1 ? "ões" : ""}`
+// count=5 → "5 transaçãoões" ❌
+```
+
+**Correct** -- uses the full plural word:
+```typescript
+`${count} ${count !== 1 ? "transações" : "transação"}`
+// count=5 → "5 transações" ✅
+// count=1 → "1 transação" ✅
+```
+
+**Same pattern for adjectives** like "reatribuída(s)" / "criad(a/o)". Always use the full word in each branch:
+```typescript
+// ✅ Correct
+`${count} ${count !== 1 ? "transações" : "transação"} ${count !== 1 ? "reatribuídas" : "reatribuída"}`
+
+// ❌ Wrong -- concatenates suffix
+`${count} transação${count !== 1 ? "ões" : ""} reatribuída${count !== 1 ? "s" : ""}`
+```
+
+**Why:** Portuguese plurals are irregular (ão → ões, ãos, or ães depending on the word). Concatenation causes bugs like "transaçãoões" and doesn't generalize.
+
+**Note:** Keep the numeric value (`${count}`) **outside** the ternary to avoid duplication and ensure it interpolates correctly at the template literal level (nested `${}` inside double-quoted strings does not interpolate).
+
 ## NL Processing
 
 Natural language via DeepSeek API.

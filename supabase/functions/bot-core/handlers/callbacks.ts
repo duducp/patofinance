@@ -590,7 +590,7 @@ export async function handleCallbackQuery(
       const fallbackCatId = await getOrCreateUncategorizedCategory(supabase, user.id);
       await supabase.from("transactions").update({ category_id: fallbackCatId }).eq("category_id", cat.id).eq("user_id", user.id);
       await supabase.from("categories").delete().eq("id", cat.id).eq("user_id", user.id);
-      await sendTelegramMessage(chatId, `✅ Categoria "${catName}" excluída! ${txCount || 0} transação${(txCount || 0) !== 1 ? "ões" : ""} reatribuída${(txCount || 0) !== 1 ? "s" : ""} para "Sem categoria".`);
+      await sendTelegramMessage(chatId, `✅ Categoria "${catName}" excluída! ${txCount || 0} ${(txCount || 0) !== 1 ? "transações" : "transação"} ${(txCount || 0) !== 1 ? "reatribuídas" : "reatribuída"} para "Sem categoria".`);
       return;
     }
 
@@ -611,7 +611,7 @@ export async function handleCallbackQuery(
         [{ text: "✅ Sim, excluir", callback_data: `cat_del_yes_${catName}` }],
         [{ text: "❌ Não, manter", callback_data: "cat_back" }],
       ];
-      await sendTelegramMessageWithKeyboard(chatId, `🗑️ Tem certeza de que deseja excluir a categoria *${catName}*?\n\n${txCount || 0} transação${(txCount || 0) !== 1 ? "ões" : ""} serão reatribuída${(txCount || 0) !== 1 ? "s" : ""} para "Sem categoria".`, keyboard);
+      await sendTelegramMessageWithKeyboard(chatId, `🗑️ Tem certeza de que deseja excluir a categoria *${catName}*?\n\n${txCount || 0} ${(txCount || 0) !== 1 ? "transações" : "transação"} ${(txCount || 0) !== 1 ? "serão reatribuídas" : "será reatribuída"} para "Sem categoria".`, keyboard);
       return;
     }
 
@@ -677,7 +677,7 @@ export async function handleCallbackQuery(
       const { data: defaultGrp } = await supabase.from("groups").select("id").eq("user_id", user.id).eq("is_default", true).single();
       await supabase.from("transactions").update({ group_id: defaultGrp?.id || null }).eq("group_id", grp.id).eq("user_id", user.id);
       await supabase.from("groups").delete().eq("id", grp.id).eq("user_id", user.id);
-      await sendTelegramMessage(chatId, `✅ Grupo "${grpName}" excluído! ${txCount || 0} transação${(txCount || 0) !== 1 ? "ões" : ""} reatribuída${(txCount || 0) !== 1 ? "s" : ""} para "Pessoal".`);
+      await sendTelegramMessage(chatId, `✅ Grupo "${grpName}" excluído! ${txCount || 0} ${(txCount || 0) !== 1 ? "transações" : "transação"} ${(txCount || 0) !== 1 ? "reatribuídas" : "reatribuída"} para "Pessoal".`);
       return;
     }
 
@@ -698,7 +698,7 @@ export async function handleCallbackQuery(
         [{ text: "✅ Sim, excluir", callback_data: `grp_del_yes_${grpName}` }],
         [{ text: "❌ Não, manter", callback_data: "grp_back" }],
       ];
-      await sendTelegramMessageWithKeyboard(chatId, `🗑️ Tem certeza de que deseja excluir o grupo *${grpName}*?\n\n${txCount || 0} transação${(txCount || 0) !== 1 ? "ões" : ""} serão reatribuída${(txCount || 0) !== 1 ? "s" : ""} para "Pessoal".`, keyboard);
+      await sendTelegramMessageWithKeyboard(chatId, `🗑️ Tem certeza de que deseja excluir o grupo *${grpName}*?\n\n${txCount || 0} ${(txCount || 0) !== 1 ? "transações" : "transação"} ${(txCount || 0) !== 1 ? "serão reatribuídas" : "será reatribuída"} para "Pessoal".`, keyboard);
       return;
     }
 
