@@ -87,7 +87,8 @@ export async function handleCallbackQuery(
       const { data: allCats } = await supabase
         .from("categories")
         .select("id")
-        .eq("user_id", user.id);
+        .eq("user_id", user.id)
+        .eq("is_predefined", false);
       const unusedCatIds = (allCats || []).filter((c: any) => !usedCatIds.has(c.id)).map((c: any) => c.id);
       if (unusedCatIds.length > 0) {
         await supabase.from("categories").delete().in("id", unusedCatIds);

@@ -815,10 +815,10 @@ export async function handleCleanup(supabase: any, userId: number, chatId: numbe
     return;
   }
 
-  // Find categories with no transactions
+  // Find categories with no transactions (excluding predefined)
   const { data: categories } = await supabase
     .from("categories")
-    .select("id, name")
+    .select("id, name, is_predefined")
     .eq("user_id", user.id);
 
   const { data: catCounts } = await supabase
@@ -828,7 +828,7 @@ export async function handleCleanup(supabase: any, userId: number, chatId: numbe
     .not("category_id", "is", null);
 
   const usedCatIds = new Set((catCounts || []).map((t: any) => t.category_id));
-  const unusedCats = (categories || []).filter((c: any) => !usedCatIds.has(c.id));
+  const unusedCats = (categories || []).filter((c: any) => !usedCatIds.has(c.id) && !c.is_predefined);
 
   // Find groups with no transactions (excluding is_default)
   const { data: groups } = await supabase
@@ -845,16 +845,12 @@ export async function handleCleanup(supabase: any, userId: number, chatId: numbe
   const usedGrpIds = new Set((grpCounts || []).map((t: any) => t.group_id));
   const unusedGrps = (groups || []).filter((g: any) => !g.is_default && !usedGrpIds.has(g.id));
 
-  // Collect all unique tags from transactions
-  const rawTags = await getAllUserTags(supabase, user.id);
-  const allTags = new Set(rawTags.map((t: string) => t.startsWith("#") ? t : `#${t}`));
-
-  if (unusedCats.length === 0 && unusedGrps.length === 0 && allTags.size === 0) {
-    await sendTelegramMessage(chatId, "🧹 Nenhum dado para limpar. Tudo limpo!");
+  if (unusedCats.length === 0 && unusedGrps.length === 0) {
+    await sendTelegramMessage(chatId, "🧹 Nenhuma categoria ou grupo sem uso para remover. Tudo limpo!");
     return;
   }
 
-  let message = "🧹 *Visão geral dos seus dados:*\n\n";
+  let message = "🧹 *Itens sem uso que podem ser removidos:*\n\n";
 
   if (unusedCats.length > 0) {
     message += `🏷️ *Categorias sem transações (${unusedCats.length}):*\n`;
@@ -864,18 +860,6 @@ export async function handleCleanup(supabase: any, userId: number, chatId: numbe
   if (unusedGrps.length > 0) {
     message += `📁 *Grupos sem transações (${unusedGrps.length}):*\n`;
     message += unusedGrps.map((g: any) => `   • ${g.name}`).join("\n") + "\n\n";
-  }
-
-  if (allTags.size > 0) {
-    message += `🔖 *Tags em uso (${allTags.size}):*\n`;
-    message += Array.from(allTags).sort().map((t) => `   • ${t}`).join("\n") + "\n\n";
-  }
-
-  const hasItemsToClean = unusedCats.length > 0 || unusedGrps.length > 0;
-  if (!hasItemsToClean) {
-    message += "Nenhuma categoria ou grupo órfão para remover.";
-    await sendTelegramMessage(chatId, message);
-    return;
   }
 
   message += "Deseja removê-los?";
