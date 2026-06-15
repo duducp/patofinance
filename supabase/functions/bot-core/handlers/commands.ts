@@ -324,29 +324,80 @@ export async function handleStatement(supabase: any, userId: number, chatId: num
     return;
   }
 
+  // Fetch totals for the period (independent of pagination)
+  let totalsQuery = supabase
+    .from("transactions")
+    .select("type, amount")
+    .eq("user_id", user.id)
+    .gte("transaction_date", startOfMonth)
+    .lte("transaction_date", endOfMonth);
+
+  if (typeFilter !== "all") {
+    totalsQuery = totalsQuery.eq("type", typeFilter);
+  }
+
+  const { data: periodData } = await totalsQuery;
+
+  const totalIncome = periodData
+    ?.filter((t: any) => t.type === "income")
+    ?.reduce((sum: number, t: any) => sum + Number(t.amount), 0) || 0;
+  const totalExpenses = periodData
+    ?.filter((t: any) => t.type === "expense")
+    ?.reduce((sum: number, t: any) => sum + Number(t.amount), 0) || 0;
+
   const totalPages = Math.ceil(totalCount / STATEMENT_PAGE_SIZE);
   const startItem = offset + 1;
   const endItem = offset + transactions.length;
-  let message = `📋 *Extrato - ${monthName}*\n`;
-  message += `🔽 ${statementFilterLabel(typeFilter)}\n`;
-  message += `📄 Página ${page + 1} de ${totalPages} (${startItem}-${endItem} de ${totalCount})\n\n`;
+  const showAllTypes = typeFilter === "all";
 
-  for (let i = 0; i < transactions.length; i++) {
-    const t = transactions[i];
+  // Separate transactions by type for grouped display
+  const incomeTx = transactions.filter((t: any) => t.type === "income");
+  const expenseTx = transactions.filter((t: any) => t.type === "expense");
+
+  let message = `📋 *Extrato — ${monthName}*   📄 ${page + 1}/${totalPages} (${startItem}–${endItem} de ${totalCount})\n`;
+  if (!showAllTypes) {
+    message += `🔽 ${statementFilterLabel(typeFilter)}\n`;
+  }
+  message += "\n";
+
+  // Helper to format a single transaction line
+  function appendTxLine(t: any): string {
     const emoji = t.type === "income" ? "📈" : "📉";
-    const category = t.categories?.name || "Sem categoria";
-    const group = t.groups?.name || "Sem grupo";
+    const shortDate = formatDateBR(t.transaction_date).slice(0, 5);
+    const catName = t.categories?.name || "—";
+    const grpName = t.groups?.name || "Pessoal";
     const tags = t.tags?.length ? ` ${t.tags.join(" ")}` : "";
-
-    message += `${emoji} \`#${t.id}\` ${formatDateBR(t.transaction_date)} - *${formatCurrencyBR(Number(t.amount))}*\n`;
-    message += `   ${category} | ${group}${tags}\n`;
-
-    if (i < transactions.length - 1) {
-      message += "\n";
-    }
+    return `${emoji} \`#${t.id}\`  ${shortDate}  *${formatCurrencyBR(Number(t.amount))}*   ${catName} · ${grpName}${tags}\n`;
   }
 
-  message += "\n💡 Use o \`#ID\` com \`/editar ID\` ou \`/excluir ID\`\n";
+  // Income section
+  if (incomeTx.length > 0 && (showAllTypes || typeFilter === "income")) {
+    if (showAllTypes) {
+      message += `📈 *Receitas*\n`;
+    }
+    for (const t of incomeTx) {
+      message += appendTxLine(t);
+    }
+    message += `📈 — *Total: ${formatCurrencyBR(totalIncome)}*\n\n`;
+  }
+
+  // Expense section
+  if (expenseTx.length > 0 && (showAllTypes || typeFilter === "expense")) {
+    if (showAllTypes) {
+      message += `📉 *Despesas*\n`;
+    }
+    for (const t of expenseTx) {
+      message += appendTxLine(t);
+    }
+    message += `📉 — *Total: ${formatCurrencyBR(totalExpenses)}*\n\n`;
+  }
+
+  // Overall balance (only when showing all)
+  if (showAllTypes) {
+    const balance = totalIncome - totalExpenses;
+    const balanceEmoji = balance >= 0 ? "✅" : "⚠️";
+    message += `${balanceEmoji} *Saldo: ${formatCurrencyBR(balance)}*`;
+  }
 
   const currentSuffix = statementFilterSuffix(typeFilter);
 
