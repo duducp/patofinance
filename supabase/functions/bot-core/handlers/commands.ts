@@ -1,8 +1,10 @@
 import type { InlineKeyboard } from "../types/index.ts";
 import { sendTelegramMessage, sendTelegramMessageWithKeyboard } from "../services/telegram.ts";
-import { requireUser, getOrCreateUser, getOrCreateCategory, getOrCreateGroup } from "../services/database.ts";
-import { formatCurrencyBR, formatDateBR, getTodayISOBR, getNowBR, getMonthName } from "../utils/formatting.ts";
+import { requireUser, getOrCreateUser, getOrCreateCategory, getOrCreateGroup, normalizeString, suggestSimilarCategories, suggestSimilarGroups, sendSimilarityWarning, getAllUserTags } from "../services/database.ts";
+import { formatCurrencyBR, formatDateBR, getTodayISOBR } from "../utils/formatting.ts";
+import { getDateRange } from "../utils/date-helpers.ts";
 import { parseCommand } from "../utils/command-parsing.ts";
+import { getSummaryData, formatSummaryMessage } from "./queries.ts";
 import { getWizardState, setWizardState, handleTransactionWizard } from "./wizard.ts";
 
 export async function handleStart(chatId: number, firstName: string): Promise<void> {
@@ -25,12 +27,13 @@ export async function handleAjuda(chatId: number): Promise<void> {
     `/saldo - Ver saldo do mês\n` +
     `/extrato - Ver extrato do mês\n` +
     `/resumo - Resumo por categoria\n` +
-    `/editar - Editar última transação\n` +
-    `/excluir - Excluir uma transação\n\n` +
+    `/editar - Editar transação (ex: \`/editar 42\`)\n` +
+    `/excluir - Excluir transação (ex: \`/excluir 42\`)\n\n` +
     `📁 *Organização:*\n` +
     `/grupo - Gerenciar grupos\n` +
     `/categoria - Gerenciar categorias\n\n` +
     `⚙️ *Utilidades:*\n` +
+    `/limpar - Remover categorias/grupos sem transações\n` +
     `/cancelar - Cancelar operação em andamento\n` +
     `/ajuda - Esta mensagem\n\n` +
     `💡 *Linguagem Natural:*\n` +
@@ -52,7 +55,9 @@ export async function handleAjuda(chatId: number): Promise<void> {
     `• "crie o grupo trabalho"\n` +
     `• "quais categorias tenho?"\n` +
     `• "meus grupos"\n` +
-    `• "quais tags uso?"\n\n` +
+    `• "quais tags uso?"\n` +
+    `• "limpe categorias sem uso"\n` +
+    `• "limpe grupos sem transações"\n\n` +
     `📋 *Transações:*\n` +
     `• "últimas 30 transações"\n` +
     `• "qual foi meu último gasto?"\n` +
@@ -61,47 +66,83 @@ export async function handleAjuda(chatId: number): Promise<void> {
   );
 }
 
-export async function handleSaldo(supabase: any, userId: number, chatId: number): Promise<void> {
+export async function handleSaldo(supabase: any, userId: number, chatId: number, args: string[] = []): Promise<void> {
   const user = await getOrCreateUser(supabase, userId);
   if (!user) {
     await sendTelegramMessage(chatId, "Ops! Você ainda não está cadastrado. Use /start para começar.");
     return;
   }
 
-  const now = getNowBR();
-  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split("T")[0];
-  const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split("T")[0];
+  const { start: startOfMonth, end: endOfMonth, label: monthName } = getDateRange(null, null);
 
-  const { data: income } = await supabase
+  // Determine group filter
+  let groupId: number | null = null;
+  let groupName: string | null = null;
+  if (args.length > 0) {
+    const searchName = args.join(" ");
+    const { data: group } = await supabase
+      .from("groups")
+      .select("id, name")
+      .eq("user_id", user.id)
+      .ilike("name", searchName)
+      .maybeSingle();
+    if (group) {
+      groupId = group.id;
+      groupName = group.name;
+    }
+  }
+
+  // Build income query
+  let incomeQuery = supabase
     .from("transactions")
     .select("amount")
     .eq("user_id", user.id)
     .eq("type", "income")
     .gte("transaction_date", startOfMonth)
     .lte("transaction_date", endOfMonth);
+  if (groupId) incomeQuery = incomeQuery.eq("group_id", groupId);
 
-  const { data: expenses } = await supabase
+  // Build expenses query
+  let expensesQuery = supabase
     .from("transactions")
     .select("amount")
     .eq("user_id", user.id)
     .eq("type", "expense")
     .gte("transaction_date", startOfMonth)
     .lte("transaction_date", endOfMonth);
+  if (groupId) expensesQuery = expensesQuery.eq("group_id", groupId);
+
+  const { data: income } = await incomeQuery;
+  const { data: expenses } = await expensesQuery;
 
   const totalIncome = income?.reduce((sum: number, t: any) => sum + Number(t.amount), 0) || 0;
   const totalExpenses = expenses?.reduce((sum: number, t: any) => sum + Number(t.amount), 0) || 0;
+
+  if (groupId && totalIncome === 0 && totalExpenses === 0) {
+    const keyboard: InlineKeyboard = [[{ text: "📋 Todas as contas", callback_data: "saldo_grp_all" }]];
+    await sendTelegramMessageWithKeyboard(chatId, `📊 Nenhuma transação no grupo *${groupName}* este mês.`, keyboard);
+    return;
+  }
+
   const balance = totalIncome - totalExpenses;
 
-  const monthName = getMonthName(now);
   const emoji = balance >= 0 ? "✅" : "⚠️";
 
-  await sendTelegramMessage(
-    chatId,
-    `${emoji} *Saldo - ${monthName}*\n\n` +
-    `📈 Entradas: *${formatCurrencyBR(totalIncome)}*\n` +
+  let message = `${emoji} *Saldo - ${monthName}*\n`;
+  if (groupName) {
+    message += `📁 Grupo: *${groupName}*\n`;
+  }
+  message += `\n📈 Entradas: *${formatCurrencyBR(totalIncome)}*\n` +
     `📉 Saídas: *${formatCurrencyBR(totalExpenses)}*\n\n` +
-    `💰 *Saldo: ${formatCurrencyBR(balance)}*`
-  );
+    `💰 *Saldo: ${formatCurrencyBR(balance)}*`;
+
+  const keyboard: InlineKeyboard = [];
+  if (groupId) {
+    keyboard.push([{ text: "📋 Todas as contas", callback_data: "saldo_grp_all" }]);
+  }
+  keyboard.push([{ text: "📁 Filtrar por grupo", callback_data: "saldo_shwgrp" }]);
+
+  await sendTelegramMessageWithKeyboard(chatId, message, keyboard);
 }
 
 export async function handleTransaction(
@@ -141,8 +182,24 @@ export async function handleTransaction(
     return;
   }
 
+  // Check for similar existing categories
+  if (parsed.category) {
+    await sendSimilarityWarning(supabase, user.id, chatId, "category", parsed.category);
+  }
+
   const categoryId = parsed.category ? await getOrCreateCategory(supabase, user.id, parsed.category) : null;
+
+  // Check for similar existing groups
+  if (parsed.group) {
+    await sendSimilarityWarning(supabase, user.id, chatId, "group", parsed.group);
+  }
+
   const groupId = await getOrCreateGroup(supabase, user.id, parsed.group);
+
+  // Check for similar existing tags
+  for (const tag of parsed.tags) {
+    await sendSimilarityWarning(supabase, user.id, chatId, "tag", tag);
+  }
 
   const { error } = await supabase.from("transactions").insert({
     user_id: user.id,
@@ -175,18 +232,67 @@ export async function handleTransaction(
   );
 }
 
-export async function handleExtrato(supabase: any, userId: number, chatId: number): Promise<void> {
+const EXTRATO_PAGE_SIZE = 10;
+
+type ExtratoFilter = "all" | "income" | "expense";
+
+function extratoFilterLabel(filter: ExtratoFilter): string {
+  switch (filter) {
+    case "income": return "📈 Receitas";
+    case "expense": return "📉 Despesas";
+    default: return "📋 Todas";
+  }
+}
+
+function extratoFilterSuffix(filter: ExtratoFilter): string {
+  switch (filter) {
+    case "income": return "inc";
+    case "expense": return "exp";
+    default: return "all";
+  }
+}
+
+function parseExtratoFilter(suffix: string): ExtratoFilter {
+  switch (suffix) {
+    case "inc": return "income";
+    case "exp": return "expense";
+    default: return "all";
+  }
+}
+
+export async function handleExtrato(supabase: any, userId: number, chatId: number, page: number = 0, typeFilter: ExtratoFilter = "all"): Promise<void> {
   const user = await getOrCreateUser(supabase, userId);
   if (!user) {
     await sendTelegramMessage(chatId, "Ops! Você ainda não está cadastrado. Use /start para começar.");
     return;
   }
 
-  const now = getNowBR();
-  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split("T")[0];
-  const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split("T")[0];
+  const { start: startOfMonth, end: endOfMonth, label: monthName } = getDateRange(null, null);
 
-  const { data: transactions } = await supabase
+  // Build base query for count
+  let countQuery = supabase
+    .from("transactions")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", user.id)
+    .gte("transaction_date", startOfMonth)
+    .lte("transaction_date", endOfMonth);
+
+  if (typeFilter !== "all") {
+    countQuery = countQuery.eq("type", typeFilter);
+  }
+
+  const { count: totalCount } = await countQuery;
+
+  if (!totalCount || totalCount === 0) {
+    const filterName = typeFilter === "income" ? "receitas" : typeFilter === "expense" ? "despesas" : "transações";
+    await sendTelegramMessage(chatId, `📋 Nenhuma ${filterName} encontrada este mês.`);
+    return;
+  }
+
+  const offset = page * EXTRATO_PAGE_SIZE;
+
+  // Build data query
+  let dataQuery = supabase
     .from("transactions")
     .select(`
       id,
@@ -200,115 +306,229 @@ export async function handleExtrato(supabase: any, userId: number, chatId: numbe
     `)
     .eq("user_id", user.id)
     .gte("transaction_date", startOfMonth)
-    .lte("transaction_date", endOfMonth)
+    .lte("transaction_date", endOfMonth);
+
+  if (typeFilter !== "all") {
+    dataQuery = dataQuery.eq("type", typeFilter);
+  }
+
+  const { data: transactions } = await dataQuery
     .order("transaction_date", { ascending: false })
     .order("created_at", { ascending: false })
-    .limit(30);
+    .range(offset, offset + EXTRATO_PAGE_SIZE - 1);
 
   if (!transactions || transactions.length === 0) {
-    await sendTelegramMessage(chatId, "📋 Nenhuma transação encontrada este mês. Que tal registrar um gasto ou receita?");
+    await sendTelegramMessage(chatId, "📋 Nenhuma transação encontrada esta página.");
     return;
   }
 
-  const monthName = getMonthName(now);
-  let message = `📋 *Extrato - ${monthName}*\n\n`;
+  const totalPages = Math.ceil(totalCount / EXTRATO_PAGE_SIZE);
+  const startItem = offset + 1;
+  const endItem = offset + transactions.length;
+  let message = `📋 *Extrato - ${monthName}*\n`;
+  message += `🔽 ${extratoFilterLabel(typeFilter)}\n`;
+  message += `📄 Página ${page + 1} de ${totalPages} (${startItem}-${endItem} de ${totalCount})\n\n`;
 
-  for (const t of transactions) {
+  for (let i = 0; i < transactions.length; i++) {
+    const t = transactions[i];
     const emoji = t.type === "income" ? "📈" : "📉";
     const category = t.categories?.name || "Sem categoria";
     const group = t.groups?.name || "Sem grupo";
     const tags = t.tags?.length ? ` ${t.tags.join(" ")}` : "";
 
-    message += `${emoji} ${formatDateBR(t.transaction_date)} - *${formatCurrencyBR(Number(t.amount))}*\n`;
+    message += `${emoji} \`#${t.id}\` ${formatDateBR(t.transaction_date)} - *${formatCurrencyBR(Number(t.amount))}*\n`;
     message += `   ${category} | ${group}${tags}\n`;
+
+    if (i < transactions.length - 1) {
+      message += "\n";
+    }
   }
 
-  if (transactions.length === 30) {
-    message += "\n💡 Mostrando apenas as 30 transações mais recentes.";
+  message += "\n💡 Use o \`#ID\` com \`/editar ID\` ou \`/excluir ID\`\n";
+
+  const currentSuffix = extratoFilterSuffix(typeFilter);
+
+  // Build filter buttons + pagination keyboard
+  const keyboard: InlineKeyboard = [];
+
+  // Filter row
+  const filterRow: InlineKeyboard[0] = [];
+  const filterOptions: { label: string; filter: ExtratoFilter }[] = [
+    { label: "📈 Receitas", filter: "income" },
+    { label: "📉 Despesas", filter: "expense" },
+    { label: "📋 Todas", filter: "all" },
+  ];
+  for (const opt of filterOptions) {
+    const isActive = typeFilter === opt.filter;
+    filterRow.push({
+      text: isActive ? `✅ ${opt.label}` : opt.label,
+      callback_data: `extrato_${extratoFilterSuffix(opt.filter)}_0`,
+    });
+  }
+  keyboard.push(filterRow);
+
+  // Pagination row
+  const navButtons: InlineKeyboard[0] = [];
+  if (page > 0) {
+    navButtons.push({ text: "◀️ Anterior", callback_data: `extrato_${currentSuffix}_${page - 1}` });
+  }
+  if (page + 1 < totalPages) {
+    navButtons.push({ text: "Próximo ▶️", callback_data: `extrato_${currentSuffix}_${page + 1}` });
+  }
+  if (navButtons.length > 0) {
+    keyboard.push(navButtons);
   }
 
-  await sendTelegramMessage(chatId, message);
+  await sendTelegramMessageWithKeyboard(chatId, message, keyboard);
 }
 
-export async function handleResumo(supabase: any, userId: number, chatId: number): Promise<void> {
+export async function handleResumo(supabase: any, userId: number, chatId: number, args: string[] = []): Promise<void> {
   const user = await getOrCreateUser(supabase, userId);
   if (!user) {
     await sendTelegramMessage(chatId, "Ops! Você ainda não está cadastrado. Use /start para começar.");
     return;
   }
 
-  const now = new Date();
-  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split("T")[0];
-  const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split("T")[0];
+  // Determine group filter
+  let groupId: number | null = null;
+  let groupName: string | null = null;
+  if (args.length > 0) {
+    const searchName = args.join(" ");
+    const { data: group } = await supabase
+      .from("groups")
+      .select("id, name")
+      .eq("user_id", user.id)
+      .ilike("name", searchName)
+      .maybeSingle();
+    if (group) {
+      groupId = group.id;
+      groupName = group.name;
+    }
+  }
 
-  const { data: transactions } = await supabase
+  const data = await getSummaryData(supabase, user.id, null, groupId);
+  if (!data) {
+    if (groupName) {
+      const keyboard: InlineKeyboard = [[{ text: "📋 Todas as contas", callback_data: "resumo_grp_all" }]];
+      await sendTelegramMessageWithKeyboard(chatId, `📊 Nenhuma transação no grupo *${groupName}* este mês.`, keyboard);
+    } else {
+      await sendTelegramMessage(chatId, "📊 Nenhuma transação encontrada este mês. Que tal começar registrando um gasto ou receita?");
+    }
+    return;
+  }
+
+  const message = formatSummaryMessage(data, groupName || undefined);
+  const keyboard: InlineKeyboard = [];
+  if (groupId) {
+    keyboard.push([{ text: "📋 Todas as contas", callback_data: "resumo_grp_all" }]);
+  }
+  keyboard.push([{ text: "📁 Filtrar por grupo", callback_data: "resumo_shwgrp" }]);
+
+  await sendTelegramMessageWithKeyboard(chatId, message, keyboard);
+}
+
+export async function handleEditar(supabase: any, userId: number, chatId: number, args: string[] = []): Promise<void> {
+  const user = await getOrCreateUser(supabase, userId);
+  if (!user) {
+    await sendTelegramMessage(chatId, "Ops! Você ainda não está cadastrado. Use /start para começar.");
+    return;
+  }
+
+  if (args.length === 0) {
+    await sendTelegramMessage(
+      chatId,
+      `📝 *Como editar uma transação:*\n\n` +
+      `1️⃣ Use \`/extrato\` para ver o extrato do mês\n` +
+      `2️⃣ Identifique o \`#ID\` da transação que deseja editar\n` +
+      `3️⃣ Digite \`/editar ID\` (ex: \`/editar 42\`)\n\n` +
+      `💡 Exemplo: \`/editar 42\``
+    );
+    return;
+  }
+
+  const transactionId = args[0];
+
+  const { data: transaction } = await supabase
     .from("transactions")
     .select(`
+      id,
       type,
       amount,
-      categories (name)
+      description,
+      tags,
+      transaction_date,
+      categories (name),
+      groups (name)
     `)
+    .eq("id", transactionId)
     .eq("user_id", user.id)
-    .gte("transaction_date", startOfMonth)
-    .lte("transaction_date", endOfMonth);
+    .single();
 
-  if (!transactions || transactions.length === 0) {
-    await sendTelegramMessage(chatId, "📊 Nenhuma transação encontrada este mês. Que tal começar registrando um gasto ou receita?");
+  if (!transaction) {
+    await sendTelegramMessage(
+      chatId,
+      `❌ Transação \`#${transactionId}\` não encontrada.\n\n` +
+      `Use \`/extrato\` para ver as transações disponíveis.`
+    );
     return;
   }
 
-  const monthName = getMonthName(now);
-  const expenses = transactions.filter((t: any) => t.type === "expense");
-  const incomes = transactions.filter((t: any) => t.type === "income");
+  const emoji = transaction.type === "income" ? "📈" : "📉";
+  const typeName = transaction.type === "income" ? "Receita" : "Despesa";
+  const catName = transaction.categories?.name || "Sem categoria";
+  const groupName = transaction.groups?.name || "Sem grupo";
+  const tags = transaction.tags?.length ? transaction.tags.join(" ") : "—";
 
-  const totalExpenses = expenses.reduce((sum: number, t: any) => sum + Number(t.amount), 0);
-  const totalIncomes = incomes.reduce((sum: number, t: any) => sum + Number(t.amount), 0);
+  const keyboard: InlineKeyboard = [
+    [
+      { text: "✏️ Editar valor", callback_data: `edit_amount_${transaction.id}` },
+      { text: "🏷️ Editar categoria", callback_data: `edit_category_${transaction.id}` },
+    ],
+    [
+      { text: "📁 Editar grupo", callback_data: `edit_group_${transaction.id}` },
+      { text: "🔖 Editar tags", callback_data: `edit_tags_${transaction.id}` },
+    ],
+    [
+      { text: "📅 Editar data", callback_data: `edit_date_${transaction.id}` },
+      { text: "❌ Excluir", callback_data: `confirm_delete_${transaction.id}` },
+    ],
+  ];
 
-  const expenseByCategory: Record<string, number> = {};
-  for (const t of expenses) {
-    const cat = t.categories?.name || "Sem categoria";
-    expenseByCategory[cat] = (expenseByCategory[cat] || 0) + Number(t.amount);
-  }
-
-  const incomeByCategory: Record<string, number> = {};
-  for (const t of incomes) {
-    const cat = t.categories?.name || "Sem categoria";
-    incomeByCategory[cat] = (incomeByCategory[cat] || 0) + Number(t.amount);
-  }
-
-  let message = `📊 *Resumo - ${monthName}*\n\n`;
-
-  if (incomes.length > 0) {
-    message += `📈 *Receitas: ${formatCurrencyBR(totalIncomes)}*\n`;
-    for (const [cat, amount] of Object.entries(incomeByCategory).sort((a, b) => b[1] - a[1])) {
-      message += `   • ${cat}: ${formatCurrencyBR(amount)}\n`;
-    }
-    message += "\n";
-  }
-
-  if (expenses.length > 0) {
-    message += `📉 *Despesas: ${formatCurrencyBR(totalExpenses)}*\n`;
-    for (const [cat, amount] of Object.entries(expenseByCategory).sort((a, b) => b[1] - a[1])) {
-      message += `   • ${cat}: ${formatCurrencyBR(amount)}\n`;
-    }
-    message += "\n";
-  }
-
-  const balance = totalIncomes - totalExpenses;
-  const emoji = balance >= 0 ? "✅" : "⚠️";
-  message += `${emoji} *Saldo: ${formatCurrencyBR(balance)}*`;
-
-  await sendTelegramMessage(chatId, message);
+  await sendTelegramMessageWithKeyboard(
+    chatId,
+    `${emoji} *${typeName} \`#${transaction.id}\`:*\n\n` +
+    `💰 Valor: *${formatCurrencyBR(Number(transaction.amount))}*\n` +
+    `🏷️ Categoria: ${catName}\n` +
+    `📁 Grupo: ${groupName}\n` +
+    `🔖 Tags: ${tags}\n` +
+    `📅 Data: ${formatDateBR(transaction.transaction_date)}\n\n` +
+    `O que deseja fazer?`,
+    keyboard
+  );
 }
 
-export async function handleEditar(supabase: any, userId: number, chatId: number): Promise<void> {
+export async function handleExcluir(supabase: any, userId: number, chatId: number, args: string[] = []): Promise<void> {
   const user = await getOrCreateUser(supabase, userId);
   if (!user) {
     await sendTelegramMessage(chatId, "Ops! Você ainda não está cadastrado. Use /start para começar.");
     return;
   }
 
-  const { data: lastTransaction } = await supabase
+  if (args.length === 0) {
+    await sendTelegramMessage(
+      chatId,
+      `🗑️ *Como excluir uma transação:*\n\n` +
+      `1️⃣ Use \`/extrato\` para ver o extrato do mês\n` +
+      `2️⃣ Identifique o \`#ID\` da transação que deseja excluir\n` +
+      `3️⃣ Digite \`/excluir ID\` (ex: \`/excluir 42\`)\n\n` +
+      `💡 Exemplo: \`/excluir 42\``
+    );
+    return;
+  }
+
+  const transactionId = args[0];
+
+  const { data: transaction } = await supabase
     .from("transactions")
     .select(`
       id,
@@ -318,211 +538,244 @@ export async function handleEditar(supabase: any, userId: number, chatId: number
       transaction_date,
       categories (name)
     `)
-    .eq("user_id", user.id)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .single();
-
-  if (!lastTransaction) {
-    await sendTelegramMessage(chatId, "📝 Nenhuma transação encontrada para editar.");
-    return;
-  }
-
-  const emoji = lastTransaction.type === "income" ? "📈" : "📉";
-  const typeName = lastTransaction.type === "income" ? "Receita" : "Despesa";
-  const catName = lastTransaction.categories?.name || "Sem categoria";
-
-  const keyboard: InlineKeyboard = [
-    [
-      { text: "✏️ Editar valor", callback_data: `edit_amount_${lastTransaction.id}` },
-      { text: "🏷️ Editar categoria", callback_data: `edit_category_${lastTransaction.id}` },
-    ],
-    [
-      { text: "📅 Editar data", callback_data: `edit_date_${lastTransaction.id}` },
-      { text: "❌ Excluir", callback_data: `confirm_delete_${lastTransaction.id}` },
-    ],
-  ];
-
-  await sendTelegramMessageWithKeyboard(
-    chatId,
-    `${emoji} *Última ${typeName}:*\n\n` +
-    `💰 Valor: *${formatCurrencyBR(Number(lastTransaction.amount))}*\n` +
-    `🏷️ Categoria: ${catName}\n` +
-    `📅 Data: ${formatDateBR(lastTransaction.transaction_date)}\n\n` +
-    `O que deseja fazer?`,
-    keyboard
-  );
-}
-
-export async function handleExcluir(supabase: any, userId: number, chatId: number, args: string[]): Promise<void> {
-  const user = await getOrCreateUser(supabase, userId);
-  if (!user) {
-    await sendTelegramMessage(chatId, "Ops! Você ainda não está cadastrado. Use /start para começar.");
-    return;
-  }
-
-  if (args.length === 0) {
-    const { data: lastTransaction } = await supabase
-      .from("transactions")
-      .select(`
-        id,
-        type,
-        amount,
-        description,
-        transaction_date,
-        categories (name)
-      `)
-      .eq("user_id", user.id)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .single();
-
-    if (!lastTransaction) {
-      await sendTelegramMessage(chatId, "📝 Nenhuma transação encontrada para excluir.");
-      return;
-    }
-
-    const emoji = lastTransaction.type === "income" ? "📈" : "📉";
-    const typeName = lastTransaction.type === "income" ? "Receita" : "Despesa";
-    const catName = lastTransaction.categories?.name || "Sem categoria";
-
-    const keyboard: InlineKeyboard = [
-      [
-        { text: "✅ Sim, excluir", callback_data: `confirm_delete_${lastTransaction.id}` },
-        { text: "❌ Não, manter", callback_data: "cancel_delete" },
-      ],
-    ];
-
-    await sendTelegramMessageWithKeyboard(
-      chatId,
-      `${emoji} *Última ${typeName}:*\n\n` +
-      `💰 Valor: *${formatCurrencyBR(Number(lastTransaction.amount))}*\n` +
-      `🏷️ Categoria: ${catName}\n` +
-      `📅 Data: ${formatDateBR(lastTransaction.transaction_date)}\n\n` +
-      `Tem certeza que deseja excluir esta transação?`,
-      keyboard
-    );
-    return;
-  }
-
-  const transactionId = args[0];
-  const { data: transaction } = await supabase
-    .from("transactions")
-    .select("id")
     .eq("id", transactionId)
     .eq("user_id", user.id)
     .single();
 
   if (!transaction) {
-    await sendTelegramMessage(chatId, "❌ Transação não encontrada.");
+    await sendTelegramMessage(
+      chatId,
+      `❌ Transação \`#${transactionId}\` não encontrada.\n\n` +
+      `Use \`/extrato\` para ver as transações disponíveis.`
+    );
     return;
   }
 
-  const { error } = await supabase.from("transactions").delete().eq("id", transactionId);
+  const emoji = transaction.type === "income" ? "📈" : "📉";
+  const typeName = transaction.type === "income" ? "Receita" : "Despesa";
+  const catName = transaction.categories?.name || "Sem categoria";
+
+  const keyboard: InlineKeyboard = [
+    [
+      { text: "✅ Sim, excluir", callback_data: `confirm_delete_${transaction.id}` },
+      { text: "❌ Não, manter", callback_data: "cancel_delete" },
+    ],
+  ];
+
+  await sendTelegramMessageWithKeyboard(
+    chatId,
+    `${emoji} *${typeName} \`#${transaction.id}\`:*\n\n` +
+    `💰 Valor: *${formatCurrencyBR(Number(transaction.amount))}*\n` +
+    `🏷️ Categoria: ${catName}\n` +
+    `📅 Data: ${formatDateBR(transaction.transaction_date)}\n\n` +
+    `Tem certeza que deseja excluir esta transação?`,
+    keyboard
+  );
+}
+
+export async function handleEntity(
+  type: "category" | "group",
+  supabase: any,
+  userId: number,
+  chatId: number,
+  args: string[]
+): Promise<void> {
+  const user = await getOrCreateUser(supabase, userId);
+  if (!user) {
+    await sendTelegramMessage(chatId, "Ops! Você ainda não está cadastrado. Use /start para começar.");
+    return;
+  }
+
+  const isCategory = type === "category";
+  const table = isCategory ? "categories" : "groups";
+  const flagColumn = isCategory ? "is_predefined" : "is_default";
+  const icon = isCategory ? "🏷️" : "📁";
+  const label = isCategory ? "categoria" : "grupo";
+  const cbPrefix = isCategory ? "cat_sel_" : "grp_sel_";
+  const suggestFn = isCategory ? suggestSimilarCategories : suggestSimilarGroups;
+  const wizardStep = isCategory ? "suggest_cat" : "suggest_grp";
+  const sugUseCb = isCategory ? "cat_sug_use" : "grp_sug_use";
+  const sugNewCb = isCategory ? "cat_sug_new" : "grp_sug_new";
+  const cmdRef = isCategory ? "/categoria nome_da_categoria" : "/grupo nome_do_grupo";
+
+  if (args.length === 0 || (isCategory && args[0] === "listar")) {
+    const orderQuery = isCategory
+      ? supabase.from(table).select(`id, name, ${flagColumn}`).eq("user_id", user.id).order("is_predefined", { ascending: false }).order("name")
+      : supabase.from(table).select(`id, name, ${flagColumn}`).eq("user_id", user.id).order("name");
+    const { data: items } = await orderQuery;
+
+    if (!items || items.length === 0) {
+      await sendTelegramMessage(chatId, `${icon} Nenhum${isCategory ? "a" : ""} ${label} encontrad${isCategory ? "a" : ""}. Crie um${isCategory ? "a" : ""} com \`${cmdRef}\``);
+      return;
+    }
+
+    // Get transaction counts
+    const fkColumn = isCategory ? "category_id" : "group_id";
+    const { data: counts } = await supabase
+      .from("transactions")
+      .select(`${fkColumn}, id`)
+      .eq("user_id", user.id);
+
+    const countMap: Record<number, number> = {};
+    if (counts) {
+      for (const t of counts) {
+        if (t[fkColumn]) {
+          countMap[t[fkColumn]] = (countMap[t[fkColumn]] || 0) + 1;
+        }
+      }
+    }
+
+    const pluralNoun = isCategory ? "categorias" : "grupos";
+    let message = `${icon} *Su${isCategory ? "as" : "s"} ${pluralNoun}:*\n\n`;
+    for (const item of items) {
+      const count = countMap[item.id] || 0;
+      const defaultTag = item[flagColumn] ? ` ⭐ (padrão)` : "";
+      message += `• ${item.name}${defaultTag} — ${count} transação${count !== 1 ? "ões" : ""}\n`;
+    }
+    message += `\n💡 Para adicionar: \`${cmdRef}\``;
+
+    // Build keyboard with 3 items per row
+    const keyboard: InlineKeyboard = [];
+    let row: { text: string; callback_data: string }[] = [];
+    for (const item of items) {
+      row.push({ text: item.name, callback_data: `${cbPrefix}${item.name}` });
+      if (row.length === 3) {
+        keyboard.push(row);
+        row = [];
+      }
+    }
+    if (row.length > 0) keyboard.push(row);
+
+    await sendTelegramMessageWithKeyboard(chatId, message, keyboard);
+    return;
+  }
+
+  const entityName = args.join(" ");
+
+  // Check for similar names before creating
+  const similar = await suggestFn(supabase, user.id, entityName);
+  if (similar && similar.length > 0) {
+    await setWizardState(supabase, user.id, wizardStep, {
+      original_name: entityName,
+      suggested_name: similar[0].name,
+      similarity: similar[0].similarity,
+    });
+    const keyboard: InlineKeyboard = [
+      [{ text: `✅ Usar "${similar[0].name}"`, callback_data: sugUseCb }],
+      [{ text: `✏️ Criar "${entityName}" mesmo assim`, callback_data: sugNewCb }],
+    ];
+    await sendTelegramMessageWithKeyboard(
+      chatId,
+      `⚠️ Você quis dizer *${similar[0].name}*? (${(similar[0].similarity * 100).toFixed(0)}% similar)\n\nCaso contrário, confirme para criar *${entityName}* mesmo assim.`,
+      keyboard
+    );
+    return;
+  }
+
+  const { error } = await supabase.from(table).insert({
+    user_id: user.id,
+    name: entityName,
+    normalized_name: normalizeString(entityName),
+    [flagColumn]: false,
+  });
 
   if (error) {
-    await sendTelegramMessage(chatId, "❌ Ops! Algo deu errado ao excluir. Tente novamente.");
+    if (error.code === "23505") {
+      await sendTelegramMessage(chatId, `⚠️ Já existe ${isCategory ? "uma" : "um"} ${label} com esse nome. Escolha outro nome.`);
+    } else {
+      await sendTelegramMessage(chatId, `❌ Ops! Algo deu errado ao criar ${isCategory ? "a" : "o"} ${label}. Tente novamente.`);
+    }
     return;
   }
 
-  await sendTelegramMessage(chatId, "✅ Transação excluída com sucesso!");
+  const art = isCategory ? "a" : "o";
+  await sendTelegramMessage(chatId, `✅ ${icon} ${label.charAt(0).toUpperCase() + label.slice(1)} "${entityName}" criad${art} com sucesso!`);
 }
 
 export async function handleGrupo(supabase: any, userId: number, chatId: number, args: string[]): Promise<void> {
-  const user = await getOrCreateUser(supabase, userId);
-  if (!user) {
-    await sendTelegramMessage(chatId, "Ops! Você ainda não está cadastrado. Use /start para começar.");
-    return;
-  }
-
-  if (args.length === 0) {
-    const { data: groups } = await supabase
-      .from("groups")
-      .select("name, is_default")
-      .eq("user_id", user.id)
-      .order("name");
-
-    if (!groups || groups.length === 0) {
-      await sendTelegramMessage(chatId, "📁 Nenhum grupo encontrado. Crie um com `/grupo nome_do_grupo`");
-      return;
-    }
-
-    let message = "📁 *Seus grupos:*\n\n";
-    for (const g of groups) {
-      const defaultTag = g.is_default ? " ⭐ (padrão)" : "";
-      message += `• ${g.name}${defaultTag}\n`;
-    }
-    message += "\n💡 Para adicionar: `/grupo nome_do_grupo`";
-    await sendTelegramMessage(chatId, message);
-    return;
-  }
-
-  const groupName = args.join(" ");
-
-  const { error } = await supabase.from("groups").insert({
-    user_id: user.id,
-    name: groupName,
-    is_default: false,
-  });
-
-  if (error) {
-    if (error.code === "23505") {
-      await sendTelegramMessage(chatId, "⚠️ Já existe um grupo com esse nome. Escolha outro nome.");
-    } else {
-      await sendTelegramMessage(chatId, "❌ Ops! Algo deu errado ao criar o grupo. Tente novamente.");
-    }
-    return;
-  }
-
-  await sendTelegramMessage(chatId, `✅ Grupo "${groupName}" criado com sucesso!`);
+  return handleEntity("group", supabase, userId, chatId, args);
 }
 
 export async function handleCategoria(supabase: any, userId: number, chatId: number, args: string[]): Promise<void> {
+  return handleEntity("category", supabase, userId, chatId, args);
+}
+
+export async function handleLimpar(supabase: any, userId: number, chatId: number): Promise<void> {
   const user = await getOrCreateUser(supabase, userId);
   if (!user) {
     await sendTelegramMessage(chatId, "Ops! Você ainda não está cadastrado. Use /start para começar.");
     return;
   }
 
-  if (args.length === 0 || args[0] === "listar") {
-    const { data: categories } = await supabase
-      .from("categories")
-      .select("name, is_predefined")
-      .eq("user_id", user.id)
-      .order("is_predefined", { ascending: false })
-      .order("name");
+  // Find categories with no transactions
+  const { data: categories } = await supabase
+    .from("categories")
+    .select("id, name")
+    .eq("user_id", user.id);
 
-    if (!categories || categories.length === 0) {
-      await sendTelegramMessage(chatId, "🏷️ Nenhuma categoria encontrada. Crie uma com `/categoria nome_da_categoria`");
-      return;
-    }
+  const { data: catCounts } = await supabase
+    .from("transactions")
+    .select("category_id")
+    .eq("user_id", user.id)
+    .not("category_id", "is", null);
 
-    let message = "🏷️ *Suas categorias:*\n\n";
-    for (const c of categories) {
-      const tag = c.is_predefined ? " ⭐ (padrão)" : "";
-      message += `• ${c.name}${tag}\n`;
-    }
-    message += "\n💡 Para adicionar: `/categoria nome_da_categoria`";
+  const usedCatIds = new Set((catCounts || []).map((t: any) => t.category_id));
+  const unusedCats = (categories || []).filter((c: any) => !usedCatIds.has(c.id));
+
+  // Find groups with no transactions (excluding is_default)
+  const { data: groups } = await supabase
+    .from("groups")
+    .select("id, name, is_default")
+    .eq("user_id", user.id);
+
+  const { data: grpCounts } = await supabase
+    .from("transactions")
+    .select("group_id")
+    .eq("user_id", user.id)
+    .not("group_id", "is", null);
+
+  const usedGrpIds = new Set((grpCounts || []).map((t: any) => t.group_id));
+  const unusedGrps = (groups || []).filter((g: any) => !g.is_default && !usedGrpIds.has(g.id));
+
+  // Collect all unique tags from transactions
+  const rawTags = await getAllUserTags(supabase, user.id);
+  const allTags = new Set(rawTags.map((t: string) => t.startsWith("#") ? t : `#${t}`));
+
+  if (unusedCats.length === 0 && unusedGrps.length === 0 && allTags.size === 0) {
+    await sendTelegramMessage(chatId, "🧹 Nenhum dado para limpar. Tudo limpo!");
+    return;
+  }
+
+  let message = "🧹 *Visão geral dos seus dados:*\n\n";
+
+  if (unusedCats.length > 0) {
+    message += `🏷️ *Categorias sem transações (${unusedCats.length}):*\n`;
+    message += unusedCats.map((c: any) => `   • ${c.name}`).join("\n") + "\n\n";
+  }
+
+  if (unusedGrps.length > 0) {
+    message += `📁 *Grupos sem transações (${unusedGrps.length}):*\n`;
+    message += unusedGrps.map((g: any) => `   • ${g.name}`).join("\n") + "\n\n";
+  }
+
+  if (allTags.size > 0) {
+    message += `🔖 *Tags em uso (${allTags.size}):*\n`;
+    message += Array.from(allTags).sort().map((t) => `   • ${t}`).join("\n") + "\n\n";
+  }
+
+  const hasItemsToClean = unusedCats.length > 0 || unusedGrps.length > 0;
+  if (!hasItemsToClean) {
+    message += "Nenhuma categoria ou grupo órfão para remover.";
     await sendTelegramMessage(chatId, message);
     return;
   }
 
-  const categoryName = args.join(" ");
+  message += "Deseja removê-los?";
 
-  const { error } = await supabase.from("categories").insert({
-    user_id: user.id,
-    name: categoryName,
-    is_predefined: false,
-  });
+  const keyboard: InlineKeyboard = [
+    [{ text: "✅ Sim, limpar tudo", callback_data: "confirm_limpar" }],
+    [{ text: "❌ Não, cancelar", callback_data: "cancel_limpar" }],
+  ];
 
-  if (error) {
-    if (error.code === "23505") {
-      await sendTelegramMessage(chatId, "⚠️ Já existe uma categoria com esse nome. Escolha outro nome.");
-    } else {
-      await sendTelegramMessage(chatId, "❌ Ops! Algo deu errado ao criar a categoria. Tente novamente.");
-    }
-    return;
-  }
-
-  await sendTelegramMessage(chatId, `✅ Categoria "${categoryName}" criada com sucesso!`);
+  await sendTelegramMessageWithKeyboard(chatId, message, keyboard);
 }

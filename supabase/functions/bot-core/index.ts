@@ -14,7 +14,7 @@ import { isRateLimited } from "./utils/rate-limiter.ts";
 import { formatCurrencyBR, formatDateBR, parseDateBR } from "./utils/formatting.ts";
 import { parseNaturalLanguage } from "./services/deepseek.ts";
 import { sendTelegramMessage, sendTelegramMessageWithKeyboard } from "./services/telegram.ts";
-import { getCategories } from "./services/database.ts";
+import { getCategories, sendSimilarityWarning } from "./services/database.ts";
 import { handleCallbackQuery } from "./handlers/callbacks.ts";
 import { handleNaturalLanguageWithFollowUp, executeNaturalLanguageAction } from "./handlers/nl-processing.ts";
 import {
@@ -34,7 +34,40 @@ import {
   handleExcluir,
   handleGrupo,
   handleCategoria,
+  handleLimpar,
 } from "./handlers/commands.ts";
+
+async function handleEntityRename(
+  supabase: any,
+  userId: number,
+  chatId: number,
+  table: string,
+  oldName: string,
+  newName: string,
+  label: string
+): Promise<"success" | "noop" | "duplicate" | "error"> {
+  if (!newName) {
+    await sendTelegramMessage(chatId, "✏️ O nome não pode estar vazio. Digite um nome válido:");
+    return "noop";
+  }
+  if (newName.toLowerCase() === oldName.toLowerCase()) {
+    await sendTelegramMessage(chatId, "ℹ️ O nome é o mesmo de antes. Nada foi alterado.");
+    return "noop";
+  }
+  const article = label === "categoria" ? "uma" : "um";
+  const { error } = await supabase.from(table).update({ name: newName }).eq("user_id", userId).ilike("name", oldName);
+  if (error) {
+    if (error.code === "23505") {
+      await sendTelegramMessage(chatId, `⚠️ Já existe ${article} ${label} com o nome "${newName}". Escolha outro nome.`);
+      return "duplicate";
+    }
+    await sendTelegramMessage(chatId, "❌ Ops! Algo deu errado ao renomear. Tente novamente.");
+    return "error";
+  }
+  const art = label === "categoria" ? "a" : "o";
+  await sendTelegramMessage(chatId, `✅ ${label.charAt(0).toUpperCase() + label.slice(1)} "${oldName}" renomead${art} para "${newName}"!`);
+  return "success";
+}
 
 serve(async (req: Request): Promise<Response> => {
   if (req.method !== "POST") {
@@ -141,6 +174,30 @@ serve(async (req: Request): Promise<Response> => {
         await supabase.from("transactions").update({ transaction_date: parsed }).eq("id", transactionId).eq("user_id", existingUser.id);
         await clearWizardState(supabase, existingUser.id);
         await sendTelegramMessage(message.chat.id, `✅ Data atualizada para ${formatDateBR(parsed)}!`);
+      } else if (wizardState.step.startsWith("edit_tags_")) {
+        const transactionId = wizardState.data.transaction_id;
+        const currentTags: string[] = wizardState.data?.tags
+          ? (Array.isArray(wizardState.data.tags) ? wizardState.data.tags : [wizardState.data.tags])
+          : [];
+        const newTags = text.split(" ").filter((t: string) => t.trim());
+        const formattedTags = newTags.map((t: string) => t.startsWith("#") ? t : `#${t}`);
+        const accumulated = [...currentTags, ...formattedTags];
+
+        // Check for similar existing tags
+        for (const tag of newTags) {
+          await sendSimilarityWarning(supabase, existingUser.id, message.chat.id, "tag", tag);
+        }
+
+        await supabase.from("transactions").update({ tags: accumulated }).eq("id", transactionId).eq("user_id", existingUser.id);
+        await clearWizardState(supabase, existingUser.id);
+        const tagsStr = accumulated.length > 0 ? accumulated.join(" ") : "—";
+        await sendTelegramMessage(message.chat.id, `✅ Tags atualizadas: ${tagsStr}`);
+      } else if (wizardState.step === "rename_cat") {
+        const result = await handleEntityRename(supabase, existingUser.id, message.chat.id, "categories", wizardState.data.name, text.trim(), "categoria");
+        if (result !== "noop") await clearWizardState(supabase, existingUser.id);
+      } else if (wizardState.step === "rename_grp") {
+        const result = await handleEntityRename(supabase, existingUser.id, message.chat.id, "groups", wizardState.data.name, text.trim(), "grupo");
+        if (result !== "noop") await clearWizardState(supabase, existingUser.id);
       } else if (wizardState.step === "nl_expense_amount" || wizardState.step === "nl_income_amount") {
         const amount = parseFloat(text.replace(",", "."));
         if (isNaN(amount) || amount <= 0) {
@@ -185,12 +242,9 @@ serve(async (req: Request): Promise<Response> => {
         const natural: DeepSeekResponse = { intent, amount: null, category: wizardState.data.category, date: null, period, name: null, tag: null, limit: null, missingFields: [] };
         await clearWizardState(supabase, existingUser.id);
         await executeNaturalLanguageAction(supabase, message.from.id, message.chat.id, natural);
-      } else if (wizardState.step === "nl_create_category_name") {
-        const natural: DeepSeekResponse = { intent: "create_category", amount: null, category: null, date: null, period: null, name: text, tag: null, limit: null, missingFields: [] };
-        await clearWizardState(supabase, existingUser.id);
-        await executeNaturalLanguageAction(supabase, message.from.id, message.chat.id, natural);
-      } else if (wizardState.step === "nl_create_group_name") {
-        const natural: DeepSeekResponse = { intent: "create_group", amount: null, category: null, date: null, period: null, name: text, tag: null, limit: null, missingFields: [] };
+      } else if (wizardState.step === "nl_create_category_name" || wizardState.step === "nl_create_group_name") {
+        const intent = wizardState.step === "nl_create_category_name" ? "create_category" : "create_group";
+        const natural: DeepSeekResponse = { intent: intent as "create_category" | "create_group", amount: null, category: null, date: null, period: null, name: text, tag: null, limit: null, missingFields: [] };
         await clearWizardState(supabase, existingUser.id);
         await executeNaturalLanguageAction(supabase, message.from.id, message.chat.id, natural);
       } else if (wizardState.step === "nl_list_by_tag_name") {
@@ -226,14 +280,16 @@ serve(async (req: Request): Promise<Response> => {
           break;
 
         case "/ajuda":
+        case "/help":
           await handleAjuda(message.chat.id);
           break;
 
         case "/saldo":
-          await handleSaldo(supabase, message.from.id, message.chat.id);
+          await handleSaldo(supabase, message.from.id, message.chat.id, args);
           break;
 
         case "/gasto":
+        case "/despesa":
           await handleTransaction("expense", supabase, message.from.id, message.chat.id, args);
           break;
 
@@ -246,11 +302,11 @@ serve(async (req: Request): Promise<Response> => {
           break;
 
         case "/resumo":
-          await handleResumo(supabase, message.from.id, message.chat.id);
+          await handleResumo(supabase, message.from.id, message.chat.id, args);
           break;
 
         case "/editar":
-          await handleEditar(supabase, message.from.id, message.chat.id);
+          await handleEditar(supabase, message.from.id, message.chat.id, args);
           break;
 
         case "/excluir":
@@ -263,6 +319,10 @@ serve(async (req: Request): Promise<Response> => {
 
         case "/categoria":
           await handleCategoria(supabase, message.from.id, message.chat.id, args);
+          break;
+
+        case "/limpar":
+          await handleLimpar(supabase, message.from.id, message.chat.id);
           break;
 
         case "/cancelar":

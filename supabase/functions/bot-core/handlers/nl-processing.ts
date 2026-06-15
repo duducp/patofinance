@@ -7,6 +7,7 @@ import {
   handleTransaction,
   handleSaldo,
   handleExtrato,
+  handleLimpar,
 } from "./commands.ts";
 import {
   handleCreateCategory,
@@ -206,6 +207,11 @@ export async function executeNaturalLanguageAction(
 
   if (natural.intent === "list_by_tag" && natural.tag) {
     await handleListByTag(supabase, userId, chatId, natural.tag);
+    return;
+  }
+
+  if (natural.intent === "cleanup") {
+    await handleLimpar(supabase, userId, chatId);
     return;
   }
 }

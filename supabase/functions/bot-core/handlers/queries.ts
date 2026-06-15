@@ -3,6 +3,71 @@ import { requireUser } from "../services/database.ts";
 import { formatCurrencyBR, formatDateBR } from "../utils/formatting.ts";
 import { getDateRange } from "../utils/date-helpers.ts";
 
+export interface SummaryData {
+  monthName: string;
+  totalIncomes: number;
+  totalExpenses: number;
+  expenseByCategory: Record<string, number>;
+  incomeByCategory: Record<string, number>;
+}
+
+export async function getSummaryData(
+  supabase: any,
+  userId: number,
+  period: "this_month" | "last_month" | null,
+  groupId?: number | null
+): Promise<SummaryData | null> {
+  const { start, end, label } = getDateRange(period, null);
+  let query = supabase
+    .from("transactions")
+    .select(`type, amount, categories(name)`)
+    .eq("user_id", userId)
+    .gte("transaction_date", start)
+    .lte("transaction_date", end);
+  if (groupId) query = query.eq("group_id", groupId);
+  const { data: transactions } = await query;
+  if (!transactions || transactions.length === 0) return null;
+  const expenses = transactions.filter((t: any) => t.type === "expense");
+  const incomes = transactions.filter((t: any) => t.type === "income");
+  const totalIncomes = incomes.reduce((s: number, t: any) => s + Number(t.amount), 0);
+  const totalExpenses = expenses.reduce((s: number, t: any) => s + Number(t.amount), 0);
+  const expenseByCategory: Record<string, number> = {};
+  for (const t of expenses) {
+    const cat = t.categories?.name || "Sem categoria";
+    expenseByCategory[cat] = (expenseByCategory[cat] || 0) + Number(t.amount);
+  }
+  const incomeByCategory: Record<string, number> = {};
+  for (const t of incomes) {
+    const cat = t.categories?.name || "Sem categoria";
+    incomeByCategory[cat] = (incomeByCategory[cat] || 0) + Number(t.amount);
+  }
+  return { monthName: label, totalIncomes, totalExpenses, expenseByCategory, incomeByCategory };
+}
+
+export function formatSummaryMessage(data: SummaryData, groupName?: string): string {
+  let message = `📊 *Resumo - ${data.monthName}*\n`;
+  if (groupName) message += `📁 Grupo: *${groupName}*\n`;
+  message += "\n";
+  if (data.incomeByCategory && Object.keys(data.incomeByCategory).length > 0) {
+    message += `📈 *Receitas: ${formatCurrencyBR(data.totalIncomes)}*\n`;
+    for (const [cat, amount] of Object.entries(data.incomeByCategory).sort((a, b) => b[1] - a[1])) {
+      message += `   • ${cat}: ${formatCurrencyBR(amount)}\n`;
+    }
+    message += "\n";
+  }
+  if (data.expenseByCategory && Object.keys(data.expenseByCategory).length > 0) {
+    message += `📉 *Despesas: ${formatCurrencyBR(data.totalExpenses)}*\n`;
+    for (const [cat, amount] of Object.entries(data.expenseByCategory).sort((a, b) => b[1] - a[1])) {
+      message += `   • ${cat}: ${formatCurrencyBR(amount)}\n`;
+    }
+    message += "\n";
+  }
+  const balance = data.totalIncomes - data.totalExpenses;
+  const emoji = balance >= 0 ? "✅" : "⚠️";
+  message += `${emoji} *Saldo: ${formatCurrencyBR(balance)}*`;
+  return message;
+}
+
 export async function handleQueryExpenses(
   supabase: any,
   userId: number,
@@ -20,17 +85,30 @@ export async function handleQueryExpenses(
     .eq("user_id", user.id)
     .gte("transaction_date", start)
     .lte("transaction_date", end)
-    .order("transaction_date", { ascending: false })
-    .limit(10);
-  if (category) query = query.ilike("categories.name", `%${category}%`);
+    .order("transaction_date", { ascending: false });
+  // Apply limit after filtering when category filter is active, otherwise at DB level
+  if (!category) query = query.limit(10);
   const { data: transactions } = await query;
   if (!transactions || transactions.length === 0) {
     await sendTelegramMessage(chatId, `📝 Nenhuma despesa encontrada em ${label}.`);
     return;
   }
+  // Filter by category in JavaScript (Supabase JS doesn't support ilike on joined tables)
+  const filtered = category
+    ? transactions.filter((t: any) => {
+        const catName = (t.categories?.name || "").toLowerCase();
+        return catName.includes(category.toLowerCase());
+      })
+    : transactions;
+  if (filtered.length === 0) {
+    await sendTelegramMessage(chatId, `📝 Nenhuma despesa em ${label} com categoria "${category}".`);
+    return;
+  }
+  // Apply JS limit only when category filter was used (DB limit was deferred)
+  const limited = category ? filtered.slice(0, 10) : filtered;
   let message = `📝 *Despesas em ${label}*\n\n`;
   let total = 0;
-  for (const t of transactions) {
+  for (const t of limited) {
     const catName = t.categories?.name || "Sem categoria";
     message += `📉 ${formatDateBR(t.transaction_date)} - *${formatCurrencyBR(Number(t.amount))}* | ${catName}\n`;
     if (t.type === "expense") total += Number(t.amount);
@@ -48,48 +126,11 @@ export async function handleQuerySummary(
 ): Promise<void> {
   const user = await requireUser(supabase, userId, chatId);
   if (!user) return;
-  const { start, end, label } = getDateRange(period, null);
-  const { data: transactions } = await supabase
-    .from("transactions")
-    .select(`id, type, amount, categories(name)`)
-    .eq("user_id", user.id)
-    .gte("transaction_date", start)
-    .lte("transaction_date", end);
-  if (!transactions || transactions.length === 0) {
+  const data = await getSummaryData(supabase, user.id, period);
+  if (!data) {
+    const { label } = getDateRange(period, null);
     await sendTelegramMessage(chatId, `📊 Nenhuma transação em ${label}.`);
     return;
   }
-  const expenses = transactions.filter((t: any) => t.type === "expense");
-  const incomes = transactions.filter((t: any) => t.type === "income");
-  const totalIncomes = incomes.reduce((s: number, t: any) => s + Number(t.amount), 0);
-  const totalExpenses = expenses.reduce((s: number, t: any) => s + Number(t.amount), 0);
-  const expenseByCategory: Record<string, number> = {};
-  for (const t of expenses) {
-    const cat = t.categories?.name || "Sem categoria";
-    expenseByCategory[cat] = (expenseByCategory[cat] || 0) + Number(t.amount);
-  }
-  const incomeByCategory: Record<string, number> = {};
-  for (const t of incomes) {
-    const cat = t.categories?.name || "Sem categoria";
-    incomeByCategory[cat] = (incomeByCategory[cat] || 0) + Number(t.amount);
-  }
-  let message = `📊 *Resumo - ${label}*\n\n`;
-  if (incomes.length > 0) {
-    message += `📈 *Receitas: ${formatCurrencyBR(totalIncomes)}*\n`;
-    for (const [cat, amount] of Object.entries(incomeByCategory).sort((a, b) => b[1] - a[1])) {
-      message += `   • ${cat}: ${formatCurrencyBR(amount)}\n`;
-    }
-    message += "\n";
-  }
-  if (expenses.length > 0) {
-    message += `📉 *Despesas: ${formatCurrencyBR(totalExpenses)}*\n`;
-    for (const [cat, amount] of Object.entries(expenseByCategory).sort((a, b) => b[1] - a[1])) {
-      message += `   • ${cat}: ${formatCurrencyBR(amount)}\n`;
-    }
-    message += "\n";
-  }
-  const balance = totalIncomes - totalExpenses;
-  const emoji = balance >= 0 ? "✅" : "⚠️";
-  message += `${emoji} *Saldo: ${formatCurrencyBR(balance)}*`;
-  await sendTelegramMessage(chatId, message);
+  await sendTelegramMessage(chatId, formatSummaryMessage(data));
 }

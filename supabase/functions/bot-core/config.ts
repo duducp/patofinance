@@ -26,4 +26,6 @@ export const commonPhrases: Record<string, DeepSeekResponse> = {
   "últimas transações": { intent: "list_transactions", amount: null, category: null, date: null, period: null, name: null, tag: null, limit: 10, missingFields: [] },
   "último gasto": { intent: "show_last_transaction", amount: null, category: null, date: null, period: null, name: null, tag: null, limit: null, missingFields: [] },
   "apagar última": { intent: "delete_last_transaction", amount: null, category: null, date: null, period: null, name: null, tag: null, limit: null, missingFields: [] },
+  "limpe": { intent: "cleanup", amount: null, category: null, date: null, period: null, name: null, tag: null, limit: null, missingFields: [] },
+  "limpar": { intent: "cleanup", amount: null, category: null, date: null, period: null, name: null, tag: null, limit: null, missingFields: [] },
 };

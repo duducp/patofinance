@@ -72,6 +72,7 @@ Intents:
 - "show_last_transaction": última transação
 - "delete_last_transaction": excluir última transação
 - "list_by_tag": listar por tag
+- "cleanup": limpar categorias/grupos sem uso (limpe, limpar)
 - null: não entendeu
 
 Regras: amount numérico, date YYYY-MM-DD, period this_month/last_month, name para criar entidade, tag sem #, limit padrão 10.`,

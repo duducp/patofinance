@@ -41,8 +41,8 @@ export async function getOrCreateCategory(supabase: any, userId: number, categor
     .from("categories")
     .select("id")
     .eq("user_id", userId)
-    .ilike("normalized_name", normalizedName)
-    .single();
+    .eq("normalized_name", normalizedName)
+    .maybeSingle();
   if (existing) return existing.id;
   const { data: newCategory } = await supabase
     .from("categories")
@@ -52,6 +52,82 @@ export async function getOrCreateCategory(supabase: any, userId: number, categor
   return newCategory?.id || null;
 }
 
+export async function suggestSimilarCategories(supabase: any, userId: number, query: string, limit: number = 3): Promise<{ name: string; similarity: number }[]> {
+  const { data } = await supabase.rpc("suggest_categories", {
+    p_user_id: userId,
+    p_query: query,
+    p_limit: limit,
+  });
+  return data || [];
+}
+
+export async function suggestSimilarGroups(supabase: any, userId: number, query: string, limit: number = 3): Promise<{ name: string; similarity: number }[]> {
+  const { data } = await supabase.rpc("suggest_groups", {
+    p_user_id: userId,
+    p_query: query,
+    p_limit: limit,
+  });
+  return data || [];
+}
+
+export async function getAllUserTags(supabase: any, userId: number): Promise<string[]> {
+  const { data: transactions } = await supabase
+    .from("transactions")
+    .select("tags")
+    .eq("user_id", userId);
+  const tagSet = new Set<string>();
+  if (transactions) {
+    for (const t of transactions) {
+      if (t.tags && Array.isArray(t.tags)) {
+        for (const tag of t.tags) {
+          tagSet.add(tag);
+        }
+      }
+    }
+  }
+  return Array.from(tagSet).sort();
+}
+
+export async function suggestSimilarTags(supabase: any, userId: number, query: string, limit: number = 3): Promise<{ tag: string; similarity: number }[]> {
+  const { data } = await supabase.rpc("suggest_tags", {
+    p_user_id: userId,
+    p_query: query,
+    p_limit: limit,
+  });
+  return data || [];
+}
+
+export async function sendSimilarityWarning(
+  supabase: any,
+  userId: number,
+  chatId: number,
+  type: "category" | "group" | "tag",
+  query: string
+): Promise<void> {
+  let similar: { name?: string; tag?: string; similarity: number }[];
+  switch (type) {
+    case "category":
+      similar = await suggestSimilarCategories(supabase, userId, query);
+      break;
+    case "group":
+      similar = await suggestSimilarGroups(supabase, userId, query);
+      break;
+    case "tag": {
+      const clean = query.replace(/^#/, "");
+      similar = await suggestSimilarTags(supabase, userId, clean);
+      break;
+    }
+  }
+  if (similar.length === 0) return;
+  const label = type === "category" ? "categoria" : type === "group" ? "grupo" : "tag";
+  const match = similar[0];
+  const matchName = match.name || match.tag || "";
+  const pct = (match.similarity * 100).toFixed(0);
+  await sendTelegramMessage(chatId,
+    `💡 Dica: ${label} "${query}" é similar a *${matchName}* (${pct}%). Considere usar ${matchName} em vez de ${query}.`
+  );
+}
+
 export async function getOrCreateGroup(supabase: any, userId: number, groupName: string | null): Promise<string | null> {
   if (!groupName) {
     const { data: defaultGroup } = await supabase
@@ -59,14 +135,21 @@ export async function getOrCreateGroup(supabase: any, userId: number, groupName:
       .select("id")
       .eq("user_id", userId)
       .eq("is_default", true)
-      .single();
+      .maybeSingle();
     return defaultGroup?.id || null;
   }
+  const normalizedName = normalizeString(groupName);
   const { data: existing } = await supabase
     .from("groups")
     .select("id")
     .eq("user_id", userId)
-    .ilike("name", groupName)
-    .single();
-  return existing?.id || null;
+    .eq("normalized_name", normalizedName)
+    .maybeSingle();
+  if (existing) return existing.id;
+  const { data: newGroup } = await supabase
+    .from("groups")
+    .insert({ user_id: userId, name: groupName, normalized_name: normalizedName })
+    .select("id")
+    .maybeSingle();
+  return newGroup?.id || null;
 }

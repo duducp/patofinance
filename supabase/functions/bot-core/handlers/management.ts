@@ -1,6 +1,7 @@
 import { InlineKeyboard } from "../types/index.ts";
-import { sendTelegramMessage, sendTelegramMessageWithKeyboard } from "../services/telegram.ts";
-import { getOrCreateUser, normalizeString } from "../services/database.ts";
+import { sendTelegramMessage, sendTelegramMessageWithKeyboard, editTelegramMessageWithKeyboard } from "../services/telegram.ts";
+import { truncateCallbackData } from "../utils/rate-limiter.ts";
+import { getOrCreateUser, normalizeString, suggestSimilarCategories, suggestSimilarGroups, getAllUserTags } from "../services/database.ts";
 import { formatCurrencyBR, formatDateBR } from "../utils/formatting.ts";
 
 export async function handleCreateCategory(supabase: any, userId: number, chatId: number, name: string): Promise<void> {
@@ -12,15 +13,27 @@ export async function handleCreateCategory(supabase: any, userId: number, chatId
 
   const normalizedName = normalizeString(name);
 
+  // Check for exact match (normalized)
   const { data: existing } = await supabase
     .from("categories")
     .select("id")
     .eq("user_id", user.id)
-    .ilike("normalized_name", normalizedName)
-    .single();
+    .eq("normalized_name", normalizedName)
+    .maybeSingle();
 
   if (existing) {
     await sendTelegramMessage(chatId, `⚠️ A categoria "${name}" já existe.`);
+    return;
+  }
+
+  // Check for similar names
+  const similar = await suggestSimilarCategories(supabase, user.id, name);
+  if (similar && similar.length > 0) {
+    const suggestions = similar.map(s => `• ${s.name} (${(s.similarity * 100).toFixed(0)}%)`).join("\n");
+    await sendTelegramMessage(chatId,
+      `⚠️ Categoria "${name}" não encontrada, mas encontrei similares:\n${suggestions}\n\n` +
+      `Use o nome exato para reutilizar ou /categoria ${name} para criar mesmo assim.`
+    );
     return;
   }
 
@@ -28,7 +41,7 @@ export async function handleCreateCategory(supabase: any, userId: number, chatId
     user_id: user.id,
     name: name,
     normalized_name: normalizedName,
-    is_default: false,
+    is_predefined: false,
   });
 
   if (error) {
@@ -46,21 +59,34 @@ export async function handleCreateGroup(supabase: any, userId: number, chatId: n
     return;
   }
 
+  // Check for exact match (normalized)
   const { data: existing } = await supabase
     .from("groups")
     .select("id")
     .eq("user_id", user.id)
-    .ilike("name", name)
-    .single();
+    .eq("normalized_name", normalizeString(name))
+    .maybeSingle();
 
   if (existing) {
     await sendTelegramMessage(chatId, `⚠️ O grupo "${name}" já existe.`);
     return;
   }
 
+  // Check for similar names
+  const similar = await suggestSimilarGroups(supabase, user.id, name);
+  if (similar && similar.length > 0) {
+    const suggestions = similar.map(s => `• ${s.name} (${(s.similarity * 100).toFixed(0)}%)`).join("\n");
+    await sendTelegramMessage(chatId,
+      `⚠️ Grupo "${name}" não encontrado, mas encontrei similares:\n${suggestions}\n\n` +
+      `Use o nome exato para reutilizar ou /grupo ${name} para criar mesmo assim.`
+    );
+    return;
+  }
+
   const { error } = await supabase.from("groups").insert({
     user_id: user.id,
     name: name,
+    normalized_name: normalizeString(name),
     is_default: false,
   });
 
@@ -81,7 +107,7 @@ export async function handleListCategories(supabase: any, userId: number, chatId
 
   const { data: categories } = await supabase
     .from("categories")
-    .select("name, is_default")
+    .select("name, is_predefined")
     .eq("user_id", user.id)
     .order("name");
 
@@ -92,7 +118,7 @@ export async function handleListCategories(supabase: any, userId: number, chatId
 
   let message = "🏷️ *Suas categorias:*\n\n";
   for (const c of categories) {
-    const defaultTag = c.is_default ? " ⭐ (padrão)" : "";
+    const defaultTag = c.is_predefined ? " ⭐ (padrão)" : "";
     message += `• ${c.name}${defaultTag}\n`;
   }
   message += "\n💡 Para criar: `/categoria nome_da_categoria`";
@@ -133,45 +159,41 @@ export async function handleListTags(supabase: any, userId: number, chatId: numb
     return;
   }
 
-  const { data: transactions } = await supabase
-    .from("transactions")
-    .select("tags")
-    .eq("user_id", user.id);
+  const allTags = await getAllUserTags(supabase, user.id);
 
-  if (!transactions || transactions.length === 0) {
-    await sendTelegramMessage(chatId, "🏷️ Nenhuma tag encontrada. Adicione tags ao registrar transações.");
-    return;
-  }
-
-  const allTags = new Set<string>();
-  for (const t of transactions) {
-    if (t.tags) {
-      for (const tag of t.tags) {
-        allTags.add(tag);
-      }
-    }
-  }
-
-  if (allTags.size === 0) {
+  if (allTags.length === 0) {
     await sendTelegramMessage(chatId, "🏷️ Nenhuma tag encontrada. Adicione tags ao registrar transações.");
     return;
   }
 
   let message = "🏷️ *Suas tags:*\n\n";
-  for (const tag of Array.from(allTags).sort()) {
+  for (const tag of allTags) {
     message += `• #${tag}\n`;
   }
   await sendTelegramMessage(chatId, message);
 }
 
-export async function handleListTransactions(supabase: any, userId: number, chatId: number, limit: number, tag?: string): Promise<void> {
+export async function handleListTransactions(supabase: any, userId: number, chatId: number, limit: number, tag?: string, page: number = 0, messageId?: number): Promise<void> {
   const user = await getOrCreateUser(supabase, userId);
   if (!user) {
     await sendTelegramMessage(chatId, "Ops! Você ainda não está cadastrado. Use /start para começar.");
     return;
   }
 
-  let query = supabase
+  const offset = page * limit;
+  const fetchLimit = limit + 1;
+
+  // Get total count for pagination info
+  let countQuery = supabase
+    .from("transactions")
+    .select("*", { count: "exact", head: true })
+    .eq("user_id", user.id);
+
+  if (tag) {
+    countQuery = countQuery.contains("tags", [tag]);
+  }
+
+  let dataQuery = supabase
     .from("transactions")
     .select(`
       id,
@@ -186,30 +208,66 @@ export async function handleListTransactions(supabase: any, userId: number, chat
     .eq("user_id", user.id)
     .order("transaction_date", { ascending: false })
     .order("created_at", { ascending: false })
-    .limit(limit);
+    .range(offset, offset + fetchLimit - 1);
 
   if (tag) {
-    query = query.contains("tags", [tag]);
+    countQuery = countQuery.contains("tags", [tag]);
+    dataQuery = dataQuery.contains("tags", [tag]);
   }
 
-  const { data: transactions, error } = await query;
+  const [countResult, { data: transactions, error }] = await Promise.all([
+    countQuery,
+    dataQuery,
+  ]);
+  const totalCount = countResult.count;
 
   if (error || !transactions || transactions.length === 0) {
     await sendTelegramMessage(chatId, "📝 Nenhuma transação encontrada.");
     return;
   }
 
-  const tagLabel = tag ? ` com #${tag}` : "";
-  let message = `📋 *Últimas ${transactions.length} transações${tagLabel}:*\n\n`;
+  const hasMore = transactions.length > limit;
+  const items = hasMore ? transactions.slice(0, limit) : transactions;
 
-  for (const t of transactions) {
+  const totalPages = totalCount ? Math.ceil(totalCount / limit) : 1;
+  const tagLabel = tag ? ` com #${tag}` : "";
+  const pageInfo = totalPages > 1 ? ` (Página ${page + 1} de ${totalPages})` : "";
+  let message = `📋 *Últimas transações${tagLabel}${pageInfo}:*\n\n`;
+
+  for (const t of items) {
     const emoji = t.type === "income" ? "📈" : "📉";
     const catName = t.categories?.name || "Sem categoria";
     const dateStr = formatDateBR(t.transaction_date);
     message += `${emoji} ${dateStr} - *${formatCurrencyBR(Number(t.amount))}* | ${catName}\n`;
   }
 
-  await sendTelegramMessage(chatId, message);
+  // Build navigation keyboard
+  const keyboard: InlineKeyboard = [];
+  const navRow: { text: string; callback_data: string }[] = [];
+
+  if (page > 0) {
+    const prevCallback = tag
+      ? truncateCallbackData(`txlist_t${tag}_p${page - 1}`)
+      : `txlist_p${page - 1}`;
+    navRow.push({ text: "◀️ Anterior", callback_data: prevCallback });
+  }
+  if (hasMore) {
+    const nextCallback = tag
+      ? truncateCallbackData(`txlist_t${tag}_p${page + 1}`)
+      : `txlist_p${page + 1}`;
+    navRow.push({ text: "▶️ Próximo", callback_data: nextCallback });
+  }
+  if (navRow.length > 0) {
+    keyboard.push(navRow);
+  }
+
+  if (messageId) {
+    await editTelegramMessageWithKeyboard(chatId, messageId, message, keyboard);
+  } else if (keyboard.length > 0) {
+    await sendTelegramMessageWithKeyboard(chatId, message, keyboard);
+  } else {
+    await sendTelegramMessage(chatId, message);
+  }
 }
 
 export async function handleShowLastTransaction(supabase: any, userId: number, chatId: number): Promise<void> {
@@ -251,7 +309,7 @@ export async function handleShowLastTransaction(supabase: any, userId: number, c
 
   const keyboard: InlineKeyboard = [
     [
-      { text: "✏️ Editar", callback_data: `edit_${transaction.id}` },
+      { text: "✏️ Editar", callback_data: `edit_show_${transaction.id}` },
       { text: "🗑️ Excluir", callback_data: `confirm_delete_${transaction.id}` },
     ],
   ];
@@ -317,14 +375,25 @@ export async function handleDeleteLastTransaction(supabase: any, userId: number,
   );
 }
 
-export async function handleListByTag(supabase: any, userId: number, chatId: number, tag: string): Promise<void> {
+export async function handleListByTag(supabase: any, userId: number, chatId: number, tag: string, page: number = 0, messageId?: number): Promise<void> {
   const user = await getOrCreateUser(supabase, userId);
   if (!user) {
     await sendTelegramMessage(chatId, "Ops! Você ainda não está cadastrado. Use /start para começar.");
     return;
   }
 
-  const { data: transactions, error } = await supabase
+  const limit = 10;
+  const offset = page * limit;
+  const fetchLimit = limit + 1;
+
+  // Get total count for pagination info
+  const countPromise = supabase
+    .from("transactions")
+    .select("*", { count: "exact", head: true })
+    .eq("user_id", user.id)
+    .contains("tags", [tag]);
+
+  const dataPromise = supabase
     .from("transactions")
     .select(`
       id,
@@ -340,25 +409,52 @@ export async function handleListByTag(supabase: any, userId: number, chatId: num
     .contains("tags", [tag])
     .order("transaction_date", { ascending: false })
     .order("created_at", { ascending: false })
-    .limit(10);
+    .range(offset, offset + fetchLimit - 1);
+
+  const [countResult, { data: transactions, error }] = await Promise.all([
+    countPromise,
+    dataPromise,
+  ]);
+  const totalCount = countResult.count;
 
   if (error || !transactions || transactions.length === 0) {
     await sendTelegramMessage(chatId, `📝 Nenhuma transação encontrada com a tag #${tag}.`);
     return;
   }
 
-  let message = `🏷️ *Transações com #${tag}:*\n\n`;
+  const hasMore = transactions.length > limit;
+  const items = hasMore ? transactions.slice(0, limit) : transactions;
 
-  for (const t of transactions) {
+  const totalPages = totalCount ? Math.ceil(totalCount / limit) : 1;
+  const pageInfo = totalPages > 1 ? ` (Página ${page + 1} de ${totalPages})` : "";
+  let message = `🏷️ *Transações com #${tag}${pageInfo}:*\n\n`;
+
+  for (const t of items) {
     const emoji = t.type === "income" ? "📈" : "📉";
     const catName = t.categories?.name || "Sem categoria";
     const dateStr = formatDateBR(t.transaction_date);
     message += `${emoji} ${dateStr} - *${formatCurrencyBR(Number(t.amount))}* | ${catName}\n`;
   }
 
-  if (transactions.length === 10) {
-    message += "\n💡 Para ver mais, use: `últimas transações com #${tag}`";
+  // Build navigation keyboard
+  const keyboard: InlineKeyboard = [];
+  const navRow: { text: string; callback_data: string }[] = [];
+
+  if (page > 0) {
+    navRow.push({ text: "◀️ Anterior", callback_data: truncateCallbackData(`txlist_t${tag}_p${page - 1}`) });
+  }
+  if (hasMore) {
+    navRow.push({ text: "▶️ Próximo", callback_data: truncateCallbackData(`txlist_t${tag}_p${page + 1}`) });
+  }
+  if (navRow.length > 0) {
+    keyboard.push(navRow);
   }
 
-  await sendTelegramMessage(chatId, message);
+  if (messageId) {
+    await editTelegramMessageWithKeyboard(chatId, messageId, message, keyboard);
+  } else if (keyboard.length > 0) {
+    await sendTelegramMessageWithKeyboard(chatId, message, keyboard);
+  } else {
+    await sendTelegramMessage(chatId, message);
+  }
 }
