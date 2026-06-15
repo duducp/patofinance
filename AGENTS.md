@@ -29,6 +29,18 @@ Runtime: **Deno** (not Node.js). Imports use `https://deno.land/std` and `https:
 - **TypeScript variable redeclaration** — `const` in switch cases can cause boot errors. Use unique names per case.
 - **`supabase functions logs`** does not exist — use Supabase Dashboard or check webhook `last_error_message`
 
+## Development Workflow
+
+**Rule: Always test Edge Functions locally before deploying to production.**
+
+```bash
+make dev-deploy             # Deploy locally first
+make dev-test-start         # Test the change
+make dev-test-gasto         # Test another command
+# Only then:
+make prod-deploy            # Deploy to production
+```
+
 ## Local Development
 
 ```bash
