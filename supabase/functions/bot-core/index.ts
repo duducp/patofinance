@@ -704,18 +704,6 @@ async function handleReceita(
     return;
   }
 
-  // Get user's internal ID
-  const { data: user } = await supabase
-    .from("users")
-    .select("id")
-    .eq("telegram_id", userId)
-    .single();
-
-  if (!user) {
-    await sendTelegramMessage(chatId, "Usuário não encontrado.");
-    return;
-  }
-
   // Get or create category
   let categoryId = null;
   if (parsed.category) {
