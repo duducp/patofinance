@@ -176,18 +176,19 @@ export async function executeNaturalLanguageAction(
   natural: DeepSeekResponse
 ): Promise<void> {
   if ((natural.intent === "expense" || natural.intent === "income") && natural.amount) {
+    const user = await getOrCreateUser(supabase, userId);
+    if (!user) return;
+
     let category = natural.category;
 
     if (category) {
-      const resolved = await resolveCategoryForNL(supabase, userId, category, natural.intent);
+      const resolved = await resolveCategoryForNL(supabase, user.id, category, natural.intent);
       if (resolved) {
         if (resolved.name !== category) {
           await sendTelegramMessage(chatId, `💡 Usei a categoria *${resolved.name}* para "${category}"`);
         }
         category = resolved.name;
       } else {
-        const user = await getOrCreateUser(supabase, userId);
-        if (!user) return;
         const categories = await getCategories(supabase, user.id, natural.intent);
         const keyboard: InlineKeyboard = [];
         let row: { text: string; callback_data: string }[] = [];
@@ -215,8 +216,6 @@ export async function executeNaturalLanguageAction(
       }
     }
 
-    const user = await getOrCreateUser(supabase, userId);
-    if (!user) return;
     await handleNLWithGroupCheck(supabase, userId, user.id, chatId, natural.intent, natural, category);
     return;
   }
