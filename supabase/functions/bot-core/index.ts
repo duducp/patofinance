@@ -98,6 +98,54 @@ async function handleSaldo(
   );
 }
 
+interface WizardState {
+  step: string;
+  data: Record<string, any>;
+}
+
+async function getWizardState(
+  supabase: any,
+  userId: number
+): Promise<WizardState | null> {
+  const { data } = await supabase
+    .from("wizard_states")
+    .select("step, data, expires_at")
+    .eq("user_id", userId)
+    .single();
+
+  if (!data) return null;
+
+  if (new Date(data.expires_at) < new Date()) {
+    await supabase.from("wizard_states").delete().eq("user_id", userId);
+    return null;
+  }
+
+  return { step: data.step, data: data.data };
+}
+
+async function setWizardState(
+  supabase: any,
+  userId: number,
+  step: string,
+  data: Record<string, any> = {}
+): Promise<void> {
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+
+  await supabase.from("wizard_states").upsert({
+    user_id: userId,
+    step: step,
+    data: data,
+    expires_at: expiresAt,
+  });
+}
+
+async function clearWizardState(
+  supabase: any,
+  userId: number
+): Promise<void> {
+  await supabase.from("wizard_states").delete().eq("user_id", userId);
+}
+
 interface ParsedCommand {
   amount: number | null;
   category: string | null;
@@ -145,21 +193,6 @@ async function handleGasto(
   chatId: number,
   args: string[]
 ): Promise<void> {
-  if (args.length === 0) {
-    // Start wizard
-    await sendTelegramMessage(chatId, "Quanto você gastou?");
-    // TODO: Implement wizard state management
-    return;
-  }
-
-  const parsed = parseCommand(args);
-
-  if (!parsed.amount) {
-    await sendTelegramMessage(chatId, "Por favor, informe o valor. Ex: /gasto 50 alimentação");
-    return;
-  }
-
-  // Get user's internal ID
   const { data: user } = await supabase
     .from("users")
     .select("id")
@@ -171,7 +204,26 @@ async function handleGasto(
     return;
   }
 
-  // Get or create category
+  const wizardState = await getWizardState(supabase, user.id);
+
+  if (wizardState) {
+    await handleGastoWizard(supabase, user.id, chatId, wizardState, args[0] || "");
+    return;
+  }
+
+  if (args.length === 0) {
+    await sendTelegramMessage(chatId, "Quanto você gastou?");
+    await setWizardState(supabase, user.id, "gasto_amount");
+    return;
+  }
+
+  const parsed = parseCommand(args);
+
+  if (!parsed.amount) {
+    await sendTelegramMessage(chatId, "Por favor, informe o valor. Ex: /gasto 50 alimentação");
+    return;
+  }
+
   let categoryId = null;
   if (parsed.category) {
     const { data: existingCategory } = await supabase
@@ -193,7 +245,6 @@ async function handleGasto(
     }
   }
 
-  // Get group
   let groupId = null;
   if (parsed.group) {
     const { data: group } = await supabase
@@ -204,7 +255,6 @@ async function handleGasto(
       .single();
     groupId = group?.id;
   } else {
-    // Use default group
     const { data: defaultGroup } = await supabase
       .from("groups")
       .select("id")
@@ -214,7 +264,6 @@ async function handleGasto(
     groupId = defaultGroup?.id;
   }
 
-  // Create transaction
   const { error } = await supabase.from("transactions").insert({
     user_id: user.id,
     group_id: groupId,
@@ -239,6 +288,91 @@ async function handleGasto(
     `Grupo: ${parsed.group || "Pessoal"}\n` +
     `Data: ${parsed.date || new Date().toISOString().split("T")[0]}`
   );
+}
+
+async function handleGastoWizard(
+  supabase: any,
+  userId: number,
+  chatId: number,
+  state: WizardState,
+  input: string
+): Promise<void> {
+  switch (state.step) {
+    case "gasto_amount":
+      const amount = parseFloat(input);
+      if (isNaN(amount) || amount <= 0) {
+        await sendTelegramMessage(chatId, "Por favor, informe um valor válido.");
+        return;
+      }
+      await setWizardState(supabase, userId, "gasto_category", { amount });
+      await sendTelegramMessage(chatId, "Qual categoria?");
+      break;
+
+    case "gasto_category":
+      await setWizardState(supabase, userId, "gasto_group", {
+        ...state.data,
+        category: input,
+      });
+      await sendTelegramMessage(chatId, "Qual grupo?");
+      break;
+
+    case "gasto_group":
+      const { amount: finalAmount, category: finalCategory } = state.data;
+
+      let categoryId = null;
+      const { data: existingCategory } = await supabase
+        .from("categories")
+        .select("id")
+        .eq("user_id", userId)
+        .ilike("name", finalCategory)
+        .single();
+
+      if (existingCategory) {
+        categoryId = existingCategory.id;
+      } else {
+        const { data: newCategory } = await supabase
+          .from("categories")
+          .insert({ user_id: userId, name: finalCategory })
+          .select("id")
+          .single();
+        categoryId = newCategory?.id;
+      }
+
+      let groupId = null;
+      const { data: group } = await supabase
+        .from("groups")
+        .select("id")
+        .eq("user_id", userId)
+        .ilike("name", input)
+        .single();
+      groupId = group?.id;
+
+      const { error } = await supabase.from("transactions").insert({
+        user_id: userId,
+        group_id: groupId,
+        category_id: categoryId,
+        type: "expense",
+        amount: finalAmount,
+        description: finalCategory,
+        transaction_date: new Date().toISOString().split("T")[0],
+      });
+
+      await clearWizardState(supabase, userId);
+
+      if (error) {
+        await sendTelegramMessage(chatId, "Erro ao registrar gasto. Tente novamente.");
+        return;
+      }
+
+      await sendTelegramMessage(
+        chatId,
+        `✅ *Despesa registrada!*\n\n` +
+        `Valor: R$ ${finalAmount.toFixed(2)}\n` +
+        `Categoria: ${finalCategory}\n` +
+        `Grupo: ${input}`
+      );
+      break;
+  }
 }
 
 async function handleReceita(
@@ -593,6 +727,13 @@ serve(async (req: Request): Promise<Response> => {
         message.chat.id,
         `Olá ${message.from.first_name}! 👋\n\nBem-vindo ao Bot de Controle Financeiro!\n\nUse /ajuda para ver os comandos disponíveis.`
       );
+      return new Response("OK", { status: 200 });
+    }
+
+    // Check for active wizard
+    const wizardState = await getWizardState(supabase, existingUser.id);
+    if (wizardState && !text.startsWith("/")) {
+      await handleGastoWizard(supabase, existingUser.id, message.chat.id, wizardState, text);
       return new Response("OK", { status: 200 });
     }
 
