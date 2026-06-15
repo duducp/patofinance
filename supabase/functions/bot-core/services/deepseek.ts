@@ -54,8 +54,8 @@ Formato esperado:
 {"intent":"string|null","amount":number|null,"category":"string|null","date":"string|null","period":"this_month|last_month|null","name":"string|null","tag":"string|null","limit":number|null}
 
 Intents:
-- "expense": registrar despesa (gastei, paguei, comprei)
-- "income": registrar receita (recebi, ganhei, entrou)
+- "expense": despesa (gastei, gasto, paguei, comprei, debitou, custou, gasolina, ifood, aluguel, conta, fatura, boleto, assinatura)
+- "income": receita (recebi, ganhei, salário, renda, bônus, freela, deposito, caiu, creditou, lucro, vendi, investimento)
 - "query_balance": ver saldo (quanto tenho, saldo)
 - "query_expenses_month": gastos do mês atual
 - "query_expenses_last_month": gastos do mês passado
@@ -76,6 +76,8 @@ Intents:
 - null: não entendeu
 
 REGRAS IMPORTANTES:
+- Identifique a intenção mesmo com typos do usuário (ex: "ganheir" quer dizer "ganhei")
+- Se não houver palavra-chave clara indicando despesa ou receita, retorne intent como null
 - category: use nomes de categorias existentes quando possível (ex: "gasolina" → "Transporte", "ifood" → "Alimentação", "aluguel" → "Moradia"). Apenas crie categoria nova se for algo realmente específico que não se encaixa em categorias comuns.
 - amount numérico, date YYYY-MM-DD, period this_month/last_month, name para criar entidade, tag sem #
 - limit padrão 10`,

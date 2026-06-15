@@ -161,11 +161,11 @@ async function handleNLWithGroupCheck(
   }
 
   const args = [natural.amount!.toString()];
-  if (resolvedCategory) args.push(resolvedCategory);
   if (natural.date) {
     const dateBR = parseDateBR(natural.date) || natural.date;
     args.push("--data", dateBR);
   }
+  if (resolvedCategory) args.push(resolvedCategory);
   await handleTransaction(type, supabase, telegramId, chatId, args, natural.category || undefined);
 }
 

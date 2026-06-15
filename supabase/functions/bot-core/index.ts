@@ -296,12 +296,12 @@ serve(async (req: Request): Promise<Response> => {
           return new Response("OK", { status: 200 });
         }
         const args = [amount.toString()];
-        if (category) args.push(category);
-        args.push("--grupo", text.trim());
         if (date) {
           const dateBR = parseDateBR(date) || date;
           args.push("--data", dateBR);
         }
+        args.push("--grupo", text.trim());
+        if (category) args.push(category);
         await clearWizardState(supabase, existingUser.id);
         await handleTransaction(type, supabase, message.from.id, message.chat.id, args, description || undefined);
       } else if (wizardState.step === "nl_list_by_tag_name") {
@@ -340,7 +340,7 @@ serve(async (req: Request): Promise<Response> => {
 
       if (natural.intent === null) {
         if (text.match(/\d+[,\.]?\d*/)) {
-          await setWizardState(supabase, existingUser.id, "nl_ask_type", { text });
+          await setWizardState(supabase, existingUser.id, "nl_ask_type", { text, date: natural.date });
           const keyboard = [
             [{ text: "💸 Despesa", callback_data: "nl_type_expense" }],
             [{ text: "💰 Receita", callback_data: "nl_type_income" }],

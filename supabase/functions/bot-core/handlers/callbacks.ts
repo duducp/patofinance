@@ -643,6 +643,9 @@ export async function handleCallbackQuery(
           const amount = parseFloat(match[1].replace(",", "."));
           if (!isNaN(amount) && amount > 0) args.push(amount.toString());
         }
+        if (state.data.date) {
+          args.push("--data", state.data.date);
+        }
       }
       await clearWizardState(supabase, user.id);
       await handleTransaction(type, supabase, telegramId, chatId, args);
@@ -680,12 +683,12 @@ export async function handleCallbackQuery(
       const date = state.data.date;
       if (!amount) return;
       const args = [amount.toString()];
-      if (category) args.push(category);
-      if (groupName !== "skip") args.push("--grupo", groupName);
       if (date) {
         const dateBR = parseDateBR(date) || date;
         args.push("--data", dateBR);
       }
+      if (groupName !== "skip") args.push("--grupo", groupName);
+      if (category) args.push(category);
       await clearWizardState(supabase, user.id);
       await handleTransaction(type, supabase, telegramId, chatId, args, description || undefined);
       return;
