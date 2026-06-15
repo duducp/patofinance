@@ -34,6 +34,7 @@ import {
   handleDelete,
   handleGroup,
   handleCategory,
+  handleTag,
   handleCleanup,
 } from "./handlers/commands.ts";
 
@@ -143,6 +144,14 @@ serve(async (req: Request): Promise<Response> => {
         }));
         await supabase.from("categories").insert(categories);
       }
+
+      // Create fallback category for deleted categories
+      await supabase.from("categories").insert({
+        user_id: newUser.id,
+        name: "Sem categoria",
+        normalized_name: "semcategoria",
+        is_predefined: true,
+      });
 
       await handleStart(message.chat.id, message.from.first_name);
       return new Response("OK", { status: 200 });
@@ -319,6 +328,10 @@ serve(async (req: Request): Promise<Response> => {
 
         case "/categoria":
           await handleCategory(supabase, message.from.id, message.chat.id, args);
+          break;
+
+        case "/tag":
+          await handleTag(supabase, message.from.id, message.chat.id, args);
           break;
 
         case "/limpar":

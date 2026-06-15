@@ -4,6 +4,7 @@ import { requireUser, getOrCreateUser, getOrCreateCategory, getOrCreateGroup, no
 import { formatCurrencyBR, formatDateBR, getTodayISOBR } from "../utils/formatting.ts";
 import { getDateRange } from "../utils/date-helpers.ts";
 import { parseCommand } from "../utils/command-parsing.ts";
+import { truncateCallbackData } from "../utils/rate-limiter.ts";
 import { getSummaryData, formatSummaryMessage } from "./queries.ts";
 import { getWizardState, setWizardState, handleTransactionWizard } from "./wizard.ts";
 
@@ -31,7 +32,8 @@ export async function handleHelp(chatId: number): Promise<void> {
     `/excluir - Excluir transação (ex: \`/excluir 42\`)\n\n` +
     `📁 *Organização:*\n` +
     `/grupo - Gerenciar grupos\n` +
-    `/categoria - Gerenciar categorias\n\n` +
+    `/categoria - Gerenciar categorias\n` +
+    `/tag - Gerenciar tags\n\n` +
     `⚙️ *Utilidades:*\n` +
     `/limpar - Remover categorias/grupos sem transações\n` +
     `/cancelar - Cancelar operação em andamento\n` +
@@ -698,6 +700,60 @@ export async function handleGroup(supabase: any, userId: number, chatId: number,
 
 export async function handleCategory(supabase: any, userId: number, chatId: number, args: string[]): Promise<void> {
   return handleEntity("category", supabase, userId, chatId, args);
+}
+
+export async function handleTag(supabase: any, userId: number, chatId: number, args: string[]): Promise<void> {
+  const user = await getOrCreateUser(supabase, userId);
+  if (!user) {
+    await sendTelegramMessage(chatId, "Ops! Você ainda não está cadastrado. Use /start para começar.");
+    return;
+  }
+
+  const allTags = await getAllUserTags(supabase, user.id);
+
+  if (allTags.length === 0) {
+    await sendTelegramMessage(chatId, "🏷️ Nenhuma tag encontrada. Adicione tags ao registrar transações.");
+    return;
+  }
+
+  // Get tag counts
+  const { data: transactions } = await supabase
+    .from("transactions")
+    .select("tags")
+    .eq("user_id", user.id);
+
+  const tagCount: Record<string, number> = {};
+  if (transactions) {
+    for (const t of transactions) {
+      if (t.tags && Array.isArray(t.tags)) {
+        for (const tag of t.tags) {
+          tagCount[tag] = (tagCount[tag] || 0) + 1;
+        }
+      }
+    }
+  }
+
+  let message = "🏷️ *Suas tags:*\n\n";
+  for (const tag of allTags) {
+    const count = tagCount[tag] || 0;
+    message += `• #${tag} — ${count} ${count !== 1 ? "transações" : "transação"}\n`;
+  }
+  message += "\n💡 Clique em uma tag para ver as transações.";
+
+  // Build keyboard with 3 tags per row
+  const keyboard: InlineKeyboard = [];
+  let row: { text: string; callback_data: string }[] = [];
+  for (const tag of allTags) {
+    const displayTag = tag.startsWith("#") ? tag : `#${tag}`;
+    row.push({ text: displayTag, callback_data: truncateCallbackData(`tag_sel_${tag}`) });
+    if (row.length === 3) {
+      keyboard.push(row);
+      row = [];
+    }
+  }
+  if (row.length > 0) keyboard.push(row);
+
+  await sendTelegramMessageWithKeyboard(chatId, message, keyboard);
 }
 
 export async function handleCleanup(supabase: any, userId: number, chatId: number): Promise<void> {

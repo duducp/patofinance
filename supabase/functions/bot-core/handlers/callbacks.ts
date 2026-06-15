@@ -1,6 +1,6 @@
 import { InlineKeyboard, DeepSeekResponse, TelegramCallbackQuery } from "../types/index.ts";
 import { sendTelegramMessage, sendTelegramMessageWithKeyboard, editTelegramMessageWithKeyboard, answerCallbackQuery } from "../services/telegram.ts";
-import { getOrCreateUser, normalizeString, getAllUserTags } from "../services/database.ts";
+import { getOrCreateUser, normalizeString, getAllUserTags, getOrCreateUncategorizedCategory } from "../services/database.ts";
 import { formatDateBR, getTodayISOBR } from "../utils/formatting.ts";
 import { truncateCallbackData } from "../utils/rate-limiter.ts";
 import { getWizardState, setWizardState, clearWizardState, completeWizard, sendWizardStepMessage, getCurrentWizardStep, advanceWizardToNextStep } from "./wizard.ts";
@@ -516,6 +516,15 @@ export async function handleCallbackQuery(
       return;
     }
 
+    // Handle tag selection - show transactions with this tag
+    if (selectedValue.startsWith("tag_sel_")) {
+      const tag = selectedValue.replace("tag_sel_", "");
+      const user = await getOrCreateUser(supabase, telegramId);
+      if (!user) return;
+      await handleListByTag(supabase, user.id, chatId, tag, 0, message.message_id);
+      return;
+    }
+
     // Handle balance/summary group filter
     if (selectedValue === "balance_shwgrp" || selectedValue.startsWith("balance_grp_")) {
       await handleGroupFilterCallback(supabase, telegramId, chatId, "balance", selectedValue);
@@ -571,10 +580,17 @@ export async function handleCallbackQuery(
         await sendTelegramMessage(chatId, "⭐ Categorias padrão não podem ser excluídas.");
         return;
       }
-      // Set category_id to null on affected transactions
-      await supabase.from("transactions").update({ category_id: null }).eq("category_id", cat.id).eq("user_id", user.id);
+      // Count affected transactions before reassignment
+      const { count: txCount } = await supabase
+        .from("transactions")
+        .select("*", { count: "exact", head: true })
+        .eq("user_id", user.id)
+        .eq("category_id", cat.id);
+      // Reassign affected transactions to "Sem categoria" fallback
+      const fallbackCatId = await getOrCreateUncategorizedCategory(supabase, user.id);
+      await supabase.from("transactions").update({ category_id: fallbackCatId }).eq("category_id", cat.id).eq("user_id", user.id);
       await supabase.from("categories").delete().eq("id", cat.id).eq("user_id", user.id);
-      await sendTelegramMessage(chatId, `✅ Categoria "${catName}" excluída!`);
+      await sendTelegramMessage(chatId, `✅ Categoria "${catName}" excluída! ${txCount || 0} transação${(txCount || 0) !== 1 ? "ões" : ""} reatribuída${(txCount || 0) !== 1 ? "s" : ""} para "Sem categoria".`);
       return;
     }
 
@@ -583,11 +599,19 @@ export async function handleCallbackQuery(
       const catName = selectedValue.replace("cat_del_", "");
       const user = await getOrCreateUser(supabase, telegramId);
       if (!user) return;
+      // Get category ID and count affected transactions
+      const { data: cat } = await supabase.from("categories").select("id").eq("user_id", user.id).ilike("name", catName).single();
+      if (!cat) return;
+      const { count: txCount } = await supabase
+        .from("transactions")
+        .select("*", { count: "exact", head: true })
+        .eq("user_id", user.id)
+        .eq("category_id", cat.id);
       const keyboard: InlineKeyboard = [
         [{ text: "✅ Sim, excluir", callback_data: `cat_del_yes_${catName}` }],
         [{ text: "❌ Não, manter", callback_data: "cat_back" }],
       ];
-      await sendTelegramMessageWithKeyboard(chatId, `🗑️ Tem certeza de que deseja excluir a categoria *${catName}*?`, keyboard);
+      await sendTelegramMessageWithKeyboard(chatId, `🗑️ Tem certeza de que deseja excluir a categoria *${catName}*?\n\n${txCount || 0} transação${(txCount || 0) !== 1 ? "ões" : ""} serão reatribuída${(txCount || 0) !== 1 ? "s" : ""} para "Sem categoria".`, keyboard);
       return;
     }
 
@@ -643,11 +667,17 @@ export async function handleCallbackQuery(
         await sendTelegramMessage(chatId, "⭐ Grupos padrão não podem ser excluídos.");
         return;
       }
+      // Count affected transactions before reassignment
+      const { count: txCount } = await supabase
+        .from("transactions")
+        .select("*", { count: "exact", head: true })
+        .eq("user_id", user.id)
+        .eq("group_id", grp.id);
       // Set group_id to default on affected transactions
       const { data: defaultGrp } = await supabase.from("groups").select("id").eq("user_id", user.id).eq("is_default", true).single();
       await supabase.from("transactions").update({ group_id: defaultGrp?.id || null }).eq("group_id", grp.id).eq("user_id", user.id);
       await supabase.from("groups").delete().eq("id", grp.id).eq("user_id", user.id);
-      await sendTelegramMessage(chatId, `✅ Grupo "${grpName}" excluído!`);
+      await sendTelegramMessage(chatId, `✅ Grupo "${grpName}" excluído! ${txCount || 0} transação${(txCount || 0) !== 1 ? "ões" : ""} reatribuída${(txCount || 0) !== 1 ? "s" : ""} para "Pessoal".`);
       return;
     }
 
@@ -656,11 +686,19 @@ export async function handleCallbackQuery(
       const grpName = selectedValue.replace("grp_del_", "");
       const user = await getOrCreateUser(supabase, telegramId);
       if (!user) return;
+      // Get group ID and count affected transactions
+      const { data: grp } = await supabase.from("groups").select("id").eq("user_id", user.id).ilike("name", grpName).single();
+      if (!grp) return;
+      const { count: txCount } = await supabase
+        .from("transactions")
+        .select("*", { count: "exact", head: true })
+        .eq("user_id", user.id)
+        .eq("group_id", grp.id);
       const keyboard: InlineKeyboard = [
         [{ text: "✅ Sim, excluir", callback_data: `grp_del_yes_${grpName}` }],
         [{ text: "❌ Não, manter", callback_data: "grp_back" }],
       ];
-      await sendTelegramMessageWithKeyboard(chatId, `🗑️ Tem certeza de que deseja excluir o grupo *${grpName}*?`, keyboard);
+      await sendTelegramMessageWithKeyboard(chatId, `🗑️ Tem certeza de que deseja excluir o grupo *${grpName}*?\n\n${txCount || 0} transação${(txCount || 0) !== 1 ? "ões" : ""} serão reatribuída${(txCount || 0) !== 1 ? "s" : ""} para "Pessoal".`, keyboard);
       return;
     }
 

@@ -1,7 +1,7 @@
 import { InlineKeyboard } from "../types/index.ts";
 import { sendTelegramMessage, sendTelegramMessageWithKeyboard, editTelegramMessageWithKeyboard } from "../services/telegram.ts";
 import { truncateCallbackData } from "../utils/rate-limiter.ts";
-import { getOrCreateUser, normalizeString, suggestSimilarCategories, suggestSimilarGroups, getAllUserTags } from "../services/database.ts";
+import { getOrCreateUser, normalizeString, suggestSimilarCategories, suggestSimilarGroups } from "../services/database.ts";
 import { formatCurrencyBR, formatDateBR } from "../utils/formatting.ts";
 
 export async function handleCreateCategory(supabase: any, userId: number, chatId: number, name: string): Promise<void> {
@@ -149,27 +149,6 @@ export async function handleListGroups(supabase: any, userId: number, chatId: nu
     message += `• ${g.name}${defaultTag}\n`;
   }
   message += "\n💡 Para criar: `/grupo nome_do_grupo`";
-  await sendTelegramMessage(chatId, message);
-}
-
-export async function handleListTags(supabase: any, userId: number, chatId: number): Promise<void> {
-  const user = await getOrCreateUser(supabase, userId);
-  if (!user) {
-    await sendTelegramMessage(chatId, "Ops! Você ainda não está cadastrado. Use /start para começar.");
-    return;
-  }
-
-  const allTags = await getAllUserTags(supabase, user.id);
-
-  if (allTags.length === 0) {
-    await sendTelegramMessage(chatId, "🏷️ Nenhuma tag encontrada. Adicione tags ao registrar transações.");
-    return;
-  }
-
-  let message = "🏷️ *Suas tags:*\n\n";
-  for (const tag of allTags) {
-    message += `• #${tag}\n`;
-  }
   await sendTelegramMessage(chatId, message);
 }
 

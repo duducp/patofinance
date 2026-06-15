@@ -8,13 +8,13 @@ import {
   handleBalance,
   handleStatement,
   handleCleanup,
+  handleTag,
 } from "./commands.ts";
 import {
   handleCreateCategory,
   handleCreateGroup,
   handleListCategories,
   handleListGroups,
-  handleListTags,
   handleListTransactions,
   handleShowLastTransaction,
   handleDeleteLastTransaction,
@@ -185,7 +185,7 @@ export async function executeNaturalLanguageAction(
   }
 
   if (natural.intent === "list_tags") {
-    await handleListTags(supabase, userId, chatId);
+    await handleTag(supabase, userId, chatId, []);
     return;
   }
 

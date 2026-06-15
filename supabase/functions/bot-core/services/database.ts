@@ -153,3 +153,27 @@ export async function getOrCreateGroup(supabase: any, userId: number, groupName:
     .maybeSingle();
   return newGroup?.id || null;
 }
+
+export async function getOrCreateUncategorizedCategory(supabase: any, userId: number): Promise<string | null> {
+  // Look for existing "Sem categoria" entry
+  const { data: existing } = await supabase
+    .from("categories")
+    .select("id")
+    .eq("user_id", userId)
+    .eq("normalized_name", "semcategoria")
+    .maybeSingle();
+  if (existing) return existing.id;
+
+  // Create fallback category
+  const { data: newCat } = await supabase
+    .from("categories")
+    .insert({
+      user_id: userId,
+      name: "Sem categoria",
+      normalized_name: "semcategoria",
+      is_predefined: true,
+    })
+    .select("id")
+    .maybeSingle();
+  return newCat?.id || null;
+}

@@ -575,7 +575,7 @@ Project ref: `zjcfjqtlijktrikgvwrv`
 | `suggestSimilarGroups(supabase, userId, query, limit?)` | `{name, similarity}[]` | Handlers |
 | `suggestSimilarTags(supabase, userId, query, limit?)` | `{tag, similarity}[]` | Handlers |
 | `sendSimilarityWarning(supabase, userId, chatId, type, query)` | `void` | `handleTransaction` |
-| `getAllUserTags(supabase, userId)` | `string[]` | `handleListTags`, tag editors |
+| `getAllUserTags(supabase, userId)` | `string[]` | Tag editors |
 
 ### `services/telegram.ts` -- Telegram API wrapper
 
@@ -601,6 +601,7 @@ Project ref: `zjcfjqtlijktrikgvwrv`
 | `handleEntity(type, supabase, userId, chatId, args)` | (shared) | `type: "category"|"group"` -- list, create, suggest |
 | `handleGroup(supabase, userId, chatId, args)` | `/grupo` | Alias for `handleEntity("group", ...)` |
 | `handleCategory(supabase, userId, chatId, args)` | `/categoria` | Alias for `handleEntity("category", ...)` |
+| `handleTag(supabase, userId, chatId, args)` | `/tag` | Lists all tags with transaction counts + clickable buttons |
 | `handleCleanup(supabase, userId, chatId)` | `/limpar` | |
 
 ### `handlers/management.ts` -- Entity management
@@ -611,7 +612,6 @@ Project ref: `zjcfjqtlijktrikgvwrv`
 | `handleCreateGroup(supabase, userId, chatId, name)` | Same pattern |
 | `handleListCategories(supabase, userId, chatId)` | List with predefined indicator |
 | `handleListGroups(supabase, userId, chatId)` | List with default indicator |
-| `handleListTags(supabase, userId, chatId)` | List via `getAllUserTags` |
 | `handleListTransactions(supabase, userId, chatId, limit, tag?, page?, messageId?)` | Paginated list with COUNT + nav keyboard |
 | `handleShowLastTransaction(supabase, userId, chatId)` | Detail + edit/delete buttons |
 | `handleDeleteLastTransaction(supabase, userId, chatId)` | Confirm dialog |
@@ -681,6 +681,7 @@ Routes ~25 callback prefixes via `handleCallbackQuery`. Key callbacks:
 | `cat_back` / `grp_back` | Back to entity list | Sends new msg |
 | `cat_sug_use` / `cat_sug_new` | Category similarity resolve | Sends new msg |
 | `grp_sug_use` / `grp_sug_new` | Group similarity resolve | Sends new msg |
+| `tag_sel_` | Show transactions with tag | Edits msg |
 | `custom_date` | Wizard custom date | Sends new msg |
 
 ## File Structure
@@ -709,8 +710,8 @@ supabase/
     │   ├── database.ts       # 11 functions: CRUD + suggestSimilar* + getAllUserTags
     │   └── deepseek.ts       # callDeepSeek, parseNaturalLanguage, chat history
     └── handlers/
-        ├── commands.ts       # 12 slash command handlers + shared handleEntity
-        ├── management.ts     # 9 entity management functions with pagination
+        ├── commands.ts       # 13 slash command handlers + shared handleEntity
+        ├── management.ts     # 8 entity management functions with pagination
         ├── queries.ts        # getSummaryData, formatSummaryMessage, query handlers
         ├── nl-processing.ts  # NL routing + wizard initiation
         ├── callbacks.ts      # ~25 callback prefix handlers + handleGroupFilterCallback
