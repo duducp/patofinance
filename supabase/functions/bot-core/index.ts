@@ -565,93 +565,50 @@ async function handleGastoWizard(
   state: WizardState,
   input: string
 ): Promise<void> {
-  switch (state.step) {
-    case "gasto_amount": {
-      const amount = parseFloat(input);
-      if (isNaN(amount) || amount <= 0) {
-        await sendTelegramMessage(chatId, "Por favor, informe um valor válido.");
-        return;
-      }
-      await setWizardState(supabase, userId, "gasto_category", { amount });
-      await sendTelegramMessage(chatId, "Qual categoria?");
-      break;
+  const stepKey = state.step.replace("gasto_", "");
+  const { data: currentStep } = await supabase
+    .from("wizard_steps")
+    .select("*")
+    .eq("wizard_name", "gasto")
+    .eq("step_key", stepKey)
+    .single();
+
+  if (!currentStep) {
+    await sendTelegramMessage(chatId, "Erro ao processar wizard.");
+    return;
+  }
+
+  let value = input;
+
+  if (currentStep.input_type === "text" && stepKey === "amount") {
+    const amount = parseFloat(input);
+    if (isNaN(amount) || amount <= 0) {
+      await sendTelegramMessage(chatId, "Por favor, informe um valor válido.");
+      return;
     }
+    value = amount.toString();
+  }
 
-    case "gasto_custom_date": {
-      const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
-      if (!dateRegex.test(input)) {
-        await sendTelegramMessage(chatId, "Formato inválido. Use YYYY-MM-DD (ex: 2024-01-15).");
-        return;
-      }
-      await setWizardState(supabase, userId, "gasto_category", { ...state.data, date: input });
-      await sendTelegramMessage(chatId, "Qual categoria?");
-      break;
-    }
+  const { data: nextStep } = await supabase
+    .from("wizard_steps")
+    .select("*")
+    .eq("wizard_name", "gasto")
+    .gt("step_order", currentStep.step_order)
+    .order("step_order")
+    .limit(1)
+    .single();
 
-    case "gasto_category":
-      await setWizardState(supabase, userId, "gasto_group", {
-        ...state.data,
-        category: input,
-      });
-      await sendTelegramMessage(chatId, "Qual grupo?");
-      break;
-
-    case "gasto_group":
-      const { amount: finalAmount, category: finalCategory } = state.data;
-
-      let categoryId = null;
-      const { data: existingCategory } = await supabase
-        .from("categories")
-        .select("id")
-        .eq("user_id", userId)
-        .ilike("name", finalCategory)
-        .single();
-
-      if (existingCategory) {
-        categoryId = existingCategory.id;
-      } else {
-        const { data: newCategory } = await supabase
-          .from("categories")
-          .insert({ user_id: userId, name: finalCategory })
-          .select("id")
-          .single();
-        categoryId = newCategory?.id;
-      }
-
-      let groupId = null;
-      const { data: group } = await supabase
-        .from("groups")
-        .select("id")
-        .eq("user_id", userId)
-        .ilike("name", input)
-        .single();
-      groupId = group?.id;
-
-      const { error } = await supabase.from("transactions").insert({
-        user_id: userId,
-        group_id: groupId,
-        category_id: categoryId,
-        type: "expense",
-        amount: finalAmount,
-        description: finalCategory,
-        transaction_date: new Date().toISOString().split("T")[0],
-      });
-
-      await clearWizardState(supabase, userId);
-
-      if (error) {
-        await sendTelegramMessage(chatId, "Erro ao registrar gasto. Tente novamente.");
-        return;
-      }
-
-      await sendTelegramMessage(
-        chatId,
-        `✅ *Despesa registrada!*\n\n` +
-        `Valor: R$ ${finalAmount.toFixed(2)}\n` +
-        `Categoria: ${finalCategory}\n` +
-        `Grupo: ${input}`
-      );
-      break;
+  if (nextStep) {
+    await setWizardState(supabase, userId, `gasto_${nextStep.step_key}`, {
+      ...state.data,
+      [stepKey]: value,
+    });
+    await sendWizardStepMessage(chatId, nextStep, userId, supabase);
+  } else {
+    await completeWizard(supabase, userId, chatId, {
+      ...state.data,
+      [stepKey]: value,
+    });
   }
 }
 
