@@ -12,13 +12,24 @@ make help             # List all commands
 
 ## Architecture
 
-Single Edge Function (`supabase/functions/bot-core/index.ts`) handles all Telegram webhook processing.
+Single Edge Function (`supabase/functions/bot-core/`) handles all Telegram webhook processing. Refactored into modules:
 
 ```text
 Telegram → Edge Function (webhook) → Supabase DB → Bot API response
 ```
 
 Runtime: **Deno** (not Node.js). Imports use `https://deno.land/std` and `https://esm.sh`.
+
+## NL Processing
+
+Natural language via DeepSeek API. Flow:
+1. Check common phrases (no API call)
+2. Check cache (5min TTL)
+3. Call DeepSeek API (5s timeout)
+4. Parse JSON response
+5. Cache result
+
+If `DEEPSEEK_API_KEY` is not set, falls back to commands only.
 
 ## Critical Gotchas
 
@@ -29,6 +40,7 @@ Runtime: **Deno** (not Node.js). Imports use `https://deno.land/std` and `https:
 - **TypeScript variable redeclaration** — `const` in switch cases can cause boot errors. Use unique names per case.
 - **`supabase functions logs`** does not exist — use Supabase Dashboard or check webhook `last_error_message`
 - **ALWAYS use CLI for deploy** — `npx supabase functions deploy bot-core --no-verify-jwt`. The MCP tool `supabase_deploy_edge_function` doesn't read file content correctly.
+- **DeepSeek API key** required for natural language. Without it, bot only responds to slash commands.
 
 ## Development Workflow
 
@@ -86,6 +98,7 @@ make prod-webhook-info      # Check webhook status
 | `TELEGRAM_SECRET_TOKEN` | Supabase Secrets | Webhook verification token |
 | `SUPABASE_URL` | Auto-set by Supabase | Internal URL (`http://kong:8000` locally) |
 | `SUPABASE_SERVICE_ROLE_KEY` | Auto-set by Supabase | Used to bypass RLS |
+| `DEEPSEEK_API_KEY` | Supabase Secrets | DeepSeek API key for NL processing |
 
 ## Database
 
@@ -102,5 +115,24 @@ supabase/
 ├── config.toml              # Supabase config (verify_jwt, ports)
 ├── migrations/              # SQL migrations
 └── functions/bot-core/      # Single Edge Function (all bot logic)
-    └── index.ts
+    ├── index.ts             # Entry point (serve handler)
+    ├── config.ts            # Env vars, DeepSeek cache, common phrases
+    ├── types/
+    │   └── index.ts         # Interfaces (DeepSeekResponse, Telegram, etc.)
+    ├── utils/
+    │   ├── formatting.ts    # formatCurrencyBR, formatDateBR, etc.
+    │   ├── rate-limiter.ts  # isRateLimited, truncateCallbackData
+    │   ├── date-helpers.ts  # getDateRange
+    │   └── command-parsing.ts  # parseCommand
+    ├── services/
+    │   ├── telegram.ts      # sendTelegramMessage, etc.
+    │   ├── database.ts      # getOrCreateUser, getOrCreateCategory, etc.
+    │   └── deepseek.ts      # callDeepSeek, parseNaturalLanguage
+    └── handlers/
+        ├── commands.ts      # handleTransaction, handleSaldo, etc.
+        ├── management.ts    # handleCreateCategory, handleListTags, etc.
+        ├── queries.ts       # handleQueryExpenses, handleQuerySummary
+        ├── nl-processing.ts # handleNaturalLanguageWithFollowUp
+        ├── callbacks.ts     # handleCallbackQuery
+        └── wizard.ts        # getWizardState, completeWizard, etc.
 ```
