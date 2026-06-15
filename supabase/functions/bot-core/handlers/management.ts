@@ -1,6 +1,7 @@
 import { InlineKeyboard } from "../types/index.ts";
 import { sendTelegramMessage, sendTelegramMessageWithKeyboard, editTelegramMessageWithKeyboard } from "../services/telegram.ts";
 import { truncateCallbackData } from "../utils/rate-limiter.ts";
+import { addSession, getSessionSeq } from "../utils/session.ts";
 import { getOrCreateUser, normalizeString, suggestSimilarCategories, suggestSimilarGroups } from "../services/database.ts";
 import { formatCurrencyBR, formatDateBR } from "../utils/formatting.ts";
 
@@ -223,19 +224,20 @@ export async function handleListTransactions(supabase: any, userId: number, chat
   }
 
   // Build navigation keyboard
+  const sessionSeq = await getSessionSeq(supabase, user.id);
   const keyboard: InlineKeyboard = [];
   const navRow: { text: string; callback_data: string }[] = [];
 
   if (page > 0) {
     const prevCallback = tag
-      ? truncateCallbackData(`txlist_t${tag}_p${page - 1}`)
-      : `txlist_p${page - 1}`;
+      ? truncateCallbackData(`txlist_t${tag}_p${page - 1}`, sessionSeq)
+      : addSession(`txlist_p${page - 1}`, sessionSeq);
     navRow.push({ text: "◀️ Anterior", callback_data: prevCallback });
   }
   if (hasMore) {
     const nextCallback = tag
-      ? truncateCallbackData(`txlist_t${tag}_p${page + 1}`)
-      : `txlist_p${page + 1}`;
+      ? truncateCallbackData(`txlist_t${tag}_p${page + 1}`, sessionSeq)
+      : addSession(`txlist_p${page + 1}`, sessionSeq);
     navRow.push({ text: "▶️ Próximo", callback_data: nextCallback });
   }
   if (navRow.length > 0) {
@@ -288,10 +290,11 @@ export async function handleShowLastTransaction(supabase: any, userId: number, c
     ? transaction.tags.map((t: string) => `#${t}`).join(" ") 
     : "Sem tags";
 
+  const sessionSeq = await getSessionSeq(supabase, user.id);
   const keyboard: InlineKeyboard = [
     [
-      { text: "✏️ Editar", callback_data: `edit_show_${transaction.id}` },
-      { text: "🗑️ Excluir", callback_data: `confirm_delete_${transaction.id}` },
+      { text: "✏️ Editar", callback_data: addSession(`edit_show_${transaction.id}`, sessionSeq) },
+      { text: "🗑️ Excluir", callback_data: addSession(`confirm_delete_${transaction.id}`, sessionSeq) },
     ],
   ];
 
@@ -338,10 +341,11 @@ export async function handleDeleteLastTransaction(supabase: any, userId: number,
   const typeName = transaction.type === "income" ? "Receita" : "Despesa";
   const catName = transaction.categories?.name || "Sem categoria";
 
+  const sessionSeq = await getSessionSeq(supabase, user.id);
   const keyboard: InlineKeyboard = [
     [
-      { text: "✅ Sim, excluir", callback_data: `confirm_delete_${transaction.id}` },
-      { text: "❌ Não, manter", callback_data: "cancel_delete" },
+      { text: "✅ Sim, excluir", callback_data: addSession(`confirm_delete_${transaction.id}`, sessionSeq) },
+      { text: "❌ Não, manter", callback_data: addSession("cancel_delete", sessionSeq) },
     ],
   ];
 
@@ -419,14 +423,15 @@ export async function handleListByTag(supabase: any, userId: number, chatId: num
   }
 
   // Build navigation keyboard
+  const sessionSeq = await getSessionSeq(supabase, user.id);
   const keyboard: InlineKeyboard = [];
   const navRow: { text: string; callback_data: string }[] = [];
 
   if (page > 0) {
-    navRow.push({ text: "◀️ Anterior", callback_data: truncateCallbackData(`txlist_t${tag}_p${page - 1}`) });
+    navRow.push({ text: "◀️ Anterior", callback_data: truncateCallbackData(`txlist_t${tag}_p${page - 1}`, sessionSeq) });
   }
   if (hasMore) {
-    navRow.push({ text: "▶️ Próximo", callback_data: truncateCallbackData(`txlist_t${tag}_p${page + 1}`) });
+    navRow.push({ text: "▶️ Próximo", callback_data: truncateCallbackData(`txlist_t${tag}_p${page + 1}`, sessionSeq) });
   }
   if (navRow.length > 0) {
     keyboard.push(navRow);

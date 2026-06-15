@@ -7,6 +7,7 @@ import { getWizardState, setWizardState, clearWizardState, completeWizard, sendW
 import { executeNaturalLanguageAction } from "./nl-processing.ts";
 import { handleStatement, handleBalance, handleSummary, handleEdit, handleGroup, handleCategory, resolvePeriod } from "./commands.ts";
 import { handleListTransactions, handleListByTag } from "./management.ts";
+import { addSession, removeSession, validateCallbackSession, getSessionSeq } from "../utils/session.ts";
 
 const DEFAULT_FILTERS: ExtratoFilters = {
   category_id: null,
@@ -21,6 +22,7 @@ async function renderFilterPanelMessage(
   userId: number,
   chatId: number,
   filters: ExtratoFilters,
+  sessionSeq: number,
   messageId?: number
 ): Promise<void> {
   let catName = "Nenhuma";
@@ -57,14 +59,14 @@ async function renderFilterPanelMessage(
     `🔍 [Aplicar Filtros]  ❌ [Limpar]`;
 
   const keyboard: InlineKeyboard = [
-    [{ text: `🏷️ Categoria: ${catName}`, callback_data: "stmt_f_cat" }],
-    [{ text: `📁 Grupo: ${grpName}`, callback_data: "stmt_f_grp" }],
-    [{ text: `🔖 Tags: ${tagStr}`, callback_data: "stmt_f_tag" }],
-    [{ text: `📈 Tipo: ${typeLabels[filters.type]}`, callback_data: "stmt_f_type" }],
-    [{ text: `📅 Período: ${periodStr}`, callback_data: "stmt_f_period" }],
+    [{ text: `🏷️ Categoria: ${catName}`, callback_data: addSession("stmt_f_cat", sessionSeq) }],
+    [{ text: `📁 Grupo: ${grpName}`, callback_data: addSession("stmt_f_grp", sessionSeq) }],
+    [{ text: `🔖 Tags: ${tagStr}`, callback_data: addSession("stmt_f_tag", sessionSeq) }],
+    [{ text: `📈 Tipo: ${typeLabels[filters.type]}`, callback_data: addSession("stmt_f_type", sessionSeq) }],
+    [{ text: `📅 Período: ${periodStr}`, callback_data: addSession("stmt_f_period", sessionSeq) }],
     [
-      { text: "🔍 Aplicar", callback_data: "stmt_f_apply" },
-      { text: "❌ Limpar", callback_data: "stmt_f_clear" },
+      { text: "🔍 Aplicar", callback_data: addSession("stmt_f_apply", sessionSeq) },
+      { text: "❌ Limpar", callback_data: addSession("stmt_f_clear", sessionSeq) },
     ],
   ];
 
@@ -73,13 +75,12 @@ async function renderFilterPanelMessage(
   } else {
     await sendTelegramMessageWithKeyboard(chatId, message, keyboard);
   }
-}
-
-async function showCategorySelector(
+}    async function showCategorySelector(
   supabase: any,
   userId: number,
   chatId: number,
-  messageId: number
+  messageId: number,
+  sessionSeq: number
 ): Promise<void> {
   const { data: state } = await supabase.from("wizard_states").select("data").eq("user_id", userId).single();
   const filters: ExtratoFilters = state?.data || { ...DEFAULT_FILTERS };
@@ -95,7 +96,7 @@ async function showCategorySelector(
     let row: { text: string; callback_data: string }[] = [];
     for (const c of categories) {
       const isSelected = filters.category_id === c.id;
-      row.push({ text: isSelected ? `✅ ${c.name}` : c.name, callback_data: `stmt_f_cat_${c.id}` });
+      row.push({ text: isSelected ? `✅ ${c.name}` : c.name, callback_data: addSession(`stmt_f_cat_${c.id}`, sessionSeq) });
       if (row.length === 3) {
         keyboard.push(row);
         row = [];
@@ -103,8 +104,8 @@ async function showCategorySelector(
     }
     if (row.length > 0) keyboard.push(row);
   }
-  keyboard.push([{ text: "❌ Limpar", callback_data: "stmt_f_cat_0" }]);
-  keyboard.push([{ text: "◀️ Voltar", callback_data: "stmt_filter" }]);
+  keyboard.push([{ text: "❌ Limpar", callback_data: addSession("stmt_f_cat_0", sessionSeq) }]);
+  keyboard.push([{ text: "◀️ Voltar", callback_data: addSession("stmt_filter", sessionSeq) }]);
 
   await editTelegramMessageWithKeyboard(chatId, messageId, "🏷️ *Selecione a categoria:*", keyboard);
 }
@@ -113,7 +114,8 @@ async function showGroupSelector(
   supabase: any,
   userId: number,
   chatId: number,
-  messageId: number
+  messageId: number,
+  sessionSeq: number
 ): Promise<void> {
   const { data: state } = await supabase.from("wizard_states").select("data").eq("user_id", userId).single();
   const filters: ExtratoFilters = state?.data || { ...DEFAULT_FILTERS };
@@ -129,7 +131,7 @@ async function showGroupSelector(
     let row: { text: string; callback_data: string }[] = [];
     for (const g of groups) {
       const isSelected = filters.group_id === g.id;
-      row.push({ text: isSelected ? `✅ ${g.name}` : g.name, callback_data: `stmt_f_grp_${g.id}` });
+      row.push({ text: isSelected ? `✅ ${g.name}` : g.name, callback_data: addSession(`stmt_f_grp_${g.id}`, sessionSeq) });
       if (row.length === 3) {
         keyboard.push(row);
         row = [];
@@ -137,8 +139,8 @@ async function showGroupSelector(
     }
     if (row.length > 0) keyboard.push(row);
   }
-  keyboard.push([{ text: "❌ Limpar", callback_data: "stmt_f_grp_0" }]);
-  keyboard.push([{ text: "◀️ Voltar", callback_data: "stmt_filter" }]);
+  keyboard.push([{ text: "❌ Limpar", callback_data: addSession("stmt_f_grp_0", sessionSeq) }]);
+  keyboard.push([{ text: "◀️ Voltar", callback_data: addSession("stmt_filter", sessionSeq) }]);
 
   await editTelegramMessageWithKeyboard(chatId, messageId, "📁 *Selecione o grupo:*", keyboard);
 }
@@ -147,7 +149,8 @@ async function showTagSelector(
   supabase: any,
   userId: number,
   chatId: number,
-  messageId: number
+  messageId: number,
+  sessionSeq: number
 ): Promise<void> {
   const { data: state } = await supabase.from("wizard_states").select("data").eq("user_id", userId).single();
   const filters: ExtratoFilters = state?.data || { ...DEFAULT_FILTERS };
@@ -162,7 +165,7 @@ async function showTagSelector(
     for (const tag of tagSet) {
       const isSelected = selectedTags.includes(tag);
       const displayTag = tag.startsWith("#") ? tag : `#${tag}`;
-      row.push({ text: isSelected ? `✅ ${displayTag}` : displayTag, callback_data: `stmt_f_tag_${tag}` });
+      row.push({ text: isSelected ? `✅ ${displayTag}` : displayTag, callback_data: addSession(`stmt_f_tag_${tag}`, sessionSeq) });
       if (row.length === 2) {
         keyboard.push(row);
         row = [];
@@ -171,10 +174,10 @@ async function showTagSelector(
     if (row.length > 0) keyboard.push(row);
   }
   keyboard.push([
-    { text: "✅ Concluir", callback_data: "stmt_f_tag_done" },
-    { text: "⏭️ Limpar", callback_data: "stmt_f_tag_clr" },
+    { text: "✅ Concluir", callback_data: addSession("stmt_f_tag_done", sessionSeq) },
+    { text: "⏭️ Limpar", callback_data: addSession("stmt_f_tag_clr", sessionSeq) },
   ]);
-  keyboard.push([{ text: "◀️ Voltar", callback_data: "stmt_filter" }]);
+  keyboard.push([{ text: "◀️ Voltar", callback_data: addSession("stmt_filter", sessionSeq) }]);
 
   const selectedStr = selectedTags.length > 0
     ? `\n\n✅ Selecionadas: ${selectedTags.map((t: string) => t.startsWith("#") ? t : `#${t}`).join(" ")}`
@@ -186,7 +189,8 @@ async function showTypeSelector(
   supabase: any,
   userId: number,
   chatId: number,
-  messageId: number
+  messageId: number,
+  sessionSeq: number
 ): Promise<void> {
   const { data: state } = await supabase.from("wizard_states").select("data").eq("user_id", userId).single();
   const filters: ExtratoFilters = state?.data || { ...DEFAULT_FILTERS };
@@ -200,10 +204,10 @@ async function showTypeSelector(
   const keyboard: InlineKeyboard = [
     options.map((o) => ({
       text: filters.type === o.type ? `✅ ${o.label}` : o.label,
-      callback_data: `stmt_f_type_${o.type}`,
+      callback_data: addSession(`stmt_f_type_${o.type}`, sessionSeq),
     })),
   ];
-  keyboard.push([{ text: "◀️ Voltar", callback_data: "stmt_filter" }]);
+  keyboard.push([{ text: "◀️ Voltar", callback_data: addSession("stmt_filter", sessionSeq) }]);
 
   await editTelegramMessageWithKeyboard(chatId, messageId, "📈 *Selecione o tipo:*", keyboard);
 }
@@ -212,7 +216,8 @@ async function showPeriodSelector(
   supabase: any,
   userId: number,
   chatId: number,
-  messageId: number
+  messageId: number,
+  sessionSeq: number
 ): Promise<void> {
   const { data: state } = await supabase.from("wizard_states").select("data").eq("user_id", userId).single();
   const filters: ExtratoFilters = state?.data || { ...DEFAULT_FILTERS };
@@ -225,18 +230,17 @@ async function showPeriodSelector(
   ];
 
   const keyboard: InlineKeyboard = [];
-  let row: { text: string; callback_data: string }[] = [];
-  for (const p of presets) {
-    const isActive = filters.period === p.key;
-    row.push({ text: isActive ? `✅ ${p.label}` : p.label, callback_data: `stmt_f_period_${p.key}` });
-    if (row.length === 2) {
-      keyboard.push(row);
-      row = [];
+  let row: { text: string; callback_data: string }[] = [];    for (const p of presets) {
+      const isActive = filters.period === p.key;
+      row.push({ text: isActive ? `✅ ${p.label}` : p.label, callback_data: addSession(`stmt_f_period_${p.key}`, sessionSeq) });
+      if (row.length === 2) {
+        keyboard.push(row);
+        row = [];
+      }
     }
-  }
-  if (row.length > 0) keyboard.push(row);
-  keyboard.push([{ text: "📆 Outro período", callback_data: "stmt_f_period_custom" }]);
-  keyboard.push([{ text: "◀️ Voltar", callback_data: "stmt_filter" }]);
+    if (row.length > 0) keyboard.push(row);
+  keyboard.push([{ text: "📆 Outro período", callback_data: addSession("stmt_f_period_custom", sessionSeq) }]);
+  keyboard.push([{ text: "◀️ Voltar", callback_data: addSession("stmt_filter", sessionSeq) }]);
 
   await editTelegramMessageWithKeyboard(chatId, messageId, "📅 *Selecione o período:*", keyboard);
 }
@@ -249,7 +253,8 @@ export async function handleFilterPanel(
 ): Promise<void> {
   const filters = existingFilters || { ...DEFAULT_FILTERS };
   await setWizardState(supabase, userId, "extrato_filters", filters as any);
-  await renderFilterPanelMessage(supabase, userId, chatId, filters);
+  const sessionSeq = await getSessionSeq(supabase, userId);
+  await renderFilterPanelMessage(supabase, userId, chatId, filters, sessionSeq);
 }
 
 async function handleGroupFilterCallback(
@@ -263,11 +268,14 @@ async function handleGroupFilterCallback(
     const user = await getOrCreateUser(supabase, telegramId);
     if (!user) return;
     const { data: groups } = await supabase.from("groups").select("name").eq("user_id", user.id).order("name");
+    const userData = await getOrCreateUser(supabase, telegramId);
+    if (!userData) return;
+    const sessionSeq = await getSessionSeq(supabase, userData.id);
     if (groups && groups.length > 0) {
       const keyboard: InlineKeyboard = groups.map((g: any) => [
-        { text: g.name, callback_data: `${prefix}_grp_${g.name}` }
+        { text: g.name, callback_data: addSession(`${prefix}_grp_${g.name}`, sessionSeq) }
       ]);
-      keyboard.push([{ text: "📋 Todas as contas", callback_data: `${prefix}_grp_all` }]);
+      keyboard.push([{ text: "📋 Todas as contas", callback_data: addSession(`${prefix}_grp_all`, sessionSeq) }]);
       const title = prefix === "balance" ? "balance" : "summary";
       await sendTelegramMessageWithKeyboard(chatId, `📁 *Filtrar ${title} por grupo:*`, keyboard);
     }
@@ -296,8 +304,23 @@ export async function handleCallbackQuery(
     const { data, message } = callbackQuery;
     const chatId = message.chat.id;
     const telegramId = callbackQuery.from.id;
-    const selectedValue = data;
     await answerCallbackQuery(callbackQuery.id);
+
+    // Extract and validate session from callback data
+    const decoded = removeSession(data);
+    if (!decoded) {
+      await sendTelegramMessage(chatId, "⏰ Este botão expirou. Execute o comando novamente.");
+      return;
+    }
+    const selectedValue = decoded.data;
+    const user = await getOrCreateUser(supabase, telegramId);
+    if (!user) return;
+    const isValid = await validateCallbackSession(supabase, user.id, decoded.seq);
+    if (!isValid) {
+      await sendTelegramMessage(chatId, "⏰ Este botão não é mais válido. Execute o comando novamente.");
+      return;
+    }
+    const sessionSeq = decoded.seq;
 
     // Handle delete confirmation
     if (selectedValue.startsWith("confirm_delete_")) {
@@ -381,7 +404,7 @@ export async function handleCallbackQuery(
     if (selectedValue === "stmt_f_cat") {
       const user = await getOrCreateUser(supabase, telegramId);
       if (!user) return;
-      await showCategorySelector(supabase, user.id, chatId, message.message_id);
+      await showCategorySelector(supabase, user.id, chatId, message.message_id, sessionSeq);
       return;
     }
 
@@ -397,7 +420,7 @@ export async function handleCallbackQuery(
         data: filters,
         expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
       }).eq("user_id", user.id);
-      await renderFilterPanelMessage(supabase, user.id, chatId, filters, message.message_id);
+      await renderFilterPanelMessage(supabase, user.id, chatId, filters, sessionSeq, message.message_id);
       return;
     }
 
@@ -405,7 +428,7 @@ export async function handleCallbackQuery(
     if (selectedValue === "stmt_f_grp") {
       const user = await getOrCreateUser(supabase, telegramId);
       if (!user) return;
-      await showGroupSelector(supabase, user.id, chatId, message.message_id);
+      await showGroupSelector(supabase, user.id, chatId, message.message_id, sessionSeq);
       return;
     }
 
@@ -421,7 +444,7 @@ export async function handleCallbackQuery(
         data: filters,
         expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
       }).eq("user_id", user.id);
-      await renderFilterPanelMessage(supabase, user.id, chatId, filters, message.message_id);
+      await renderFilterPanelMessage(supabase, user.id, chatId, filters, sessionSeq, message.message_id);
       return;
     }
 
@@ -429,7 +452,7 @@ export async function handleCallbackQuery(
     if (selectedValue === "stmt_f_tag") {
       const user = await getOrCreateUser(supabase, telegramId);
       if (!user) return;
-      await showTagSelector(supabase, user.id, chatId, message.message_id);
+      await showTagSelector(supabase, user.id, chatId, message.message_id, sessionSeq);
       return;
     }
 
@@ -449,7 +472,7 @@ export async function handleCallbackQuery(
           data: filters,
           expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
         }).eq("user_id", user.id);
-        await showTagSelector(supabase, user.id, chatId, message.message_id);
+        await showTagSelector(supabase, user.id, chatId, message.message_id, sessionSeq);
         return;
       }
     }
@@ -460,7 +483,7 @@ export async function handleCallbackQuery(
       if (!user) return;
       const { data: state } = await supabase.from("wizard_states").select("data").eq("user_id", user.id).single();
       const filters: ExtratoFilters = state?.data || { ...DEFAULT_FILTERS };
-      await renderFilterPanelMessage(supabase, user.id, chatId, filters, message.message_id);
+      await renderFilterPanelMessage(supabase, user.id, chatId, filters, sessionSeq, message.message_id);
       return;
     }
 
@@ -475,7 +498,7 @@ export async function handleCallbackQuery(
         data: filters,
         expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
       }).eq("user_id", user.id);
-      await showTagSelector(supabase, user.id, chatId, message.message_id);
+      await showTagSelector(supabase, user.id, chatId, message.message_id, sessionSeq);
       return;
     }
 
@@ -483,7 +506,7 @@ export async function handleCallbackQuery(
     if (selectedValue === "stmt_f_type") {
       const user = await getOrCreateUser(supabase, telegramId);
       if (!user) return;
-      await showTypeSelector(supabase, user.id, chatId, message.message_id);
+      await showTypeSelector(supabase, user.id, chatId, message.message_id, sessionSeq);
       return;
     }
 
@@ -499,7 +522,7 @@ export async function handleCallbackQuery(
         data: filters,
         expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
       }).eq("user_id", user.id);
-      await renderFilterPanelMessage(supabase, user.id, chatId, filters, message.message_id);
+      await renderFilterPanelMessage(supabase, user.id, chatId, filters, sessionSeq, message.message_id);
       return;
     }
 
@@ -507,7 +530,7 @@ export async function handleCallbackQuery(
     if (selectedValue === "stmt_f_period") {
       const user = await getOrCreateUser(supabase, telegramId);
       if (!user) return;
-      await showPeriodSelector(supabase, user.id, chatId, message.message_id);
+      await showPeriodSelector(supabase, user.id, chatId, message.message_id, sessionSeq);
       return;
     }
 
@@ -533,7 +556,7 @@ export async function handleCallbackQuery(
         data: filters,
         expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
       }).eq("user_id", user.id);
-      await renderFilterPanelMessage(supabase, user.id, chatId, filters, message.message_id);
+      await renderFilterPanelMessage(supabase, user.id, chatId, filters, sessionSeq, message.message_id);
       return;
     }
 
@@ -718,7 +741,7 @@ export async function handleCallbackQuery(
       const { data: groups } = await supabase.from("groups").select("name").eq("user_id", user.id).order("name");
       if (groups && groups.length > 0) {
         const keyboard: InlineKeyboard = groups.map((g: any) => [
-          { text: g.name, callback_data: truncateCallbackData(`edit_group_sel_${transactionId}_${g.name}`) }
+          { text: g.name, callback_data: truncateCallbackData(`edit_group_sel_${transactionId}_${g.name}`, sessionSeq) }
         ]);
         await sendTelegramMessageWithKeyboard(chatId, "📁 Selecione o novo grupo:", keyboard);
       } else {
@@ -787,8 +810,8 @@ export async function handleCallbackQuery(
         if (row.length > 0) keyboard.push(row);
       }
       keyboard.push([
-        { text: "✅ Concluir", callback_data: truncateCallbackData(`edit_tags_done_${transactionId}`) },
-        { text: "⏭️ Limpar", callback_data: truncateCallbackData(`edit_tags_clr_${transactionId}`) },
+        { text: "✅ Concluir", callback_data: truncateCallbackData(`edit_tags_done_${transactionId}`, sessionSeq) },
+        { text: "⏭️ Limpar", callback_data: truncateCallbackData(`edit_tags_clr_${transactionId}`, sessionSeq) },
       ]);
 
       // Store working state
@@ -838,7 +861,7 @@ export async function handleCallbackQuery(
           let row: { text: string; callback_data: string }[] = [];
           for (const t of tagSet) {
             const isSelected = newTags.includes(t);
-            row.push({ text: isSelected ? `✅ ${t}` : t, callback_data: `edit_tag_tog_${transactionId}_${t}` });
+            row.push({ text: isSelected ? `✅ ${t}` : t, callback_data: addSession(`edit_tag_tog_${transactionId}_${t}`, sessionSeq) });
             if (row.length === 2) {
               keyboard.push(row);
               row = [];
@@ -847,8 +870,8 @@ export async function handleCallbackQuery(
           if (row.length > 0) keyboard.push(row);
         }
         keyboard.push([
-          { text: "✅ Concluir", callback_data: truncateCallbackData(`edit_tags_done_${transactionId}`) },
-          { text: "⏭️ Limpar", callback_data: truncateCallbackData(`edit_tags_clr_${transactionId}`) },
+          { text: "✅ Concluir", callback_data: truncateCallbackData(`edit_tags_done_${transactionId}`, sessionSeq) },
+          { text: "⏭️ Limpar", callback_data: truncateCallbackData(`edit_tags_clr_${transactionId}`, sessionSeq) },
         ]);
 
         await editTelegramMessageWithKeyboard(chatId, message.message_id, prompt, keyboard);
@@ -868,7 +891,7 @@ export async function handleCallbackQuery(
         const { data: categories } = await supabase.from("categories").select("name").eq("user_id", user.id).order("name");
         if (categories && categories.length > 0) {
           const keyboard: InlineKeyboard = categories.map((c: any) => [
-            { text: c.name, callback_data: truncateCallbackData(`edit_cat_select_${transactionId}_${c.name}`) }
+            { text: c.name, callback_data: truncateCallbackData(`edit_cat_select_${transactionId}_${c.name}`, sessionSeq) }
           ]);
           await sendTelegramMessageWithKeyboard(chatId, "Escolha a nova categoria:", keyboard);
         } else {
@@ -878,9 +901,9 @@ export async function handleCallbackQuery(
         const today = getTodayISOBR();
         const yesterday = new Date(Date.now() - 86400000).toISOString().split("T")[0];
         const keyboard: InlineKeyboard = [
-          [{ text: "📅 Hoje", callback_data: truncateCallbackData(`edit_date_select_${transactionId}_${today}`) }],
-          [{ text: "📅 Ontem", callback_data: truncateCallbackData(`edit_date_select_${transactionId}_${yesterday}`) }],
-          [{ text: "📆 Outra data", callback_data: `edit_date_custom_${transactionId}` }],
+          [{ text: "📅 Hoje", callback_data: truncateCallbackData(`edit_date_select_${transactionId}_${today}`, sessionSeq) }],
+          [{ text: "📅 Ontem", callback_data: truncateCallbackData(`edit_date_select_${transactionId}_${yesterday}`, sessionSeq) }],
+          [{ text: "📆 Outra data", callback_data: addSession(`edit_date_custom_${transactionId}`, sessionSeq) }],
         ];
         await sendTelegramMessageWithKeyboard(chatId, "Escolha a nova data:", keyboard);
       }
@@ -942,7 +965,7 @@ export async function handleCallbackQuery(
       const wizard = await getCurrentWizardStep(supabase, user.id);
       if (!wizard) return;
       const newStateData = { ...wizard.state.data };
-      await advanceWizardToNextStep(supabase, user.id, chatId, wizard.currentStep, newStateData);
+      await advanceWizardToNextStep(supabase, user.id, chatId, wizard.currentStep, sessionSeq, newStateData);
       return;
     }
 
@@ -953,7 +976,7 @@ export async function handleCallbackQuery(
       const wizard = await getCurrentWizardStep(supabase, user.id);
       if (!wizard) return;
       const newStateData = { ...wizard.state.data, [wizard.currentStep.step_key]: "" };
-      await advanceWizardToNextStep(supabase, user.id, chatId, wizard.currentStep, newStateData);
+      await advanceWizardToNextStep(supabase, user.id, chatId, wizard.currentStep, sessionSeq, newStateData);
       return;
     }
 
@@ -988,10 +1011,10 @@ export async function handleCallbackQuery(
       if (cat.is_predefined) {
         keyboard.push([{ text: "⭐ Categoria padrão", callback_data: "none" }]);
       } else {
-        keyboard.push([{ text: "✏️ Renomear", callback_data: `cat_ren_${catName}` }]);
-        keyboard.push([{ text: "❌ Excluir", callback_data: `cat_del_${catName}` }]);
+        keyboard.push([{ text: "✏️ Renomear", callback_data: addSession(`cat_ren_${catName}`, sessionSeq) }]);
+        keyboard.push([{ text: "❌ Excluir", callback_data: addSession(`cat_del_${catName}`, sessionSeq) }]);
       }
-      keyboard.push([{ text: "◀️ Voltar", callback_data: "cat_back" }]);
+      keyboard.push([{ text: "◀️ Voltar", callback_data: addSession("cat_back", sessionSeq) }]);
       await sendTelegramMessageWithKeyboard(chatId, `🏷️ *${catName}*\n\nO que deseja fazer?`, keyboard);
       return;
     }
@@ -1040,7 +1063,6 @@ export async function handleCallbackQuery(
       const catName = selectedValue.replace("cat_del_", "");
       const user = await getOrCreateUser(supabase, telegramId);
       if (!user) return;
-      // Get category ID and count affected transactions
       const { data: cat } = await supabase.from("categories").select("id").eq("user_id", user.id).ilike("name", catName).single();
       if (!cat) return;
       const { count: txCount } = await supabase
@@ -1049,8 +1071,8 @@ export async function handleCallbackQuery(
         .eq("user_id", user.id)
         .eq("category_id", cat.id);
       const keyboard: InlineKeyboard = [
-        [{ text: "✅ Sim, excluir", callback_data: `cat_del_yes_${catName}` }],
-        [{ text: "❌ Não, manter", callback_data: "cat_back" }],
+        [{ text: "✅ Sim, excluir", callback_data: addSession(`cat_del_yes_${catName}`, sessionSeq) }],
+        [{ text: "❌ Não, manter", callback_data: addSession("cat_back", sessionSeq) }],
       ];
       await sendTelegramMessageWithKeyboard(chatId, `🗑️ Tem certeza de que deseja excluir a categoria *${catName}*?\n\n${txCount || 0} ${(txCount || 0) !== 1 ? "transações" : "transação"} ${(txCount || 0) !== 1 ? "serão reatribuídas" : "será reatribuída"} para "Sem categoria".`, keyboard);
       return;
@@ -1075,10 +1097,10 @@ export async function handleCallbackQuery(
       if (grp.is_default) {
         keyboard.push([{ text: "⭐ Grupo padrão", callback_data: "none" }]);
       } else {
-        keyboard.push([{ text: "✏️ Renomear", callback_data: `grp_ren_${grpName}` }]);
-        keyboard.push([{ text: "❌ Excluir", callback_data: `grp_del_${grpName}` }]);
+        keyboard.push([{ text: "✏️ Renomear", callback_data: addSession(`grp_ren_${grpName}`, sessionSeq) }]);
+        keyboard.push([{ text: "❌ Excluir", callback_data: addSession(`grp_del_${grpName}`, sessionSeq) }]);
       }
-      keyboard.push([{ text: "◀️ Voltar", callback_data: "grp_back" }]);
+      keyboard.push([{ text: "◀️ Voltar", callback_data: addSession("grp_back", sessionSeq) }]);
       await sendTelegramMessageWithKeyboard(chatId, `📁 *${grpName}*\n\nO que deseja fazer?`, keyboard);
       return;
     }
@@ -1127,7 +1149,6 @@ export async function handleCallbackQuery(
       const grpName = selectedValue.replace("grp_del_", "");
       const user = await getOrCreateUser(supabase, telegramId);
       if (!user) return;
-      // Get group ID and count affected transactions
       const { data: grp } = await supabase.from("groups").select("id").eq("user_id", user.id).ilike("name", grpName).single();
       if (!grp) return;
       const { count: txCount } = await supabase
@@ -1136,8 +1157,8 @@ export async function handleCallbackQuery(
         .eq("user_id", user.id)
         .eq("group_id", grp.id);
       const keyboard: InlineKeyboard = [
-        [{ text: "✅ Sim, excluir", callback_data: `grp_del_yes_${grpName}` }],
-        [{ text: "❌ Não, manter", callback_data: "grp_back" }],
+        [{ text: "✅ Sim, excluir", callback_data: addSession(`grp_del_yes_${grpName}`, sessionSeq) }],
+        [{ text: "❌ Não, manter", callback_data: addSession("grp_back", sessionSeq) }],
       ];
       await sendTelegramMessageWithKeyboard(chatId, `🗑️ Tem certeza de que deseja excluir o grupo *${grpName}*?\n\n${txCount || 0} ${(txCount || 0) !== 1 ? "transações" : "transação"} ${(txCount || 0) !== 1 ? "serão reatribuídas" : "será reatribuída"} para "Pessoal".`, keyboard);
       return;
@@ -1231,12 +1252,12 @@ export async function handleCallbackQuery(
     }
 
     // Handle generic wizard selections
-    const user = await getOrCreateUser(supabase, telegramId);
-    if (!user) return;
-    const wizard = await getCurrentWizardStep(supabase, user.id);
+    const genericUser = await getOrCreateUser(supabase, telegramId);
+    if (!genericUser) return;
+    const wizard = await getCurrentWizardStep(supabase, genericUser.id);
     if (!wizard) return;
     const newStateData = { ...wizard.state.data, [wizard.currentStep.step_key]: selectedValue };
-    await advanceWizardToNextStep(supabase, user.id, chatId, wizard.currentStep, newStateData);
+    await advanceWizardToNextStep(supabase, genericUser.id, chatId, wizard.currentStep, sessionSeq, newStateData);
   } catch (error) {
     console.error("Error handling callback query:", error);
     await sendTelegramMessage(callbackQuery.message.chat.id, "❌ Ops! Algo deu errado. Tente novamente.");

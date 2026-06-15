@@ -11,6 +11,7 @@ import type {
   InlineKeyboard,
 } from "./types/index.ts";
 import { isRateLimited } from "./utils/rate-limiter.ts";
+import { incrementSessionSeq } from "./utils/session.ts";
 import { formatCurrencyBR, formatDateBR, parseDateBR } from "./utils/formatting.ts";
 import { parseNaturalLanguage } from "./services/deepseek.ts";
 import { sendTelegramMessage, sendTelegramMessageWithKeyboard } from "./services/telegram.ts";
@@ -301,12 +302,16 @@ serve(async (req: Request): Promise<Response> => {
         return new Response("OK", { status: 200 });
       }
 
+      await incrementSessionSeq(supabase, existingUser.id);
       await handleNaturalLanguageWithFollowUp(supabase, message.from.id, message.chat.id, natural);
       return new Response("OK", { status: 200 });
     }
 
     if (text.startsWith("/")) {
       const [command, ...args] = text.split(" ");
+
+      // Increment session to invalidate old callbacks
+      await incrementSessionSeq(supabase, existingUser.id);
 
       switch (command.toLowerCase()) {
         case "/start":

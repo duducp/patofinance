@@ -561,10 +561,10 @@ Project ref: `zjcfjqtlijktrikgvwrv`
 |-------|-------------|-------|
 | `users` | `id`, `telegram_id`, `username`, `first_name` | |
 | `groups` | `id`, `user_id`, `name`, `normalized_name`, `is_default` | `normalized_name` + pg_trgm index |
-| `categories` | `id`, `user_id`, `name`, `normalized_name`, `is_predefined` | `normalized_name` + pg_trgm index |
+| `categories` | `id`, `user_id`, `name`, `normalized_name`, `is_predefined`, `transaction_type` | `transaction_type`: expense/income/null=ambos |
 | `transactions` | `id`, `user_id`, `group_id`, `category_id`, `type`, `amount`, `tags TEXT[]` | |
-| `wizard_states` | `user_id`, `step`, `data JSONB`, `expires_at` | |
-| `predefined_categories` | `id`, `name` | Seeded with 9 default categories |
+| `wizard_states` | `user_id`, `step`, `data JSONB`, `session_seq`, `expires_at` | `session_seq` for callback protection | |
+| `predefined_categories` | `id`, `name`, `transaction_type` | Seeded with 12 default categories (expense/income/both) |
 
 ### Stored Procedures
 
@@ -583,7 +583,22 @@ Project ref: `zjcfjqtlijktrikgvwrv`
 20260614000002_add_wizard_steps_index_and_timestamps.sql
 20260615000000_add_tags_step_to_receita_wizard.sql
 20260615000001_add_normalized_name_and_trgm.sql  # pg_trgm extension + normalized_name + suggest_* functions
+20260615000002_add_category_type.sql            # transaction_type column (expense/income/null=both)
+20260615000003_add_session_seq.sql              # session_seq column for callback protection
 ```
+
+### Predefined Categories
+
+Separated by transaction type:
+
+- **💸 Expense:** Alimentação · Moradia · Transporte · Saúde · Educação · Lazer · Vestuário · Contas
+- **💰 Income:** Salário · Freela · Investimentos · Benefícios
+- **🔄 Both (NULL):** Outros
+
+In the wizard:
+- `/despesa` shows expense + both categories
+- `/receita` shows income + both categories
+- User-created categories with NULL type appear for both
 
 ### Extensions
 
@@ -736,12 +751,14 @@ Routes ~42 callback prefixes via `handleCallbackQuery`. Key callbacks:
 ```text
 supabase/
 ├── config.toml               # verify_jwt=false for local
-├── migrations/               # 5 SQL migrations
+├── migrations/               # 7 SQL migrations
 │   ├── 20260614000000_*.sql
 │   ├── 20260614000001_*.sql
 │   ├── 20260614000002_*.sql
 │   ├── 20260615000000_*.sql
-│   └── 20260615000001_*.sql  # pg_trgm + normalized_name + suggest_* functions
+│   ├── 20260615000001_*.sql  # pg_trgm + normalized_name + suggest_* functions
+│   ├── 20260615000002_*.sql  # transaction_type on categories
+│   └── 20260615000003_*.sql  # session_seq on wizard_states
 └── functions/bot-core/
     ├── index.ts              # Entry point (serve handler + wizard step routing)
     ├── config.ts             # Env vars, commonPhrases map, nlCache
@@ -751,7 +768,8 @@ supabase/
     │   ├── formatting.ts     # formatCurrencyBR, formatDateBR, getTodayISOBR, parseDateBR
     │   ├── rate-limiter.ts   # isRateLimited, truncateCallbackData (60 chars)
     │   ├── date-helpers.ts   # getDateRange, getMonthName, getNowBR
-    │   └── command-parsing.ts # parseCommand
+    │   ├── command-parsing.ts # parseCommand
+    │   └── session.ts        # addSession, removeSession, incrementSessionSeq, getSessionSeq, validateCallbackSession
     ├── services/
     │   ├── telegram.ts       # 4 Telegram API wrappers (send, sendWithKeyboard, edit, answer)
     │   ├── database.ts       # 11 functions: CRUD + suggestSimilar* + getAllUserTags

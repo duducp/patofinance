@@ -23,7 +23,7 @@
 
 ---
 
-## ✨ About
+## ✨ Sobre
 
 > Assistente de finanças pessoais — registre gastos e receitas com comandos ou linguagem natural.
 
@@ -42,7 +42,7 @@
 
 ## Arquitetura
 
-```
+```text
 Telegram → Edge Function (webhook) → Supabase DB → Resposta via Bot API
 ```
 
@@ -69,12 +69,14 @@ fincance/
 ├── supabase/
 │   ├── config.toml          # Config local (verify_jwt=false)
 │   ├── .env.example         # Template de variáveis de ambiente
-│   ├── migrations/          # 5 migrations SQL
+│   ├── migrations/          # 7 migrations SQL
 │   │   ├── 20260614000000_initial_schema.sql
 │   │   ├── 20260614000001_add_wizard_steps.sql
 │   │   ├── 20260614000002_add_wizard_steps_index_and_timestamps.sql
 │   │   ├── 20260615000000_add_tags_step_to_receita_wizard.sql
-│   │   └── 20260615000001_add_normalized_name_and_trgm.sql
+│   │   ├── 20260615000001_add_normalized_name_and_trgm.sql
+│   │   ├── 20260615000002_add_category_type.sql
+│   │   └── 20260615000003_add_session_seq.sql
 │   └── functions/bot-core/
 │       ├── index.ts         # Entry point + roteamento
 │       ├── config.ts        # Env vars + cache NL
@@ -95,11 +97,11 @@ fincance/
 |--------|-----------|
 | `users` | Usuários do bot (`telegram_id`, `username`) |
 | `groups` | Grupos/contas bancárias (`name`, `is_default`) |
-| `categories` | Categorias (`name`, `is_predefined`, `normalized_name`) |
+| `categories` | Categorias (`name`, `is_predefined`, `normalized_name`, `transaction_type`) |
 | `transactions` | Receitas e despesas (`type`, `amount`, `tags TEXT[]`) |
-| `wizard_states` | Estado do wizard conversacional (TTL 10min) |
+| `wizard_states` | Estado do wizard conversacional + session_seq (TTL 10min) |
 | `wizard_steps` | Steps configuráveis dos wizards |
-| `predefined_categories` | Categorias padrão (semeadas no setup) |
+| `predefined_categories` | Categorias padrão com tipo (expense/income/null=ambos) |
 
 ### Extensões
 
@@ -107,7 +109,11 @@ fincance/
 
 ### Categorias Pré-definidas
 
-Alimentação · Moradia · Transporte · Saúde · Educação · Lazer · Vestuário · Contas · Outros
+Separadas por tipo de transação:
+
+**💸 Despesa:** Alimentação · Moradia · Transporte · Saúde · Educação · Lazer · Vestuário · Contas
+**💰 Receita:** Salário · Freela · Investimentos · Benefícios
+**🔄 Ambos:** Outros
 
 ## Configuração
 
@@ -315,7 +321,7 @@ Sem a chave DeepSeek, apenas comandos `/` funcionam.
 
 ### Comandos Rápidos
 
-```
+```text
 /gasto 50 mercado --grupo Pessoal --tags #almoço
 /gasto 100 vestuário --data 15/01/2024 --tags #presente
 /receita 3000 salário --grupo Nubank
@@ -325,7 +331,7 @@ Sem a chave DeepSeek, apenas comandos `/` funcionam.
 
 Envie uma mensagem livre e o bot guia você com botões interativos:
 
-```
+```text
 Usuário: "gastei 30 no almoço"
 Bot: "💸 Quanto você gastou?"
 Usuário: "30"

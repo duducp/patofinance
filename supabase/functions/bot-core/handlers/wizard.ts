@@ -2,6 +2,7 @@ import { WizardState } from "../types/index.ts";
 import { sendTelegramMessage, sendTelegramMessageWithKeyboard, editTelegramMessageWithKeyboard } from "../services/telegram.ts";
 import { getOrCreateCategory, getOrCreateGroup, sendSimilarityWarning, getAllUserTags } from "../services/database.ts";
 import { formatCurrencyBR, formatDateBR, parseDateBR, getTodayISOBR } from "../utils/formatting.ts";
+import { addSession, getSessionSeq } from "../utils/session.ts";
 
 export async function getWizardState(supabase: any, userId: number): Promise<WizardState | null> {
   const { data } = await supabase
@@ -9,7 +10,7 @@ export async function getWizardState(supabase: any, userId: number): Promise<Wiz
     .select("step, data, expires_at")
     .eq("user_id", userId)
     .single();
-  if (!data) return null;
+  if (!data || !data.step) return null;
   if (new Date(data.expires_at) < new Date()) {
     await supabase.from("wizard_states").delete().eq("user_id", userId);
     return null;
@@ -50,6 +51,7 @@ export async function sendWizardStepMessage(
   step: any,
   userId: number,
   supabase: any,
+  sessionSeq: number,
   messageId?: number
 ): Promise<void> {
   if (step.step_key === "category") {
@@ -67,7 +69,7 @@ export async function sendWizardStepMessage(
     if (categories && categories.length > 0) {
       let row: { text: string; callback_data: string }[] = [];
       for (const c of categories) {
-        row.push({ text: c.name, callback_data: c.name });
+        row.push({ text: c.name, callback_data: addSession(c.name, sessionSeq) });
         if (row.length === 3) {
           keyboard.push(row);
           row = [];
@@ -75,7 +77,7 @@ export async function sendWizardStepMessage(
       }
       if (row.length > 0) keyboard.push(row);
     }
-    keyboard.push([{ text: "✏️ Nova categoria", callback_data: "wizard_new_category" }]);
+    keyboard.push([{ text: "✏️ Nova categoria", callback_data: addSession("wizard_new_category", sessionSeq) }]);
     await sendTelegramMessageWithKeyboard(chatId, step.prompt, keyboard);
   } else if (step.step_key === "group") {
     const { data: groups } = await supabase
@@ -87,7 +89,7 @@ export async function sendWizardStepMessage(
     if (groups && groups.length > 0) {
       let row: { text: string; callback_data: string }[] = [];
       for (const g of groups) {
-        row.push({ text: g.name, callback_data: g.name });
+        row.push({ text: g.name, callback_data: addSession(g.name, sessionSeq) });
         if (row.length === 3) {
           keyboard.push(row);
           row = [];
@@ -95,7 +97,7 @@ export async function sendWizardStepMessage(
       }
       if (row.length > 0) keyboard.push(row);
     }
-    keyboard.push([{ text: "✏️ Novo grupo", callback_data: "wizard_new_group" }]);
+    keyboard.push([{ text: "✏️ Novo grupo", callback_data: addSession("wizard_new_group", sessionSeq) }]);
     await sendTelegramMessageWithKeyboard(chatId, step.prompt, keyboard);
   } else if (step.step_key === "tags") {
     // Get current selected tags from wizard state
@@ -123,7 +125,7 @@ export async function sendWizardStepMessage(
       let row: { text: string; callback_data: string }[] = [];
       for (const tag of tagSet) {
         const isSelected = currentTags.includes(tag);
-        row.push({ text: isSelected ? `✅ ${tag}` : tag, callback_data: `wiz_tag_${tag}` });
+        row.push({ text: isSelected ? `✅ ${tag}` : tag, callback_data: addSession(`wiz_tag_${tag}`, sessionSeq) });
         if (row.length === 2) {
           keyboard.push(row);
           row = [];
@@ -132,8 +134,8 @@ export async function sendWizardStepMessage(
       if (row.length > 0) keyboard.push(row);
     }
     keyboard.push([
-      { text: "✅ Concluir", callback_data: "wiz_done_tags" },
-      { text: "⏭️ Pular", callback_data: "wizard_skip_tags" },
+      { text: "✅ Concluir", callback_data: addSession("wiz_done_tags", sessionSeq) },
+      { text: "⏭️ Pular", callback_data: addSession("wizard_skip_tags", sessionSeq) },
     ]);
     if (messageId) {
       await editTelegramMessageWithKeyboard(chatId, messageId, prompt, keyboard);
@@ -144,9 +146,9 @@ export async function sendWizardStepMessage(
     const today = getTodayISOBR();
     const yesterday = new Date(Date.now() - 86400000).toISOString().split("T")[0];
     const keyboard = [
-      [{ text: "📅 Hoje", callback_data: today }],
-      [{ text: "📅 Ontem", callback_data: yesterday }],
-      [{ text: "📆 Outra data", callback_data: "custom_date" }],
+      [{ text: "📅 Hoje", callback_data: addSession(today, sessionSeq) }],
+      [{ text: "📅 Ontem", callback_data: addSession(yesterday, sessionSeq) }],
+      [{ text: "📆 Outra data", callback_data: addSession("custom_date", sessionSeq) }],
     ];
     await sendTelegramMessageWithKeyboard(chatId, step.prompt, keyboard);
   } else if (step.input_type === "select") {
@@ -243,6 +245,7 @@ export async function advanceWizardToNextStep(
   userId: number,
   chatId: number,
   currentStep: any,
+  sessionSeq: number,
   newStateData: Record<string, any>
 ): Promise<void> {
   const { data: nextStep } = await supabase
@@ -260,7 +263,7 @@ export async function advanceWizardToNextStep(
       data: newStateData,
       expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
     }).eq("user_id", userId);
-    await sendWizardStepMessage(chatId, nextStep, userId, supabase);
+    await sendWizardStepMessage(chatId, nextStep, userId, supabase, sessionSeq);
   } else {
     await completeWizard(supabase, userId, chatId, newStateData);
   }
@@ -291,7 +294,8 @@ export async function handleTransactionWizard(
       .eq("step_key", "tags")
       .single();
     if (tagsStep) {
-      await sendWizardStepMessage(chatId, tagsStep, userId, supabase);
+      const tagsSessionSeq = await getSessionSeq(supabase, userId);
+      await sendWizardStepMessage(chatId, tagsStep, userId, supabase, tagsSessionSeq);
     } else {
       await completeWizard(supabase, userId, chatId, { ...state.data, date: parsed, type });
     }
@@ -340,7 +344,8 @@ export async function handleTransactionWizard(
       ...state.data,
       tags: accumulatedTags,
     });
-    await sendWizardStepMessage(chatId, currentStep, userId, supabase);
+    const tagsSessionSeq = await getSessionSeq(supabase, userId);
+    await sendWizardStepMessage(chatId, currentStep, userId, supabase, tagsSessionSeq);
     return;
   }
 
@@ -358,7 +363,8 @@ export async function handleTransactionWizard(
       ...state.data,
       [stepKey]: value,
     });
-    await sendWizardStepMessage(chatId, nextStep, userId, supabase);
+    const nextSessionSeq = await getSessionSeq(supabase, userId);
+    await sendWizardStepMessage(chatId, nextStep, userId, supabase, nextSessionSeq);
   } else {
     const finalData = type === "income"
       ? { ...state.data, [stepKey]: value, type: "income" }

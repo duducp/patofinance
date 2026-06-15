@@ -5,6 +5,8 @@ import { formatCurrencyBR, formatDateBR, getTodayISOBR, getMonthName } from "../
 import { getDateRange } from "../utils/date-helpers.ts";
 import { parseCommand } from "../utils/command-parsing.ts";
 import { truncateCallbackData } from "../utils/rate-limiter.ts";
+import { addSession, getSessionSeq } from "../utils/session.ts";
+
 import { getSummaryData, formatSummaryMessage } from "./queries.ts";
 import { getWizardState, setWizardState, handleTransactionWizard } from "./wizard.ts";
 
@@ -153,7 +155,8 @@ export async function handleBalance(supabase: any, userId: number, chatId: numbe
   const totalExpenses = expenses?.reduce((sum: number, t: any) => sum + Number(t.amount), 0) || 0;
 
   if (groupId && totalIncome === 0 && totalExpenses === 0) {
-    const keyboard: InlineKeyboard = [[{ text: "📋 Todas as contas", callback_data: "balance_grp_all" }]];
+    const sessionSeq = await getSessionSeq(supabase, user.id);
+    const keyboard: InlineKeyboard = [[{ text: "📋 Todas as contas", callback_data: addSession("balance_grp_all", sessionSeq) }]];
     await sendTelegramMessageWithKeyboard(chatId, `📊 Nenhuma transação no grupo *${groupName}* este mês.`, keyboard);
     return;
   }
@@ -170,11 +173,12 @@ export async function handleBalance(supabase: any, userId: number, chatId: numbe
     `📉 Saídas: *${formatCurrencyBR(totalExpenses)}*\n\n` +
     `💰 *Saldo: ${formatCurrencyBR(balance)}*`;
 
+  const sessionSeq = await getSessionSeq(supabase, user.id);
   const keyboard: InlineKeyboard = [];
   if (groupId) {
-    keyboard.push([{ text: "📋 Todas as contas", callback_data: "balance_grp_all" }]);
+    keyboard.push([{ text: "📋 Todas as contas", callback_data: addSession("balance_grp_all", sessionSeq) }]);
   }
-  keyboard.push([{ text: "📁 Filtrar por grupo", callback_data: "balance_shwgrp" }]);
+  keyboard.push([{ text: "📁 Filtrar por grupo", callback_data: addSession("balance_shwgrp", sessionSeq) }]);
 
   await sendTelegramMessageWithKeyboard(chatId, message, keyboard);
 }
@@ -503,6 +507,9 @@ export async function handleStatement(
   const currentSuffix = statementFilterSuffix(typeFilter);
 
   // Build keyboard
+  const sessionSeq = await getSessionSeq(supabase, user.id);
+
+  // Build keyboard
   const keyboard: InlineKeyboard = [];
 
   // Filter row
@@ -516,21 +523,21 @@ export async function handleStatement(
     const isActive = typeFilter === opt.filter;
     filterRow.push({
       text: isActive ? `✅ ${opt.label}` : opt.label,
-      callback_data: `statement_${statementFilterSuffix(opt.filter)}_0`,
+      callback_data: addSession(`statement_${statementFilterSuffix(opt.filter)}_0`, sessionSeq),
     });
   }
   keyboard.push(filterRow);
 
   // 🔍 Novo filtro button (only when not using quick-filter from results)
-  keyboard.push([{ text: "🔍 Novo filtro", callback_data: "stmt_filter" }]);
+  keyboard.push([{ text: "🔍 Novo filtro", callback_data: addSession("stmt_filter", sessionSeq) }]);
 
   // Pagination row
   const navButtons: InlineKeyboard[0] = [];
   if (page > 0) {
-    navButtons.push({ text: "◀️ Anterior", callback_data: `statement_${currentSuffix}_${page - 1}` });
+    navButtons.push({ text: "◀️ Anterior", callback_data: addSession(`statement_${currentSuffix}_${page - 1}`, sessionSeq) });
   }
   if (page + 1 < totalPages) {
-    navButtons.push({ text: "Próximo ▶️", callback_data: `statement_${currentSuffix}_${page + 1}` });
+    navButtons.push({ text: "Próximo ▶️", callback_data: addSession(`statement_${currentSuffix}_${page + 1}`, sessionSeq) });
   }
   if (navButtons.length > 0) {
     keyboard.push(navButtons);
@@ -575,11 +582,12 @@ export async function handleSummary(supabase: any, userId: number, chatId: numbe
   }
 
   const message = formatSummaryMessage(data, groupName || undefined);
+  const sessionSeq = await getSessionSeq(supabase, user.id);
   const keyboard: InlineKeyboard = [];
   if (groupId) {
-    keyboard.push([{ text: "📋 Todas as contas", callback_data: "summary_grp_all" }]);
+    keyboard.push([{ text: "📋 Todas as contas", callback_data: addSession("summary_grp_all", sessionSeq) }]);
   }
-  keyboard.push([{ text: "📁 Filtrar por grupo", callback_data: "summary_shwgrp" }]);
+  keyboard.push([{ text: "📁 Filtrar por grupo", callback_data: addSession("summary_shwgrp", sessionSeq) }]);
 
   await sendTelegramMessageWithKeyboard(chatId, message, keyboard);
 }
@@ -636,18 +644,19 @@ export async function handleEdit(supabase: any, userId: number, chatId: number, 
   const groupName = transaction.groups?.name || "Sem grupo";
   const tags = transaction.tags?.length ? transaction.tags.join(" ") : "—";
 
+  const sessionSeq = await getSessionSeq(supabase, user.id);
   const keyboard: InlineKeyboard = [
     [
-      { text: "✏️ Editar valor", callback_data: `edit_amount_${transaction.id}` },
-      { text: "🏷️ Editar categoria", callback_data: `edit_category_${transaction.id}` },
+      { text: "✏️ Editar valor", callback_data: addSession(`edit_amount_${transaction.id}`, sessionSeq) },
+      { text: "🏷️ Editar categoria", callback_data: addSession(`edit_category_${transaction.id}`, sessionSeq) },
     ],
     [
-      { text: "📁 Editar grupo", callback_data: `edit_group_${transaction.id}` },
-      { text: "🔖 Editar tags", callback_data: `edit_tags_${transaction.id}` },
+      { text: "📁 Editar grupo", callback_data: addSession(`edit_group_${transaction.id}`, sessionSeq) },
+      { text: "🔖 Editar tags", callback_data: addSession(`edit_tags_${transaction.id}`, sessionSeq) },
     ],
     [
-      { text: "📅 Editar data", callback_data: `edit_date_${transaction.id}` },
-      { text: "❌ Excluir", callback_data: `confirm_delete_${transaction.id}` },
+      { text: "📅 Editar data", callback_data: addSession(`edit_date_${transaction.id}`, sessionSeq) },
+      { text: "❌ Excluir", callback_data: addSession(`confirm_delete_${transaction.id}`, sessionSeq) },
     ],
   ];
 
@@ -712,10 +721,11 @@ export async function handleDelete(supabase: any, userId: number, chatId: number
   const typeName = transaction.type === "income" ? "Receita" : "Despesa";
   const catName = transaction.categories?.name || "Sem categoria";
 
+  const sessionSeq = await getSessionSeq(supabase, user.id);
   const keyboard: InlineKeyboard = [
     [
-      { text: "✅ Sim, excluir", callback_data: `confirm_delete_${transaction.id}` },
-      { text: "❌ Não, manter", callback_data: "cancel_delete" },
+      { text: "✅ Sim, excluir", callback_data: addSession(`confirm_delete_${transaction.id}`, sessionSeq) },
+      { text: "❌ Não, manter", callback_data: addSession("cancel_delete", sessionSeq) },
     ],
   ];
 
@@ -798,11 +808,12 @@ export async function handleEntity(
     }
     message += `\n💡 Para adicionar: \`${cmdRef}\``;
 
+    const sessionSeq = await getSessionSeq(supabase, user.id);
     // Build keyboard with 3 items per row
     const keyboard: InlineKeyboard = [];
     let row: { text: string; callback_data: string }[] = [];
     for (const item of items) {
-      row.push({ text: item.name, callback_data: `${cbPrefix}${item.name}` });
+      row.push({ text: item.name, callback_data: addSession(`${cbPrefix}${item.name}`, sessionSeq) });
       if (row.length === 3) {
         keyboard.push(row);
         row = [];
@@ -841,9 +852,10 @@ export async function handleEntity(
       suggested_name: similar[0].name,
       similarity: similar[0].similarity,
     });
+    const sessionSeq = await getSessionSeq(supabase, user.id);
     const keyboard: InlineKeyboard = [
-      [{ text: `✅ Usar "${similar[0].name}"`, callback_data: sugUseCb }],
-      [{ text: `✏️ Criar "${entityName}" mesmo assim`, callback_data: sugNewCb }],
+      [{ text: `✅ Usar "${similar[0].name}"`, callback_data: addSession(sugUseCb, sessionSeq) }],
+      [{ text: `✏️ Criar "${entityName}" mesmo assim`, callback_data: addSession(sugNewCb, sessionSeq) }],
     ];
     await sendTelegramMessageWithKeyboard(
       chatId,
@@ -920,12 +932,13 @@ export async function handleTag(supabase: any, userId: number, chatId: number, a
   }
   message += "\n💡 Clique em uma tag para ver as transações.";
 
+  const sessionSeq = await getSessionSeq(supabase, user.id);
   // Build keyboard with 3 tags per row
   const keyboard: InlineKeyboard = [];
   let row: { text: string; callback_data: string }[] = [];
   for (const tag of allTags) {
     const displayTag = tag.startsWith("#") ? tag : `#${tag}`;
-    row.push({ text: displayTag, callback_data: truncateCallbackData(`tag_sel_${tag}`) });
+    row.push({ text: displayTag, callback_data: addSession(`tag_sel_${tag}`, sessionSeq) });
     if (row.length === 3) {
       keyboard.push(row);
       row = [];
@@ -992,9 +1005,10 @@ export async function handleCleanup(supabase: any, userId: number, chatId: numbe
 
   message += "Deseja removê-los?";
 
+  const sessionSeq = await getSessionSeq(supabase, user.id);
   const keyboard: InlineKeyboard = [
-    [{ text: "✅ Sim, limpar tudo", callback_data: "confirm_cleanup" }],
-    [{ text: "❌ Não, cancelar", callback_data: "cancel_cleanup" }],
+    [{ text: "✅ Sim, limpar tudo", callback_data: addSession("confirm_cleanup", sessionSeq) }],
+    [{ text: "❌ Não, cancelar", callback_data: addSession("cancel_cleanup", sessionSeq) }],
   ];
 
   await sendTelegramMessageWithKeyboard(chatId, message, keyboard);

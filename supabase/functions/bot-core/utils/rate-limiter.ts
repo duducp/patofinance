@@ -30,9 +30,10 @@ export function isRateLimited(userId: number): boolean {
   return false;
 }
 
+import { addSession } from "./session.ts";
+
 const CALLBACK_DATA_MAX_LENGTH = 60;
 
-export function truncateCallbackData(data: string): string {
-  if (data.length <= CALLBACK_DATA_MAX_LENGTH) return data;
-  return data.substring(0, CALLBACK_DATA_MAX_LENGTH);
+export function truncateCallbackData(data: string, sessionSeq: number = 0): string {
+  return addSession(data, sessionSeq, CALLBACK_DATA_MAX_LENGTH);
 }
