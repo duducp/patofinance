@@ -1053,7 +1053,11 @@ serve(async (req: Request): Promise<Response> => {
     // Check for active wizard
     const wizardState = await getWizardState(supabase, existingUser.id);
     if (wizardState && !text.startsWith("/")) {
-      await handleGastoWizard(supabase, existingUser.id, message.chat.id, wizardState, text);
+      if (wizardState.step.startsWith("gasto_")) {
+        await handleGastoWizard(supabase, existingUser.id, message.chat.id, wizardState, text);
+      } else if (wizardState.step.startsWith("receita_")) {
+        await handleReceitaWizard(supabase, existingUser.id, message.chat.id, wizardState, text);
+      }
       return new Response("OK", { status: 200 });
     }
 
