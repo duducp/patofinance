@@ -56,3 +56,13 @@ export interface ParsedCommand {
   date: string | null;
   tags: string[];
 }
+
+export type PeriodPreset = "this_month" | "last_month" | "last_3_months" | "this_year";
+
+export interface ExtratoFilters {
+  category_id: number | null;
+  group_id: number | null;
+  tags: string[];
+  type: "all" | "income" | "expense";
+  period: PeriodPreset | { start: string; end: string };
+}

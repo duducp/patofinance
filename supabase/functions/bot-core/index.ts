@@ -36,7 +36,9 @@ import {
   handleCategory,
   handleTag,
   handleCleanup,
+  resolvePeriod,
 } from "./handlers/commands.ts";
+import { handleFilterPanel } from "./handlers/callbacks.ts";
 
 async function handleEntityRename(
   supabase: any,
@@ -261,6 +263,28 @@ serve(async (req: Request): Promise<Response> => {
         const natural: DeepSeekResponse = { intent: "list_by_tag", amount: null, category: null, date: null, period: null, name: null, tag, limit: null, missingFields: [] };
         await clearWizardState(supabase, existingUser.id);
         await executeNaturalLanguageAction(supabase, message.from.id, message.chat.id, natural);
+      } else if (wizardState.step === "extrato_custom_period") {
+        // First text input: start date
+        const parsed = parseDateBR(text);
+        if (!parsed) {
+          await sendTelegramMessage(message.chat.id, "Formato inválido. Use DD/MM/AAAA (ex: 15/01/2024)");
+          return new Response("OK", { status: 200 });
+        }
+        const filters = wizardState.data as any;
+        await setWizardState(supabase, existingUser.id, "extrato_custom_period_end", { ...filters, _start: parsed });
+        await sendTelegramMessage(message.chat.id, "📅 Informe a data de *fim* (formato: DD/MM/AAAA):");
+      } else if (wizardState.step === "extrato_custom_period_end") {
+        const parsed = parseDateBR(text);
+        if (!parsed) {
+          await sendTelegramMessage(message.chat.id, "Formato inválido. Use DD/MM/AAAA (ex: 15/01/2024)");
+          return new Response("OK", { status: 200 });
+        }
+        const data = wizardState.data as any;
+        const filters = { ...data } as any;
+        delete filters._start;
+        filters.period = { start: data._start, end: parsed };
+        await clearWizardState(supabase, existingUser.id);
+        await handleStatement(supabase, message.from.id, message.chat.id, 0, filters.type || "all", filters);
       }
       return new Response("OK", { status: 200 });
     }
@@ -307,7 +331,7 @@ serve(async (req: Request): Promise<Response> => {
           break;
 
         case "/extrato":
-          await handleStatement(supabase, message.from.id, message.chat.id);
+          await handleFilterPanel(supabase, existingUser.id, message.chat.id);
           break;
 
         case "/resumo":

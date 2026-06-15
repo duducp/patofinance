@@ -1,12 +1,44 @@
-import type { InlineKeyboard } from "../types/index.ts";
+import type { InlineKeyboard, ExtratoFilters, PeriodPreset } from "../types/index.ts";
 import { sendTelegramMessage, sendTelegramMessageWithKeyboard } from "../services/telegram.ts";
 import { requireUser, getOrCreateUser, getOrCreateCategory, getOrCreateGroup, normalizeString, suggestSimilarCategories, suggestSimilarGroups, sendSimilarityWarning, getAllUserTags } from "../services/database.ts";
-import { formatCurrencyBR, formatDateBR, getTodayISOBR } from "../utils/formatting.ts";
+import { formatCurrencyBR, formatDateBR, getTodayISOBR, getMonthName } from "../utils/formatting.ts";
 import { getDateRange } from "../utils/date-helpers.ts";
 import { parseCommand } from "../utils/command-parsing.ts";
 import { truncateCallbackData } from "../utils/rate-limiter.ts";
 import { getSummaryData, formatSummaryMessage } from "./queries.ts";
 import { getWizardState, setWizardState, handleTransactionWizard } from "./wizard.ts";
+
+export function resolvePeriod(period: ExtratoFilters["period"]): { start: string; end: string; label: string } {
+  const now = new Date();
+  if (typeof period === "string") {
+    switch (period) {
+      case "this_month": {
+        const start = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split("T")[0];
+        const end = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split("T")[0];
+        return { start, end, label: getMonthName(now) };
+      }
+      case "last_month": {
+        const last = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+        const start = last.toISOString().split("T")[0];
+        const end = new Date(now.getFullYear(), now.getMonth(), 0).toISOString().split("T")[0];
+        return { start, end, label: getMonthName(last) };
+      }
+      case "last_3_months": {
+        const start = new Date(now.getFullYear(), now.getMonth() - 2, 1).toISOString().split("T")[0];
+        const end = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split("T")[0];
+        return { start, end, label: "Últimos 3 meses" };
+      }
+      case "this_year": {
+        return {
+          start: `${now.getFullYear()}-01-01`,
+          end: `${now.getFullYear()}-12-31`,
+          label: `${now.getFullYear()}`,
+        };
+      }
+    }
+  }
+  return { start: period.start, end: period.end, label: `${period.start} — ${period.end}` };
+}
 
 export async function handleStart(chatId: number, firstName: string): Promise<void> {
   await sendTelegramMessage(
@@ -262,32 +294,52 @@ function parseStatementFilter(suffix: string): StatementFilter {
   }
 }
 
-export async function handleStatement(supabase: any, userId: number, chatId: number, page: number = 0, typeFilter: StatementFilter = "all"): Promise<void> {
+export async function handleStatement(
+  supabase: any,
+  userId: number,
+  chatId: number,
+  page: number = 0,
+  typeFilter: StatementFilter = "all",
+  filters?: ExtratoFilters
+): Promise<void> {
   const user = await getOrCreateUser(supabase, userId);
   if (!user) {
     await sendTelegramMessage(chatId, "Ops! Você ainda não está cadastrado. Use /start para começar.");
     return;
   }
 
-  const { start: startOfMonth, end: endOfMonth, label: monthName } = getDateRange(null, null);
+  // Resolve period — from filters or default to current month
+  const period = filters?.period || "this_month";
+  const { start: periodStart, end: periodEnd, label: periodLabel } = resolvePeriod(period);
 
   // Build base query for count
   let countQuery = supabase
     .from("transactions")
     .select("id", { count: "exact", head: true })
     .eq("user_id", user.id)
-    .gte("transaction_date", startOfMonth)
-    .lte("transaction_date", endOfMonth);
+    .gte("transaction_date", periodStart)
+    .lte("transaction_date", periodEnd);
 
   if (typeFilter !== "all") {
     countQuery = countQuery.eq("type", typeFilter);
+  }
+  if (filters?.category_id) {
+    countQuery = countQuery.eq("category_id", filters.category_id);
+  }
+  if (filters?.group_id) {
+    countQuery = countQuery.eq("group_id", filters.group_id);
+  }
+  if (filters?.tags && filters.tags.length > 0) {
+    for (const tag of filters.tags) {
+      countQuery = countQuery.contains("tags", [tag]);
+    }
   }
 
   const { count: totalCount } = await countQuery;
 
   if (!totalCount || totalCount === 0) {
     const filterName = typeFilter === "income" ? "receitas" : typeFilter === "expense" ? "despesas" : "transações";
-    await sendTelegramMessage(chatId, `📋 Nenhuma ${filterName} encontrada este mês.`);
+    await sendTelegramMessage(chatId, `📋 Nenhuma ${filterName} encontrada${period !== "this_month" ? ` em ${periodLabel}` : " este mês"}.`);
     return;
   }
 
@@ -307,11 +359,22 @@ export async function handleStatement(supabase: any, userId: number, chatId: num
       groups (name)
     `)
     .eq("user_id", user.id)
-    .gte("transaction_date", startOfMonth)
-    .lte("transaction_date", endOfMonth);
+    .gte("transaction_date", periodStart)
+    .lte("transaction_date", periodEnd);
 
   if (typeFilter !== "all") {
     dataQuery = dataQuery.eq("type", typeFilter);
+  }
+  if (filters?.category_id) {
+    dataQuery = dataQuery.eq("category_id", filters.category_id);
+  }
+  if (filters?.group_id) {
+    dataQuery = dataQuery.eq("group_id", filters.group_id);
+  }
+  if (filters?.tags && filters.tags.length > 0) {
+    for (const tag of filters.tags) {
+      dataQuery = dataQuery.contains("tags", [tag]);
+    }
   }
 
   const { data: transactions } = await dataQuery
@@ -329,11 +392,22 @@ export async function handleStatement(supabase: any, userId: number, chatId: num
     .from("transactions")
     .select("type, amount")
     .eq("user_id", user.id)
-    .gte("transaction_date", startOfMonth)
-    .lte("transaction_date", endOfMonth);
+    .gte("transaction_date", periodStart)
+    .lte("transaction_date", periodEnd);
 
   if (typeFilter !== "all") {
     totalsQuery = totalsQuery.eq("type", typeFilter);
+  }
+  if (filters?.category_id) {
+    totalsQuery = totalsQuery.eq("category_id", filters.category_id);
+  }
+  if (filters?.group_id) {
+    totalsQuery = totalsQuery.eq("group_id", filters.group_id);
+  }
+  if (filters?.tags && filters.tags.length > 0) {
+    for (const tag of filters.tags) {
+      totalsQuery = totalsQuery.contains("tags", [tag]);
+    }
   }
 
   const { data: periodData } = await totalsQuery;
@@ -354,20 +428,40 @@ export async function handleStatement(supabase: any, userId: number, chatId: num
   const incomeTx = transactions.filter((t: any) => t.type === "income");
   const expenseTx = transactions.filter((t: any) => t.type === "expense");
 
-  let message = `📋 *Extrato — ${monthName}*   📄 ${page + 1}/${totalPages} (${startItem}–${endItem} de ${totalCount})\n`;
+  // Build header
+  let message = `📋 *Extrato*   📄 ${page + 1}/${totalPages} (${startItem}–${endItem} de ${totalCount})\n`;
+
+  // Filter summary line (show non-default filters)
+  const filterParts: string[] = [];
+  if (filters?.category_id) {
+    const cat = transactions.find((t: any) => t.categories?.name)?.categories?.name;
+    filterParts.push(cat || "categoria específica");
+  }
+  if (filters?.group_id) {
+    const grp = transactions.find((t: any) => t.groups?.name)?.groups?.name;
+    filterParts.push(grp || "grupo específico");
+  }
+  if (filters?.tags && filters.tags.length > 0) {
+    filterParts.push(filters.tags.map((t: string) => t.startsWith("#") ? t : `#${t}`).join(" "));
+  }
+  if (period !== "this_month") {
+    filterParts.push(periodLabel);
+  }
   if (!showAllTypes) {
-    message += `🔽 ${statementFilterLabel(typeFilter)}\n`;
+    filterParts.push(typeFilter === "income" ? "📈 Receitas" : "📉 Despesas");
+  }
+  if (filterParts.length > 0) {
+    message += `🔽 ${filterParts.join(" · ")}\n`;
   }
   message += "\n";
 
   // Helper to format a single transaction line
   function appendTxLine(t: any): string {
-    const emoji = t.type === "income" ? "📈" : "📉";
     const shortDate = formatDateBR(t.transaction_date).slice(0, 5);
     const catName = t.categories?.name || "—";
     const grpName = t.groups?.name || "Pessoal";
     const tags = t.tags?.length ? ` ${t.tags.join(" ")}` : "";
-    return `${emoji} \`#${t.id}\`  ${shortDate}  *${formatCurrencyBR(Number(t.amount))}*   ${catName} · ${grpName}${tags}\n`;
+    return `• \`#${t.id}\`  ${shortDate}  *${formatCurrencyBR(Number(t.amount))}*   ${catName} · ${grpName}${tags}\n`;
   }
 
   // Income section
@@ -378,7 +472,7 @@ export async function handleStatement(supabase: any, userId: number, chatId: num
     for (const t of incomeTx) {
       message += appendTxLine(t);
     }
-    message += `📈 — *Total: ${formatCurrencyBR(totalIncome)}*\n\n`;
+    message += `Total: ${formatCurrencyBR(totalIncome)}\n\n`;
   }
 
   // Expense section
@@ -389,19 +483,26 @@ export async function handleStatement(supabase: any, userId: number, chatId: num
     for (const t of expenseTx) {
       message += appendTxLine(t);
     }
-    message += `📉 — *Total: ${formatCurrencyBR(totalExpenses)}*\n\n`;
+    message += `Total: ${formatCurrencyBR(totalExpenses)}\n\n`;
   }
 
-  // Overall balance (only when showing all)
+  // Overall balance (only when showing all and both types have data or one has data)
   if (showAllTypes) {
     const balance = totalIncome - totalExpenses;
     const balanceEmoji = balance >= 0 ? "✅" : "⚠️";
     message += `${balanceEmoji} *Saldo: ${formatCurrencyBR(balance)}*`;
   }
 
+  // If we only have one section, no need for extra blank line at the end
+  const hasIncome = incomeTx.length > 0;
+  const hasExpense = expenseTx.length > 0;
+  if (hasIncome && !hasExpense && showAllTypes) {
+    message = message.replace(/\n\n$/, "");
+  }
+
   const currentSuffix = statementFilterSuffix(typeFilter);
 
-  // Build filter buttons + pagination keyboard
+  // Build keyboard
   const keyboard: InlineKeyboard = [];
 
   // Filter row
@@ -419,6 +520,9 @@ export async function handleStatement(supabase: any, userId: number, chatId: num
     });
   }
   keyboard.push(filterRow);
+
+  // 🔍 Novo filtro button (only when not using quick-filter from results)
+  keyboard.push([{ text: "🔍 Novo filtro", callback_data: "stmt_filter" }]);
 
   // Pagination row
   const navButtons: InlineKeyboard[0] = [];
