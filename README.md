@@ -31,7 +31,7 @@ Telegram → Edge Function (webhook) → Supabase DB → Resposta via Bot API
 
 ## Estrutura do Projeto
 
-```
+```text
 fincance/
 ├── supabase/
 │   ├── config.toml
@@ -128,10 +128,39 @@ supabase db push
 
 ### 7. Configurar Variáveis de Ambiente
 
+#### Produção
+
 ```bash
 supabase secrets set TELEGRAM_BOT_TOKEN=seu_token_do_bot
 supabase secrets set TELEGRAM_SECRET_TOKEN=seu_secret_token
 ```
+
+#### Local
+
+Para testar localmente, exporte as variáveis no terminal antes de usar os comandos de teste:
+
+```bash
+# Obter as keys do Supabase local
+supabase status
+
+# Exportar no terminal (copie do output do supabase status)
+export SUPABASE_ANON_KEY="sua_anon_key_aqui"
+export TELEGRAM_SECRET_TOKEN="seu_secret_token_aqui"
+
+# Agora pode testar
+make dev-test-start
+make dev-test-gasto
+```
+
+**Resumo das variáveis:**
+
+| Variável | Produção | Local | Como configurar |
+|----------|----------|-------|-----------------|
+| `TELEGRAM_BOT_TOKEN` | Supabase Secrets | Supabase Secrets | `supabase secrets set` |
+| `TELEGRAM_SECRET_TOKEN` | Supabase Secrets | Supabase Secrets | `supabase secrets set` |
+| `SUPABASE_ANON_KEY` | Automático | `supabase status` | Exportar no shell |
+| `SUPABASE_URL` | Automático | Automático | Definido pelo Supabase |
+| `SUPABASE_SERVICE_ROLE_KEY` | Automático | Automático | Definido pelo Supabase |
 
 **Importante:** O `secret_token` deve conter apenas letras, números, underscores e hífens.
 
