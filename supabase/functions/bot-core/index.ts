@@ -6,7 +6,11 @@ const TELEGRAM_SECRET_TOKEN = Deno.env.get("TELEGRAM_SECRET_TOKEN");
 // For local development, use the internal Supabase URL
 // For production, Supabase automatically sets SUPABASE_URL
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "http://kong:8000";
-const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "your_service_role_key_here";
+const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+
+if (!SUPABASE_SERVICE_ROLE_KEY) {
+  console.error("SUPABASE_SERVICE_ROLE_KEY is not set");
+}
 
 interface TelegramMessage {
   message_id: number;
@@ -50,15 +54,22 @@ interface InlineKeyboardButton {
 type InlineKeyboard = InlineKeyboardButton[][];
 
 async function sendTelegramMessage(chatId: number, text: string): Promise<void> {
-  await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      chat_id: chatId,
-      text: text,
-      parse_mode: "Markdown",
-    }),
-  });
+  try {
+    const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text: text,
+        parse_mode: "Markdown",
+      }),
+    });
+    if (!response.ok) {
+      console.error("Telegram API error:", await response.text());
+    }
+  } catch (error) {
+    console.error("Error sending Telegram message:", error);
+  }
 }
 
 async function sendTelegramMessageWithKeyboard(
@@ -66,18 +77,25 @@ async function sendTelegramMessageWithKeyboard(
   text: string,
   keyboard: InlineKeyboard
 ): Promise<void> {
-  await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      chat_id: chatId,
-      text: text,
-      parse_mode: "Markdown",
-      reply_markup: {
-        inline_keyboard: keyboard,
-      },
-    }),
-  });
+  try {
+    const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text: text,
+        parse_mode: "Markdown",
+        reply_markup: {
+          inline_keyboard: keyboard,
+        },
+      }),
+    });
+    if (!response.ok) {
+      console.error("Telegram API error:", await response.text());
+    }
+  } catch (error) {
+    console.error("Error sending Telegram message with keyboard:", error);
+  }
 }
 
 async function handleSaldo(
@@ -475,25 +493,13 @@ async function completeWizard(
   chatId: number,
   data: Record<string, any>
 ): Promise<void> {
-  // Get user's internal ID
-  const { data: user } = await supabase
-    .from("users")
-    .select("id")
-    .eq("telegram_id", userId)
-    .single();
-
-  if (!user) {
-    await sendTelegramMessage(chatId, "Usuário não encontrado.");
-    return;
-  }
-
   // Get or create category
   let categoryId = null;
   if (data.category) {
     const { data: existingCategory } = await supabase
       .from("categories")
       .select("id")
-      .eq("user_id", user.id)
+      .eq("user_id", userId)
       .ilike("name", data.category)
       .single();
 
@@ -502,7 +508,7 @@ async function completeWizard(
     } else {
       const { data: newCategory } = await supabase
         .from("categories")
-        .insert({ user_id: user.id, name: data.category })
+        .insert({ user_id: userId, name: data.category })
         .select("id")
         .single();
       categoryId = newCategory?.id;
@@ -515,7 +521,7 @@ async function completeWizard(
     const { data: group } = await supabase
       .from("groups")
       .select("id")
-      .eq("user_id", user.id)
+      .eq("user_id", userId)
       .ilike("name", data.group)
       .single();
     groupId = group?.id;
@@ -523,38 +529,53 @@ async function completeWizard(
     const { data: defaultGroup } = await supabase
       .from("groups")
       .select("id")
-      .eq("user_id", user.id)
+      .eq("user_id", userId)
       .eq("is_default", true)
       .single();
     groupId = defaultGroup?.id;
   }
 
+  // Parse tags
+  let tags: string[] = [];
+  if (data.tags) {
+    if (Array.isArray(data.tags)) {
+      tags = data.tags;
+    } else if (typeof data.tags === "string") {
+      tags = data.tags.split(/[\s,]+/).filter((t: string) => t.startsWith("#")).map((t: string) => t.replace("#", ""));
+    }
+  }
+
   // Create transaction
+  const transactionType = data.type || "expense";
   const { error } = await supabase.from("transactions").insert({
-    user_id: user.id,
+    user_id: userId,
     group_id: groupId,
     category_id: categoryId,
-    type: "expense",
+    type: transactionType,
     amount: data.amount,
     description: data.category,
-    tags: data.tags || [],
+    tags: tags,
     transaction_date: data.date || new Date().toISOString().split("T")[0],
   });
 
-  await clearWizardState(supabase, user.id);
+  await clearWizardState(supabase, userId);
 
   if (error) {
-    await sendTelegramMessage(chatId, "Erro ao registrar gasto. Tente novamente.");
+    await sendTelegramMessage(chatId, "Erro ao registrar. Tente novamente.");
     return;
   }
 
+  const typeLabel = transactionType === "income" ? "Receita" : "Despesa";
+  const emoji = transactionType === "income" ? "📈" : "📉";
+
   await sendTelegramMessage(
     chatId,
-    `✅ *Despesa registrada!*\n\n` +
+    `${emoji} *${typeLabel} registrada!*\n\n` +
     `Valor: R$ ${Number(data.amount).toFixed(2)}\n` +
     `Categoria: ${data.category || "Não definida"}\n` +
     `Grupo: ${data.group || "Pessoal"}\n` +
-    `Data: ${data.date || new Date().toISOString().split("T")[0]}`
+    `Data: ${data.date || new Date().toISOString().split("T")[0]}` +
+    (tags.length > 0 ? `\nTags: ${tags.map((t: string) => `#${t}`).join(" ")}` : "")
   );
 }
 
@@ -565,6 +586,28 @@ async function handleGastoWizard(
   state: WizardState,
   input: string
 ): Promise<void> {
+  // Handle custom_date step
+  if (state.step === "gasto_custom_date") {
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+    if (!dateRegex.test(input)) {
+      await sendTelegramMessage(chatId, "Formato inválido. Use YYYY-MM-DD (ex: 2024-01-15)");
+      return;
+    }
+    await setWizardState(supabase, userId, "gasto_tags", { ...state.data, date: input });
+    const { data: tagsStep } = await supabase
+      .from("wizard_steps")
+      .select("*")
+      .eq("wizard_name", "gasto")
+      .eq("step_key", "tags")
+      .single();
+    if (tagsStep) {
+      await sendWizardStepMessage(chatId, tagsStep, userId, supabase);
+    } else {
+      await completeWizard(supabase, userId, chatId, { ...state.data, date: input });
+    }
+    return;
+  }
+
   const stepKey = state.step.replace("gasto_", "");
   const { data: currentStep } = await supabase
     .from("wizard_steps")
@@ -619,6 +662,21 @@ async function handleReceitaWizard(
   state: WizardState,
   input: string
 ): Promise<void> {
+  // Handle custom_date step
+  if (state.step === "receita_custom_date") {
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+    if (!dateRegex.test(input)) {
+      await sendTelegramMessage(chatId, "Formato inválido. Use YYYY-MM-DD (ex: 2024-01-15)");
+      return;
+    }
+    await completeWizard(supabase, userId, chatId, {
+      ...state.data,
+      date: input,
+      type: "income",
+    });
+    return;
+  }
+
   const stepKey = state.step.replace("receita_", "");
   const { data: currentStep } = await supabase
     .from("wizard_steps")
@@ -1083,6 +1141,7 @@ serve(async (req: Request): Promise<Response> => {
             `/extrato - Ver extrato do mês\n` +
             `/grupo - Gerenciar grupos\n` +
             `/categoria - Gerenciar categorias\n` +
+            `/cancelar - Cancelar operação em andamento\n` +
             `/ajuda - Esta mensagem`
           );
           break;
@@ -1109,6 +1168,11 @@ serve(async (req: Request): Promise<Response> => {
 
         case "/categoria":
           await handleCategoria(supabase, message.from.id, message.chat.id, args);
+          break;
+
+        case "/cancelar":
+          await clearWizardState(supabase, existingUser.id);
+          await sendTelegramMessage(message.chat.id, "❌ Operação cancelada.");
           break;
 
         default:
