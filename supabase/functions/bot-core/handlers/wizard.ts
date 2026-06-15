@@ -186,7 +186,7 @@ export async function completeWizard(
     await sendSimilarityWarning(supabase, userId, chatId, "category", data.category);
   }
 
-  const categoryId = data.category ? await getOrCreateCategory(supabase, userId, data.category) : null;
+  const categoryId = data.category ? await getOrCreateCategory(supabase, userId, data.category, type) : null;
 
   // Check for similar existing groups
   if (data.group) {

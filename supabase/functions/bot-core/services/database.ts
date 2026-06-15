@@ -39,18 +39,23 @@ export async function getCategories(supabase: any, userId: number, type?: "expen
   return data || [];
 }
 
-export async function getOrCreateCategory(supabase: any, userId: number, categoryName: string): Promise<string | null> {
+export async function getOrCreateCategory(supabase: any, userId: number, categoryName: string, transactionType?: "expense" | "income" | null): Promise<string | null> {
   const normalizedName = normalizeString(categoryName);
   const { data: existing } = await supabase
     .from("categories")
-    .select("id")
+    .select("id, transaction_type")
     .eq("user_id", userId)
     .eq("normalized_name", normalizedName)
     .maybeSingle();
-  if (existing) return existing.id;
+  if (existing) {
+    if (transactionType && !existing.transaction_type) {
+      await supabase.from("categories").update({ transaction_type: transactionType }).eq("id", existing.id);
+    }
+    return existing.id;
+  }
   const { data: newCategory } = await supabase
     .from("categories")
-    .insert({ user_id: userId, name: categoryName, normalized_name: normalizedName })
+    .insert({ user_id: userId, name: categoryName, normalized_name: normalizedName, transaction_type: transactionType || null })
     .select("id")
     .single();
   return newCategory?.id || null;

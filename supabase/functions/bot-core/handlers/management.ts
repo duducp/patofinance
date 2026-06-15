@@ -220,7 +220,8 @@ export async function handleListTransactions(supabase: any, userId: number, chat
     const emoji = t.type === "income" ? "📈" : "📉";
     const catName = t.categories?.name || "Sem categoria";
     const dateStr = formatDateBR(t.transaction_date);
-    message += `${emoji} ${dateStr} - *${formatCurrencyBR(Number(t.amount))}* | ${catName}\n`;
+    const desc = t.description ? ` — ${t.description}` : "";
+    message += `${emoji} ${dateStr} - *${formatCurrencyBR(Number(t.amount))}* | ${catName}${desc}\n`;
   }
 
   // Build navigation keyboard
@@ -419,7 +420,8 @@ export async function handleListByTag(supabase: any, userId: number, chatId: num
     const emoji = t.type === "income" ? "📈" : "📉";
     const catName = t.categories?.name || "Sem categoria";
     const dateStr = formatDateBR(t.transaction_date);
-    message += `${emoji} ${dateStr} - *${formatCurrencyBR(Number(t.amount))}* | ${catName}\n`;
+    const desc = t.description ? ` — ${t.description}` : "";
+    message += `${emoji} ${dateStr} - *${formatCurrencyBR(Number(t.amount))}* | ${catName}${desc}\n`;
   }
 
   // Build navigation keyboard

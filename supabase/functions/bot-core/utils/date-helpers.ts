@@ -1,7 +1,7 @@
 import { getMonthName, formatDateBR, getNowBR } from "./formatting.ts";
 
 export function getDateRange(
-  period: "this_month" | "last_month" | null,
+  period: "this_month" | "last_month" | "last_3_months" | "this_year" | null,
   date: string | null
 ): { start: string; end: string; label: string } {
   const now = getNowBR();
@@ -26,7 +26,21 @@ export function getDateRange(
       label: getMonthName(lastMonth),
     };
   }
-  
+
+  if (period === "last_3_months") {
+    const start = new Date(now.getFullYear(), now.getMonth() - 2, 1).toISOString().split("T")[0];
+    const end = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split("T")[0];
+    return { start, end, label: "Últimos 3 meses" };
+  }
+
+  if (period === "this_year") {
+    return {
+      start: `${now.getFullYear()}-01-01`,
+      end: `${now.getFullYear()}-12-31`,
+      label: `${now.getFullYear()}`,
+    };
+  }
+
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split("T")[0];
   const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split("T")[0];
   return { start: startOfMonth, end: endOfMonth, label: getMonthName(now) };

@@ -9,6 +9,8 @@ import type {
   DeepSeekResponse,
   TelegramUpdate,
   InlineKeyboard,
+  PeriodPreset,
+  ExtratoFilters,
 } from "./types/index.ts";
 import { isRateLimited } from "./utils/rate-limiter.ts";
 import { incrementSessionSeq } from "./utils/session.ts";
@@ -177,6 +179,11 @@ serve(async (req: Request): Promise<Response> => {
         await supabase.from("transactions").update({ amount }).eq("id", transactionId).eq("user_id", existingUser.id);
         await clearWizardState(supabase, existingUser.id);
         await sendTelegramMessage(message.chat.id, `✅ Valor atualizado para ${formatCurrencyBR(amount)}!`);
+      } else if (wizardState.step === "edit_description") {
+        const transactionId = wizardState.data.transaction_id;
+        await supabase.from("transactions").update({ description: text }).eq("id", transactionId).eq("user_id", existingUser.id);
+        await clearWizardState(supabase, existingUser.id);
+        await sendTelegramMessage(message.chat.id, `✅ Descrição atualizada para "${text}"!`);
       } else if (wizardState.step === "edit_date") {
         const parsed = parseDateBR(text);
         if (!parsed) {
@@ -348,7 +355,45 @@ serve(async (req: Request): Promise<Response> => {
           break;
 
         case "/extrato":
-          await handleFilterPanel(supabase, existingUser.id, message.chat.id);
+          if (args.length === 0) {
+            await handleFilterPanel(supabase, existingUser.id, message.chat.id);
+          } else {
+            // Parse direct args: --periodo, --grupo, --mes
+            let period: string | null = null;
+            let groupName: string | null = null;
+            let typeFilter: "all" | "income" | "expense" = "all";
+            for (let i = 0; i < args.length; i++) {
+              if (args[i] === "--periodo" || args[i] === "--mes") {
+                period = args[i + 1] || null;
+                i++;
+              } else if (args[i] === "--grupo") {
+                groupName = args[i + 1] || null;
+                i++;
+              } else if (args[i] === "--tipo" || args[i] === "--type") {
+                const t = args[i + 1] || "";
+                if (t === "income" || t === "receita") typeFilter = "income";
+                else if (t === "expense" || t === "despesa") typeFilter = "expense";
+                i++;
+              }
+            }
+            const filters: ExtratoFilters = {
+              category_id: null,
+              group_id: null,
+              tags: [],
+              type: typeFilter,
+              period: (period as PeriodPreset) || "this_month",
+            };
+            if (groupName) {
+              const { data: group } = await supabase
+                .from("groups")
+                .select("id")
+                .eq("user_id", existingUser.id)
+                .ilike("name", groupName)
+                .maybeSingle();
+              if (group) filters.group_id = group.id;
+            }
+            await handleStatement(supabase, message.from.id, message.chat.id, 0, typeFilter, filters);
+          }
           break;
 
         case "/resumo":

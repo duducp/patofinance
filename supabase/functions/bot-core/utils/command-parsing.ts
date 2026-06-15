@@ -5,6 +5,7 @@ export function parseCommand(args: string[]): ParsedCommand {
   let category: string | null = null;
   let group: string | null = null;
   let date: string | null = null;
+  let period: string | null = null;
   const tags: string[] = [];
 
   for (let i = 0; i < args.length; i++) {
@@ -13,6 +14,9 @@ export function parseCommand(args: string[]): ParsedCommand {
       i++;
     } else if (args[i] === "--grupo") {
       group = args[i + 1] || null;
+      i++;
+    } else if (args[i] === "--periodo" || args[i] === "--mes") {
+      period = args[i + 1] || null;
       i++;
     } else if (args[i].startsWith("#")) {
       tags.push(args[i]);
@@ -24,5 +28,5 @@ export function parseCommand(args: string[]): ParsedCommand {
     }
   }
 
-  return { amount, category, group, date, tags };
+  return { amount, category, group, date, tags, period };
 }

@@ -110,7 +110,8 @@ export async function handleQueryExpenses(
   let total = 0;
   for (const t of limited) {
     const catName = t.categories?.name || "Sem categoria";
-    message += `📉 ${formatDateBR(t.transaction_date)} - *${formatCurrencyBR(Number(t.amount))}* | ${catName}\n`;
+    const desc = t.description ? ` — ${t.description}` : "";
+    message += `📉 ${formatDateBR(t.transaction_date)} - *${formatCurrencyBR(Number(t.amount))}* | ${catName}${desc}\n`;
     if (t.type === "expense") total += Number(t.amount);
   }
   message += `\n💰 Total: *${formatCurrencyBR(total)}*`;

@@ -59,9 +59,9 @@ export async function handleHelp(chatId: number): Promise<void> {
     `💰 *Financeiros:*\n` +
     `/despesa - Registrar despesa (/gasto também funciona)\n` +
     `/receita - Registrar receita\n` +
-    `/saldo - Ver saldo do mês\n` +
-    `/extrato - Ver extrato do mês\n` +
-    `/resumo - Resumo por categoria\n` +
+    `/saldo - Ver saldo do mês (ex: \`/saldo --mes last_month\`)\n` +
+    `/extrato - Ver extrato (ex: \`/extrato --periodo last_month --grupo Pessoal\`)\n` +
+    `/resumo - Resumo por categoria (ex: \`/resumo --mes last_month\`)\n` +
     `/editar - Editar transação (ex: \`/editar 42\`)\n` +
     `/excluir - Excluir transação (ex: \`/excluir 42\`)\n\n` +
     `📁 *Organização:*\n` +
@@ -109,13 +109,26 @@ export async function handleBalance(supabase: any, userId: number, chatId: numbe
     return;
   }
 
-  const { start: startOfMonth, end: endOfMonth, label: monthName } = getDateRange(null, null);
+  // Parse period and group from args
+  let period: string | null = null;
+  const cleanArgs: string[] = [];
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === "--periodo" || args[i] === "--mes") {
+      period = args[i + 1] || null;
+      i++;
+    } else {
+      cleanArgs.push(args[i]);
+    }
+  }
+
+  const resolvedPeriod = period === "last_month" ? "last_month" as const : "this_month" as const;
+  const { start: startOfMonth, end: endOfMonth, label: monthName } = getDateRange(resolvedPeriod, null);
 
   // Determine group filter
   let groupId: number | null = null;
   let groupName: string | null = null;
-  if (args.length > 0) {
-    const searchName = args.join(" ");
+  if (cleanArgs.length > 0) {
+    const searchName = cleanArgs.join(" ");
     const { data: group } = await supabase
       .from("groups")
       .select("id, name")
@@ -225,7 +238,7 @@ export async function handleTransaction(
     await sendSimilarityWarning(supabase, user.id, chatId, "category", parsed.category);
   }
 
-  const categoryId = parsed.category ? await getOrCreateCategory(supabase, user.id, parsed.category) : null;
+  const categoryId = parsed.category ? await getOrCreateCategory(supabase, user.id, parsed.category, type) : null;
 
   // Check for similar existing groups
   if (parsed.group) {
@@ -465,7 +478,8 @@ export async function handleStatement(
     const catName = t.categories?.name || "—";
     const grpName = t.groups?.name || "Pessoal";
     const tags = t.tags?.length ? ` ${t.tags.join(" ")}` : "";
-    return `• \`#${t.id}\`  ${shortDate}  *${formatCurrencyBR(Number(t.amount))}*   ${catName} · ${grpName}${tags}\n`;
+    const desc = t.description ? ` (${t.description})` : "";
+    return `• \`#${t.id}\`  ${shortDate}  *${formatCurrencyBR(Number(t.amount))}*   ${catName} · ${grpName}${desc}${tags}\n`;
   }
 
   // Income section
@@ -553,11 +567,25 @@ export async function handleSummary(supabase: any, userId: number, chatId: numbe
     return;
   }
 
+  // Parse period and group from args
+  let period: string | null = null;
+  const cleanArgs: string[] = [];
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === "--periodo" || args[i] === "--mes") {
+      period = args[i + 1] || null;
+      i++;
+    } else {
+      cleanArgs.push(args[i]);
+    }
+  }
+
+  const resolvedPeriod = period === "last_month" ? "last_month" as const : null;
+
   // Determine group filter
   let groupId: number | null = null;
   let groupName: string | null = null;
-  if (args.length > 0) {
-    const searchName = args.join(" ");
+  if (cleanArgs.length > 0) {
+    const searchName = cleanArgs.join(" ");
     const { data: group } = await supabase
       .from("groups")
       .select("id, name")
@@ -570,7 +598,7 @@ export async function handleSummary(supabase: any, userId: number, chatId: numbe
     }
   }
 
-  const data = await getSummaryData(supabase, user.id, null, groupId);
+  const data = await getSummaryData(supabase, user.id, resolvedPeriod, groupId);
   if (!data) {
     if (groupName) {
       const keyboard: InlineKeyboard = [[{ text: "📋 Todas as contas", callback_data: "summary_grp_all" }]];
@@ -655,7 +683,10 @@ export async function handleEdit(supabase: any, userId: number, chatId: number, 
       { text: "🔖 Editar tags", callback_data: addSession(`edit_tags_${transaction.id}`, sessionSeq) },
     ],
     [
+      { text: "📝 Editar descrição", callback_data: addSession(`edit_desc_${transaction.id}`, sessionSeq) },
       { text: "📅 Editar data", callback_data: addSession(`edit_date_${transaction.id}`, sessionSeq) },
+    ],
+    [
       { text: "❌ Excluir", callback_data: addSession(`confirm_delete_${transaction.id}`, sessionSeq) },
     ],
   ];

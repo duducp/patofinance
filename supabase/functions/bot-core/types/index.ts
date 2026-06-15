@@ -55,6 +55,7 @@ export interface ParsedCommand {
   group: string | null;
   date: string | null;
   tags: string[];
+  period: string | null;
 }
 
 export type PeriodPreset = "this_month" | "last_month" | "last_3_months" | "this_year";

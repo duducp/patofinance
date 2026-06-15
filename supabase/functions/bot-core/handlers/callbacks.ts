@@ -636,7 +636,7 @@ export async function handleCallbackQuery(
       const finalCategory = category === "none" ? null : category;
       const natural: DeepSeekResponse = { intent, amount, category: finalCategory, date, period: null, name: null, tag: null, limit: null, missingFields: [] };
       await clearWizardState(supabase, user.id);
-      await executeNaturalLanguageAction(supabase, user.id, chatId, natural);
+      await executeNaturalLanguageAction(supabase, telegramId, chatId, natural);
       return;
     }
 
@@ -651,7 +651,7 @@ export async function handleCallbackQuery(
       const category = state.data.category;
       const natural: DeepSeekResponse = { intent, amount: null, category, date: null, period, name: null, tag: null, limit: null, missingFields: [] };
       await clearWizardState(supabase, user.id);
-      await executeNaturalLanguageAction(supabase, user.id, chatId, natural);
+      await executeNaturalLanguageAction(supabase, telegramId, chatId, natural);
       return;
     }
 
@@ -885,6 +885,9 @@ export async function handleCallbackQuery(
       if (action === "amount") {
         await sendTelegramMessage(chatId, "Informe o novo valor:");
         await setWizardState(supabase, user.id, "edit_amount", { transaction_id: transactionId });
+      } else if (action === "description" || action === "desc") {
+        await sendTelegramMessage(chatId, "Informe a nova descrição:");
+        await setWizardState(supabase, user.id, "edit_description", { transaction_id: transactionId });
       } else if (action === "category") {
         const { data: categories } = await supabase.from("categories").select("name").eq("user_id", user.id).order("name");
         if (categories && categories.length > 0) {
@@ -981,9 +984,7 @@ export async function handleCallbackQuery(
     // Handle tag selection - show transactions with this tag
     if (selectedValue.startsWith("tag_sel_")) {
       const tag = selectedValue.replace("tag_sel_", "");
-      const user = await getOrCreateUser(supabase, telegramId);
-      if (!user) return;
-      await handleListByTag(supabase, user.id, chatId, tag, 0, message.message_id);
+      await handleListByTag(supabase, telegramId, chatId, tag, 0, message.message_id);
       return;
     }
 
