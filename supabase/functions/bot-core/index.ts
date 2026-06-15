@@ -612,14 +612,88 @@ async function handleGastoWizard(
   }
 }
 
+async function handleReceitaWizard(
+  supabase: any,
+  userId: number,
+  chatId: number,
+  state: WizardState,
+  input: string
+): Promise<void> {
+  const stepKey = state.step.replace("receita_", "");
+  const { data: currentStep } = await supabase
+    .from("wizard_steps")
+    .select("*")
+    .eq("wizard_name", "receita")
+    .eq("step_key", stepKey)
+    .single();
+
+  if (!currentStep) {
+    await sendTelegramMessage(chatId, "Erro ao processar wizard.");
+    return;
+  }
+
+  let value = input;
+
+  if (currentStep.input_type === "text" && stepKey === "amount") {
+    const amount = parseFloat(input);
+    if (isNaN(amount) || amount <= 0) {
+      await sendTelegramMessage(chatId, "Por favor, informe um valor válido.");
+      return;
+    }
+    value = amount.toString();
+  }
+
+  const { data: nextStep } = await supabase
+    .from("wizard_steps")
+    .select("*")
+    .eq("wizard_name", "receita")
+    .gt("step_order", currentStep.step_order)
+    .order("step_order")
+    .limit(1)
+    .single();
+
+  if (nextStep) {
+    await setWizardState(supabase, userId, `receita_${nextStep.step_key}`, {
+      ...state.data,
+      [stepKey]: value,
+    });
+    await sendWizardStepMessage(chatId, nextStep, userId, supabase);
+  } else {
+    await completeWizard(supabase, userId, chatId, {
+      ...state.data,
+      [stepKey]: value,
+      type: "income",
+    });
+  }
+}
+
 async function handleReceita(
   supabase: any,
   userId: number,
   chatId: number,
   args: string[]
 ): Promise<void> {
+  const { data: user } = await supabase
+    .from("users")
+    .select("id")
+    .eq("telegram_id", userId)
+    .single();
+
+  if (!user) {
+    await sendTelegramMessage(chatId, "Usuário não encontrado.");
+    return;
+  }
+
+  const wizardState = await getWizardState(supabase, user.id);
+
+  if (wizardState) {
+    await handleReceitaWizard(supabase, user.id, chatId, wizardState, args[0] || "");
+    return;
+  }
+
   if (args.length === 0) {
     await sendTelegramMessage(chatId, "Quanto você recebeu?");
+    await setWizardState(supabase, user.id, "receita_amount");
     return;
   }
 
