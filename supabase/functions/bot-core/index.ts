@@ -39,7 +39,6 @@ import {
   handleCategory,
   handleTag,
   handleCleanup,
-  resolvePeriod,
 } from "./handlers/commands.ts";
 
 
@@ -267,6 +266,44 @@ serve(async (req: Request): Promise<Response> => {
         const natural: DeepSeekResponse = { intent: intent as "create_category" | "create_group", amount: null, category: null, date: null, period: null, name: text, tag: null, limit: null, missingFields: [] };
         await clearWizardState(supabase, existingUser.id);
         await executeNaturalLanguageAction(supabase, message.from.id, message.chat.id, natural);
+      } else if (wizardState.step === "nl_ask_type") {
+        const lower = text.toLowerCase();
+        let type: "expense" | "income" | null = null;
+        if (lower.includes("despesa") || lower.includes("gasto") || lower.includes("saída") || lower.includes("gastei") || lower.includes("paguei") || lower.includes("comprei")) {
+          type = "expense";
+        } else if (lower.includes("receita") || lower.includes("recebi") || lower.includes("ganhei") || lower.includes("entrada") || lower.includes("salário")) {
+          type = "income";
+        }
+        if (type) {
+          await clearWizardState(supabase, existingUser.id);
+          await handleTransaction(type, supabase, message.from.id, message.chat.id, []);
+        } else {
+          const keyboard = [
+            [{ text: "💸 Despesa", callback_data: "nl_type_expense" }],
+            [{ text: "💰 Receita", callback_data: "nl_type_income" }],
+          ];
+          await sendTelegramMessageWithKeyboard(message.chat.id, "Não entendi. É uma despesa ou receita?", keyboard);
+        }
+      } else if (wizardState.step === "nl_expense_group" || wizardState.step === "nl_income_group") {
+        const type = wizardState.step === "nl_expense_group" ? "expense" : "income";
+        const amount = wizardState.data.amount;
+        const category = wizardState.data.category;
+        const description = wizardState.data.description;
+        const date = wizardState.data.date;
+        if (!amount) {
+          await sendTelegramMessage(message.chat.id, "❌ Erro ao processar. Tente novamente.");
+          await clearWizardState(supabase, existingUser.id);
+          return new Response("OK", { status: 200 });
+        }
+        const args = [amount.toString()];
+        if (category) args.push(category);
+        args.push("--grupo", text.trim());
+        if (date) {
+          const dateBR = parseDateBR(date) || date;
+          args.push("--data", dateBR);
+        }
+        await clearWizardState(supabase, existingUser.id);
+        await handleTransaction(type, supabase, message.from.id, message.chat.id, args, description || undefined);
       } else if (wizardState.step === "nl_list_by_tag_name") {
         const tag = text.replace("#", "").trim();
         const natural: DeepSeekResponse = { intent: "list_by_tag", amount: null, category: null, date: null, period: null, name: null, tag, limit: null, missingFields: [] };
@@ -302,10 +339,23 @@ serve(async (req: Request): Promise<Response> => {
       const natural = await parseNaturalLanguage(text);
 
       if (natural.intent === null) {
-        await sendTelegramMessage(
-          message.chat.id,
-          `🤔 Não entendi. Você pode usar comandos como /despesa ou digitar algo como "gastei 50 no almoço".\n\nUse /ajuda para ver todos os comandos.`
-        );
+        if (text.match(/\d+[,\.]?\d*/)) {
+          await setWizardState(supabase, existingUser.id, "nl_ask_type", { text });
+          const keyboard = [
+            [{ text: "💸 Despesa", callback_data: "nl_type_expense" }],
+            [{ text: "💰 Receita", callback_data: "nl_type_income" }],
+          ];
+          await sendTelegramMessageWithKeyboard(
+            message.chat.id,
+            "Isso é uma despesa ou uma receita?",
+            keyboard
+          );
+        } else {
+          await sendTelegramMessage(
+            message.chat.id,
+            `🤔 Não entendi. Você pode usar comandos como /despesa ou digitar algo como "gastei 50 no almoço".\n\nUse /ajuda para ver todos os comandos.`
+          );
+        }
         return new Response("OK", { status: 200 });
       }
 
@@ -424,7 +474,7 @@ serve(async (req: Request): Promise<Response> => {
           await handleCleanup(supabase, message.from.id, message.chat.id);
           break;
 
-        case "/cancelar":
+        case "/cancelar": {
           const hadWizard = await getWizardState(supabase, existingUser.id);
           await clearWizardState(supabase, existingUser.id);
           if (hadWizard) {
@@ -433,6 +483,7 @@ serve(async (req: Request): Promise<Response> => {
             await sendTelegramMessage(message.chat.id, "ℹ️ Nenhuma operação em andamento para cancelar.");
           }
           break;
+        }
 
         default:
           await sendTelegramMessage(

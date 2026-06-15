@@ -1,8 +1,10 @@
 import type { DeepSeekResponse, InlineKeyboard } from "../types/index.ts";
 import { sendTelegramMessage, sendTelegramMessageWithKeyboard } from "../services/telegram.ts";
-import { getOrCreateUser, getCategories } from "../services/database.ts";
+import { getOrCreateUser, getCategories, resolveCategoryForNL } from "../services/database.ts";
 import { parseDateBR } from "../utils/formatting.ts";
 import { setWizardState } from "./wizard.ts";
+import { truncateCallbackData } from "../utils/rate-limiter.ts";
+import { getSessionSeq } from "../utils/session.ts";
 import {
   handleTransaction,
   handleBalance,
@@ -106,6 +108,60 @@ export async function handleNaturalLanguageWithFollowUp(
   await executeNaturalLanguageAction(supabase, userId, chatId, natural);
 }
 
+async function handleNLWithGroupCheck(
+  supabase: any,
+  telegramId: number,
+  userId: number,
+  chatId: number,
+  type: "expense" | "income",
+  natural: DeepSeekResponse,
+  resolvedCategory: string | null,
+): Promise<void> {
+  const { count: groupCount } = await supabase
+    .from("groups")
+    .select("*", { count: "exact", head: true })
+    .eq("user_id", userId);
+
+  if (groupCount && groupCount > 1) {
+    const sessionSeq = await getSessionSeq(supabase, userId);
+    const { data: groups } = await supabase
+      .from("groups")
+      .select("name")
+      .eq("user_id", userId)
+      .order("name");
+    const keyboard: InlineKeyboard = [];
+    if (groups) {
+      let row: { text: string; callback_data: string }[] = [];
+      for (const g of groups) {
+        row.push({ text: g.name, callback_data: truncateCallbackData(`nl_grp_${g.name}`, sessionSeq) });
+        if (row.length === 2) {
+          keyboard.push(row);
+          row = [];
+        }
+      }
+      if (row.length > 0) keyboard.push(row);
+    }
+    keyboard.push([{ text: "⏭️ Pular", callback_data: truncateCallbackData("nl_grp_skip", sessionSeq) }]);
+    await setWizardState(supabase, userId, `nl_${type}_group`, {
+      amount: natural.amount,
+      category: resolvedCategory,
+      description: natural.category,
+      date: natural.date,
+      type,
+    });
+    await sendTelegramMessageWithKeyboard(chatId, "Em que grupo?", keyboard);
+    return;
+  }
+
+  const args = [natural.amount!.toString()];
+  if (resolvedCategory) args.push(resolvedCategory);
+  if (natural.date) {
+    const dateBR = parseDateBR(natural.date) || natural.date;
+    args.push("--data", dateBR);
+  }
+  await handleTransaction(type, supabase, telegramId, chatId, args, natural.category || undefined);
+}
+
 export async function executeNaturalLanguageAction(
   supabase: any,
   userId: number,
@@ -113,24 +169,32 @@ export async function executeNaturalLanguageAction(
   natural: DeepSeekResponse
 ): Promise<void> {
   if (natural.intent === "expense" && natural.amount) {
-    const args = [natural.amount.toString()];
-    if (natural.category) args.push(natural.category);
-    if (natural.date) {
-      const dateBR = parseDateBR(natural.date) || natural.date;
-      args.push("--data", dateBR);
+    let category = natural.category;
+    if (category) {
+      const resolved = await resolveCategoryForNL(supabase, userId, category, "expense");
+      if (resolved && resolved.name !== category) {
+        await sendTelegramMessage(chatId, `💡 Usei a categoria *${resolved.name}* para "${category}"`);
+        category = resolved.name;
+      }
     }
-    await handleTransaction("expense", supabase, userId, chatId, args);
+    const user = await getOrCreateUser(supabase, userId);
+    if (!user) return;
+    await handleNLWithGroupCheck(supabase, userId, user.id, chatId, "expense", natural, category);
     return;
   }
 
   if (natural.intent === "income" && natural.amount) {
-    const args = [natural.amount.toString()];
-    if (natural.category) args.push(natural.category);
-    if (natural.date) {
-      const dateBR = parseDateBR(natural.date) || natural.date;
-      args.push("--data", dateBR);
+    let category = natural.category;
+    if (category) {
+      const resolved = await resolveCategoryForNL(supabase, userId, category, "income");
+      if (resolved && resolved.name !== category) {
+        await sendTelegramMessage(chatId, `💡 Usei a categoria *${resolved.name}* para "${category}"`);
+        category = resolved.name;
+      }
     }
-    await handleTransaction("income", supabase, userId, chatId, args);
+    const user = await getOrCreateUser(supabase, userId);
+    if (!user) return;
+    await handleNLWithGroupCheck(supabase, userId, user.id, chatId, "income", natural, category);
     return;
   }
 

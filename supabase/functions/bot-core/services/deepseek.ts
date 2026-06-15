@@ -75,7 +75,10 @@ Intents:
 - "cleanup": limpar categorias/grupos sem uso (limpe, limpar)
 - null: não entendeu
 
-Regras: amount numérico, date YYYY-MM-DD, period this_month/last_month, name para criar entidade, tag sem #, limit padrão 10.`,
+REGRAS IMPORTANTES:
+- category: use nomes de categorias existentes quando possível (ex: "gasolina" → "Transporte", "ifood" → "Alimentação", "aluguel" → "Moradia"). Apenas crie categoria nova se for algo realmente específico que não se encaixa em categorias comuns.
+- amount numérico, date YYYY-MM-DD, period this_month/last_month, name para criar entidade, tag sem #
+- limit padrão 10`,
           },
           { role: "user", content: prompt },
         ],

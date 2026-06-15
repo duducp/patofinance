@@ -1,11 +1,11 @@
 import { InlineKeyboard, DeepSeekResponse, TelegramCallbackQuery, ExtratoFilters, PeriodPreset } from "../types/index.ts";
 import { sendTelegramMessage, sendTelegramMessageWithKeyboard, editTelegramMessageWithKeyboard, answerCallbackQuery } from "../services/telegram.ts";
 import { getOrCreateUser, normalizeString, getAllUserTags, getOrCreateUncategorizedCategory } from "../services/database.ts";
-import { formatDateBR, getTodayISOBR } from "../utils/formatting.ts";
+import { formatDateBR, getTodayISOBR, parseDateBR } from "../utils/formatting.ts";
 import { truncateCallbackData } from "../utils/rate-limiter.ts";
-import { getWizardState, setWizardState, clearWizardState, completeWizard, sendWizardStepMessage, getCurrentWizardStep, advanceWizardToNextStep } from "./wizard.ts";
+import { getWizardState, setWizardState, clearWizardState, sendWizardStepMessage, getCurrentWizardStep, advanceWizardToNextStep } from "./wizard.ts";
 import { executeNaturalLanguageAction } from "./nl-processing.ts";
-import { handleStatement, handleBalance, handleSummary, handleEdit, handleGroup, handleCategory, resolvePeriod } from "./commands.ts";
+import { handleStatement, handleBalance, handleSummary, handleEdit, handleGroup, handleCategory, handleTransaction } from "./commands.ts";
 import { handleListTransactions, handleListByTag } from "./management.ts";
 import { addSession, removeSession, validateCallbackSession, getSessionSeq } from "../utils/session.ts";
 
@@ -19,7 +19,7 @@ const DEFAULT_FILTERS: ExtratoFilters = {
 
 async function renderFilterPanelMessage(
   supabase: any,
-  userId: number,
+  _userId: number,
   chatId: number,
   filters: ExtratoFilters,
   sessionSeq: number,
@@ -623,6 +623,25 @@ export async function handleCallbackQuery(
       return;
     }
 
+    // Handle NL type selection (when intent was null)
+    if (selectedValue === "nl_type_expense" || selectedValue === "nl_type_income") {
+      const type = selectedValue === "nl_type_expense" ? "expense" : "income";
+      const user = await getOrCreateUser(supabase, telegramId);
+      if (!user) return;
+      const state = await getWizardState(supabase, user.id);
+      const args: string[] = [];
+      if (state?.data?.text) {
+        const match = state.data.text.match(/(\d+[,.]?\d*)/);
+        if (match) {
+          const amount = parseFloat(match[1].replace(",", "."));
+          if (!isNaN(amount) && amount > 0) args.push(amount.toString());
+        }
+      }
+      await clearWizardState(supabase, user.id);
+      await handleTransaction(type, supabase, telegramId, chatId, args);
+      return;
+    }
+
     // Handle NL category selection
     if (selectedValue.startsWith("nl_cat_")) {
       const category = selectedValue.replace("nl_cat_", "");
@@ -637,6 +656,31 @@ export async function handleCallbackQuery(
       const natural: DeepSeekResponse = { intent, amount, category: finalCategory, date, period: null, name: null, tag: null, limit: null, missingFields: [] };
       await clearWizardState(supabase, user.id);
       await executeNaturalLanguageAction(supabase, telegramId, chatId, natural);
+      return;
+    }
+
+    // Handle NL group selection
+    if (selectedValue.startsWith("nl_grp_")) {
+      const groupName = selectedValue.replace("nl_grp_", "");
+      const user = await getOrCreateUser(supabase, telegramId);
+      if (!user) return;
+      const state = await getWizardState(supabase, user.id);
+      if (!state) return;
+      const type = state.data.type || "expense";
+      const amount = state.data.amount;
+      const category = state.data.category;
+      const description = state.data.description;
+      const date = state.data.date;
+      if (!amount) return;
+      const args = [amount.toString()];
+      if (category) args.push(category);
+      if (groupName !== "skip") args.push("--grupo", groupName);
+      if (date) {
+        const dateBR = parseDateBR(date) || date;
+        args.push("--data", dateBR);
+      }
+      await clearWizardState(supabase, user.id);
+      await handleTransaction(type, supabase, telegramId, chatId, args, description || undefined);
       return;
     }
 

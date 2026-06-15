@@ -47,18 +47,41 @@ export async function getOrCreateCategory(supabase: any, userId: number, categor
     .eq("user_id", userId)
     .eq("normalized_name", normalizedName)
     .maybeSingle();
-  if (existing) {
-    if (transactionType && !existing.transaction_type) {
-      await supabase.from("categories").update({ transaction_type: transactionType }).eq("id", existing.id);
-    }
-    return existing.id;
-  }
+  if (existing) return existing.id;
   const { data: newCategory } = await supabase
     .from("categories")
     .insert({ user_id: userId, name: categoryName, normalized_name: normalizedName, transaction_type: transactionType || null })
     .select("id")
     .single();
   return newCategory?.id || null;
+}
+
+export async function resolveCategoryForNL(
+  supabase: any,
+  userId: number,
+  categoryName: string,
+  _transactionType?: "expense" | "income"
+): Promise<{ id: string; name: string } | null> {
+  const normalized = normalizeString(categoryName);
+  const { data: exact } = await supabase
+    .from("categories")
+    .select("id, name")
+    .eq("user_id", userId)
+    .eq("normalized_name", normalized)
+    .maybeSingle();
+  if (exact) return exact;
+
+  const similar = await suggestSimilarCategories(supabase, userId, categoryName, 1);
+  if (similar && similar.length > 0 && similar[0].similarity >= 0.5) {
+    const { data: match } = await supabase
+      .from("categories")
+      .select("id, name")
+      .eq("user_id", userId)
+      .eq("normalized_name", normalizeString(similar[0].name))
+      .single();
+    if (match) return match;
+  }
+  return null;
 }
 
 export async function suggestSimilarCategories(supabase: any, userId: number, query: string, limit: number = 3): Promise<{ name: string; similarity: number }[]> {

@@ -1,10 +1,9 @@
-import type { InlineKeyboard, ExtratoFilters, PeriodPreset } from "../types/index.ts";
+import type { InlineKeyboard, ExtratoFilters } from "../types/index.ts";
 import { sendTelegramMessage, sendTelegramMessageWithKeyboard } from "../services/telegram.ts";
 import { requireUser, getOrCreateUser, getOrCreateCategory, getOrCreateGroup, normalizeString, suggestSimilarCategories, suggestSimilarGroups, sendSimilarityWarning, getAllUserTags } from "../services/database.ts";
 import { formatCurrencyBR, formatDateBR, getTodayISOBR, getMonthName } from "../utils/formatting.ts";
 import { getDateRange } from "../utils/date-helpers.ts";
 import { parseCommand } from "../utils/command-parsing.ts";
-import { truncateCallbackData } from "../utils/rate-limiter.ts";
 import { addSession, getSessionSeq } from "../utils/session.ts";
 
 import { getSummaryData, formatSummaryMessage } from "./queries.ts";
@@ -201,7 +200,8 @@ export async function handleTransaction(
   supabase: any,
   userId: number,
   chatId: number,
-  args: string[]
+  args: string[],
+  descriptionOverride?: string
 ): Promise<void> {
   const user = await requireUser(supabase, userId, chatId);
   if (!user) return;
@@ -258,7 +258,7 @@ export async function handleTransaction(
     category_id: categoryId,
     type,
     amount: parsed.amount,
-    description: parsed.category,
+    description: descriptionOverride || parsed.category || "",
     tags: parsed.tags,
     transaction_date: parsed.date || getTodayISOBR(),
   });
@@ -287,26 +287,10 @@ const STATEMENT_PAGE_SIZE = 10;
 
 type StatementFilter = "all" | "income" | "expense";
 
-function statementFilterLabel(filter: StatementFilter): string {
-  switch (filter) {
-    case "income": return "📈 Receitas";
-    case "expense": return "📉 Despesas";
-    default: return "📋 Todas";
-  }
-}
-
 function statementFilterSuffix(filter: StatementFilter): string {
   switch (filter) {
     case "income": return "inc";
     case "expense": return "exp";
-    default: return "all";
-  }
-}
-
-function parseStatementFilter(suffix: string): StatementFilter {
-  switch (suffix) {
-    case "inc": return "income";
-    case "exp": return "expense";
     default: return "all";
   }
 }
@@ -916,15 +900,15 @@ export async function handleEntity(
   await sendTelegramMessage(chatId, `✅ ${icon} ${label.charAt(0).toUpperCase() + label.slice(1)} "${entityName}" criad${art} com sucesso!`);
 }
 
-export async function handleGroup(supabase: any, userId: number, chatId: number, args: string[]): Promise<void> {
+export function handleGroup(supabase: any, userId: number, chatId: number, args: string[]): Promise<void> {
   return handleEntity("group", supabase, userId, chatId, args);
 }
 
-export async function handleCategory(supabase: any, userId: number, chatId: number, args: string[]): Promise<void> {
+export function handleCategory(supabase: any, userId: number, chatId: number, args: string[]): Promise<void> {
   return handleEntity("category", supabase, userId, chatId, args);
 }
 
-export async function handleTag(supabase: any, userId: number, chatId: number, args: string[]): Promise<void> {
+export async function handleTag(supabase: any, userId: number, chatId: number, _args: string[]): Promise<void> {
   const user = await getOrCreateUser(supabase, userId);
   if (!user) {
     await sendTelegramMessage(chatId, "Ops! Você ainda não está cadastrado. Use /start para começar.");

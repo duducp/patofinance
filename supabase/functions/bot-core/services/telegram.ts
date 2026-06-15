@@ -14,7 +14,7 @@ async function callTelegramAPI(method: string, body: Record<string, unknown>): P
       const errorText = await response.text();
       if (errorText.includes("parse") || errorText.includes("markdown")) {
         // Retry without parse_mode
-        const { parse_mode, ...cleanBody } = body as { parse_mode?: string; [key: string]: unknown };
+        const { parse_mode: _parse_mode, ...cleanBody } = body as { parse_mode?: string; [key: string]: unknown };
         const retry = await fetch(`${TELEGRAM_API_BASE}/${method}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },

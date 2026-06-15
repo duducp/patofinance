@@ -273,18 +273,42 @@ Natural language via DeepSeek API.
 
 1. **Common phrases** (no API call): `quanto tenho`, `saldo`, `extrato`, `resumo`, `quais categorias`, `meus grupos`, `quais tags`, `ultimas transacoes`, `ultimo gasto`, `apagar ultima`, `limpe`, `limpar` -- mapped in `config.ts` `commonPhrases` map
 2. **Cache check**: 5-minute TTL (`nlCache` in `config.ts`)
-3. **DeepSeek API call**: 5s timeout, returns `DeepSeekResponse` with parsed intent + fields
+3. **DeepSeek API call**: 5s timeout, returns `DeepSeekResponse` with parsed intent + fields. System prompt guides model to map to existing categories (ex: "gasolina" → "Transporte")
 4. **Parse JSON**: Validates fields, fills `missingFields` array
 5. **Cache result**
+
+### Category resolution
+
+When NL extracts a category name, `resolveCategoryForNL()` in `database.ts` matches it to existing categories:
+1. **Exact normalized match** (`normalized_name`) — returns immediately
+2. **Trigram similarity** (`suggestSimilarCategories` RPC) — if best match ≥ 50% similarity, uses it
+3. **No match** — creates new category (with `transaction_type` set from the transaction type)
+
+The original NL text is preserved as the transaction description via `descriptionOverride` param in `handleTransaction()`.
 
 ### Missing fields wizard
 
 If DeepSeek response has missing fields (amount, category, period, name, tag), the bot starts a multi-step wizard:
 - `nl_{intent}_amount` -> asks for value
 - `nl_{intent}_category` -> shows keyboard with existing categories
+- `nl_{intent}_group` -> shows keyboard with existing groups (only if user has >1 group)
 - `nl_{intent}_period` -> `this_month` / `last_month` buttons
 - `nl_create_category_name`, `nl_create_group_name` -> asks for name
 - `nl_list_by_tag_name` -> asks for tag
+
+### Type disambiguation
+
+If DeepSeek returns `intent: null` but the text contains a number (e.g., "50 reais"), the bot asks:
+- [💸 Despesa] [💰 Receita]
+- If the user types a keyword ("despesa", "gastei", "receita", "recebi"), it matches via keyword heuristics
+- The amount is extracted from the original text via regex so the user doesn't have to re-enter it
+
+### Group selection
+
+When creating an expense/income via NL with no group specified:
+- **1 group** (only default "Pessoal") — auto-assigns, no prompt
+- **>1 groups** — shows keyboard with all groups + [⏭️ Pular] (uses default)
+- Group name uses `truncateCallbackData()` for Telegram's 64-byte limit
 
 ### Supported intents
 
@@ -614,7 +638,8 @@ In the wizard:
 | `getOrCreateUser(supabase, telegramId)` | `user | null` | All handlers |
 | `requireUser(supabase, userId, chatId)` | `user | null` | `handleTransaction` |
 | `getCategories(supabase, userId)` | `{name}[]` | NL wizard |
-| `getOrCreateCategory(supabase, userId, name)` | `category_id | null` | `handleTransaction` |
+| `getOrCreateCategory(supabase, userId, name, transactionType?)` | `category_id | null` | `handleTransaction` |
+| `resolveCategoryForNL(supabase, userId, name, transactionType?)` | `{id, name} | null` | NL expense/income |
 | `getOrCreateGroup(supabase, userId, name)` | `group_id | null` | `handleTransaction` |
 | `suggestSimilarCategories(supabase, userId, query, limit?)` | `{name, similarity}[]` | Handlers |
 | `suggestSimilarGroups(supabase, userId, query, limit?)` | `{name, similarity}[]` | Handlers |
@@ -638,7 +663,7 @@ In the wizard:
 | `handleStart(chatId, firstName)` | `/start` | |
 | `handleHelp(chatId)` | `/ajuda` | |
 | `handleBalance(supabase, userId, chatId, args?)` | `/saldo` | Optional group filter via args |
-| `handleTransaction(type, supabase, userId, chatId, args)` | `/gasto`, `/receita` | Unified handler, `type: "expense"|"income"` |
+| `handleTransaction(type, supabase, userId, chatId, args, descriptionOverride?)` | `/gasto`, `/receita` | Unified handler, `type: "expense"|"income"` |
 | `handleStatement(supabase, userId, chatId, page?, filter?, filters?)` | `/extrato` | Pagination + optional `ExtratoFilters` object (category_id, group_id, tags, type, period) |
 | `resolvePeriod(period)` | (utility) | `PeriodPreset` or `{start,end}` → `{start, end, label}` |
 | `handleSummary(supabase, userId, chatId, args?)` | `/resumo` | Delegates to `getSummaryData` + `formatSummaryMessage` |
