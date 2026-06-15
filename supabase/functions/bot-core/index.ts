@@ -3,8 +3,9 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN");
 const TELEGRAM_SECRET_TOKEN = Deno.env.get("TELEGRAM_SECRET_TOKEN");
-const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
-const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+// For local development, use the internal Supabase URL
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "http://kong:8000";
+const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "your_service_role_key_here";
 
 interface TelegramMessage {
   message_id: number;
@@ -37,6 +38,64 @@ async function sendTelegramMessage(chatId: number, text: string): Promise<void> 
       parse_mode: "Markdown",
     }),
   });
+}
+
+async function handleSaldo(
+  supabase: any,
+  userId: number,
+  chatId: number
+): Promise<void> {
+  const now = new Date();
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
+    .toISOString()
+    .split("T")[0];
+  const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0)
+    .toISOString()
+    .split("T")[0];
+
+  // Get user's internal ID
+  const { data: user } = await supabase
+    .from("users")
+    .select("id")
+    .eq("telegram_id", userId)
+    .single();
+
+  if (!user) {
+    await sendTelegramMessage(chatId, "Usuário não encontrado.");
+    return;
+  }
+
+  // Get total income
+  const { data: income } = await supabase
+    .from("transactions")
+    .select("amount")
+    .eq("user_id", user.id)
+    .eq("type", "income")
+    .gte("transaction_date", startOfMonth)
+    .lte("transaction_date", endOfMonth);
+
+  // Get total expenses
+  const { data: expenses } = await supabase
+    .from("transactions")
+    .select("amount")
+    .eq("user_id", user.id)
+    .eq("type", "expense")
+    .gte("transaction_date", startOfMonth)
+    .lte("transaction_date", endOfMonth);
+
+  const totalIncome = income?.reduce((sum, t) => sum + Number(t.amount), 0) || 0;
+  const totalExpenses = expenses?.reduce((sum, t) => sum + Number(t.amount), 0) || 0;
+  const balance = totalIncome - totalExpenses;
+
+  const monthName = now.toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
+
+  await sendTelegramMessage(
+    chatId,
+    `💰 *Saldo - ${monthName}*\n\n` +
+    `Entradas: R$ ${totalIncome.toFixed(2)}\n` +
+    `Saídas: R$ ${totalExpenses.toFixed(2)}\n` +
+    `*Saldo: R$ ${balance.toFixed(2)}*`
+  );
 }
 
 serve(async (req: Request): Promise<Response> => {
@@ -73,7 +132,7 @@ serve(async (req: Request): Promise<Response> => {
 
     if (!existingUser) {
       // Create user
-      const { data: newUser } = await supabase
+      const { data: newUser, error: userError } = await supabase
         .from("users")
         .insert({
           telegram_id: message.from.id,
@@ -83,9 +142,18 @@ serve(async (req: Request): Promise<Response> => {
         .select("id")
         .single();
 
+      if (userError || !newUser) {
+        console.error("Error creating user:", userError);
+        await sendTelegramMessage(
+          message.chat.id,
+          "Erro ao criar usuário. Tente novamente."
+        );
+        return new Response("OK", { status: 200 });
+      }
+
       // Create default group "Pessoal"
       await supabase.from("groups").insert({
-        user_id: newUser!.id,
+        user_id: newUser.id,
         name: "Pessoal",
         is_default: true,
       });
@@ -121,6 +189,10 @@ serve(async (req: Request): Promise<Response> => {
             `/categoria - Gerenciar categorias\n` +
             `/ajuda - Esta mensagem`
           );
+          break;
+
+        case "/saldo":
+          await handleSaldo(supabase, message.from.id, message.chat.id);
           break;
 
         default:
