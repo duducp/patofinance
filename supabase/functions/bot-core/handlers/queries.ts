@@ -1,6 +1,6 @@
 import { sendTelegramMessage } from "../services/telegram.ts";
 import { requireUser } from "../services/database.ts";
-import { formatCurrencyBR, formatDateBR, getMonthName, getTodayISOBR } from "../utils/formatting.ts";
+import { formatCurrencyBR, formatDateBR } from "../utils/formatting.ts";
 import { getDateRange } from "../utils/date-helpers.ts";
 
 export async function handleQueryExpenses(

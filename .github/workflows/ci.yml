@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "supabase/functions/bot-core/**"
+  pull_request:
+    paths:
+      - "supabase/functions/bot-core/**"
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Type check
+        run: deno check supabase/functions/bot-core/index.ts
+
+      - name: Lint
+        run: deno lint supabase/functions/bot-core/
+
+      - name: Verify imports resolve
+        run: deno cache supabase/functions/bot-core/index.ts

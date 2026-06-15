@@ -91,7 +91,7 @@ Regras: amount numérico, date YYYY-MM-DD, period this_month/last_month, name pa
     const data = await response.json();
     return data.choices?.[0]?.message?.content || null;
   } catch (error) {
-    if (error.name === "AbortError") {
+    if (error instanceof Error && error.name === "AbortError") {
       console.error("DeepSeek API timeout");
     } else {
       console.error("Error calling DeepSeek:", error);

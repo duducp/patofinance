@@ -2,14 +2,11 @@ import type { DeepSeekResponse, InlineKeyboard } from "../types/index.ts";
 import { sendTelegramMessage, sendTelegramMessageWithKeyboard } from "../services/telegram.ts";
 import { getOrCreateUser, getCategories } from "../services/database.ts";
 import { parseDateBR } from "../utils/formatting.ts";
-import { setWizardState, clearWizardState, getWizardState } from "./wizard.ts";
+import { setWizardState } from "./wizard.ts";
 import {
   handleTransaction,
   handleSaldo,
-  handleEditar,
-  handleExcluir,
-  handleGrupo,
-  handleCategoria,
+  handleExtrato,
 } from "./commands.ts";
 import {
   handleCreateCategory,
@@ -25,7 +22,6 @@ import {
 import {
   handleQueryExpenses,
   handleQuerySummary,
-  handleExtrato,
 } from "./queries.ts";
 
 export async function handleNaturalLanguageWithFollowUp(

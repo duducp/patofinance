@@ -1,7 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
-  TELEGRAM_BOT_TOKEN,
   TELEGRAM_SECRET_TOKEN,
   SUPABASE_URL,
   SUPABASE_SERVICE_ROLE_KEY,
@@ -180,7 +179,7 @@ serve(async (req: Request): Promise<Response> => {
         await clearWizardState(supabase, existingUser.id);
         await executeNaturalLanguageAction(supabase, existingUser.id, message.chat.id, natural);
       } else if (wizardState.step.startsWith("nl_") && wizardState.step.endsWith("_period")) {
-        const intent = wizardState.step.replace("nl_", "").replace("_period", "");
+        const intent = wizardState.step.replace("nl_", "").replace("_period", "") as DeepSeekResponse["intent"];
         const period = text.toLowerCase().includes("passado") ? "last_month" : "this_month";
 
         const natural: DeepSeekResponse = { intent, amount: null, category: wizardState.data.category, date: null, period, name: null, tag: null, limit: null, missingFields: [] };

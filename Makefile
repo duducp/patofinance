@@ -1,4 +1,4 @@
-.PHONY: help install install-login install-link dev dev-stop dev-logs dev-deploy dev-db-push dev-db-reset dev-test-start dev-test-gasto prod-deploy prod-db-push prod-webhook-set prod-webhook-info prod-webhook-delete prod-logs secrets status open
+.PHONY: help install install-login install-link dev dev-stop dev-logs dev-deploy dev-db-push dev-db-reset dev-test-start dev-test-gasto check lint test test-boot prod-deploy prod-db-push prod-webhook-set prod-webhook-info prod-webhook-delete prod-logs secrets status open
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-25s\033[0m %s\n", $$1, $$2}'
@@ -99,3 +99,25 @@ status: ## Show Supabase project status
 
 open: ## Open Supabase Dashboard
 	open "https://supabase.com/dashboard/project/zjcfjqtlijktrikgvwrv"
+
+# ============================================
+# QUALITY
+# ============================================
+
+check: ## [QA] Type-check using Deno
+	deno check supabase/functions/bot-core/index.ts
+
+lint: ## [QA] Lint edge function code
+	deno lint supabase/functions/bot-core/
+
+test-boot: ## [QA] Verify function boots without error
+	@echo "Checking function boot..."
+	@if supabase status >/dev/null 2>&1; then \
+		timeout 10 supabase functions serve bot-core --no-verify-jwt 2>&1 | \
+			grep -q "boot error" && echo "❌ FAIL" || echo "✅ OK"; \
+	else \
+		echo "⚠️  SKIP (local Supabase not running; run 'make dev' first)"; \
+	fi
+
+test: check lint ## [QA] Run all checks (type + lint + boot)
+	$(MAKE) test-boot

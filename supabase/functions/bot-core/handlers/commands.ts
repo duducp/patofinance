@@ -1,9 +1,9 @@
-import type { DeepSeekResponse, InlineKeyboard } from "../types/index.ts";
+import type { InlineKeyboard } from "../types/index.ts";
 import { sendTelegramMessage, sendTelegramMessageWithKeyboard } from "../services/telegram.ts";
-import { requireUser, getOrCreateUser, getCategories, getOrCreateCategory, getOrCreateGroup } from "../services/database.ts";
-import { formatCurrencyBR, formatDateBR, parseDateBR, getTodayISOBR, getNowBR, getMonthName } from "../utils/formatting.ts";
+import { requireUser, getOrCreateUser, getOrCreateCategory, getOrCreateGroup } from "../services/database.ts";
+import { formatCurrencyBR, formatDateBR, getTodayISOBR, getNowBR, getMonthName } from "../utils/formatting.ts";
 import { parseCommand } from "../utils/command-parsing.ts";
-import { getWizardState, setWizardState, clearWizardState, handleTransactionWizard, sendWizardStepMessage } from "./wizard.ts";
+import { getWizardState, setWizardState, handleTransactionWizard } from "./wizard.ts";
 
 export async function handleStart(chatId: number, firstName: string): Promise<void> {
   await sendTelegramMessage(

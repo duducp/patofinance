@@ -48,7 +48,7 @@ export async function clearWizardState(supabase: any, userId: number): Promise<v
 export async function sendWizardStepMessage(
   chatId: number,
   step: any,
-  userId: number,
+  _userId: number,
   supabase: any
 ): Promise<void> {
   if (step.input_type === "select") {

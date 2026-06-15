@@ -6,6 +6,9 @@ Telegram finance bot using Supabase Edge Functions + PostgreSQL.
 
 ```bash
 make dev              # Start local Supabase (port 54321)
+make check            # Type-check with Deno
+make lint             # Lint edge function code
+make test             # Run all checks (type + lint + boot)
 make prod-deploy      # Deploy Edge Function to production
 make help             # List all commands
 ```
