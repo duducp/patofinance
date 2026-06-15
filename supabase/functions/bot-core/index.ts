@@ -241,6 +241,105 @@ async function handleGasto(
   );
 }
 
+async function handleReceita(
+  supabase: any,
+  userId: number,
+  chatId: number,
+  args: string[]
+): Promise<void> {
+  if (args.length === 0) {
+    await sendTelegramMessage(chatId, "Quanto você recebeu?");
+    return;
+  }
+
+  const parsed = parseCommand(args);
+
+  if (!parsed.amount) {
+    await sendTelegramMessage(chatId, "Por favor, informe o valor. Ex: /receita 3000 salário");
+    return;
+  }
+
+  // Get user's internal ID
+  const { data: user } = await supabase
+    .from("users")
+    .select("id")
+    .eq("telegram_id", userId)
+    .single();
+
+  if (!user) {
+    await sendTelegramMessage(chatId, "Usuário não encontrado.");
+    return;
+  }
+
+  // Get or create category
+  let categoryId = null;
+  if (parsed.category) {
+    const { data: existingCategory } = await supabase
+      .from("categories")
+      .select("id")
+      .eq("user_id", user.id)
+      .ilike("name", parsed.category)
+      .single();
+
+    if (existingCategory) {
+      categoryId = existingCategory.id;
+    } else {
+      const { data: newCategory } = await supabase
+        .from("categories")
+        .insert({ user_id: user.id, name: parsed.category })
+        .select("id")
+        .single();
+      categoryId = newCategory?.id;
+    }
+  }
+
+  // Get group
+  let groupId = null;
+  if (parsed.group) {
+    const { data: group } = await supabase
+      .from("groups")
+      .select("id")
+      .eq("user_id", user.id)
+      .ilike("name", parsed.group)
+      .single();
+    groupId = group?.id;
+  } else {
+    const { data: defaultGroup } = await supabase
+      .from("groups")
+      .select("id")
+      .eq("user_id", user.id)
+      .eq("is_default", true)
+      .single();
+    groupId = defaultGroup?.id;
+  }
+
+  // Create transaction
+  const { error } = await supabase.from("transactions").insert({
+    user_id: user.id,
+    group_id: groupId,
+    category_id: categoryId,
+    type: "income",
+    amount: parsed.amount,
+    description: parsed.category,
+    tags: parsed.tags,
+    transaction_date: parsed.date || new Date().toISOString().split("T")[0],
+  });
+
+  if (error) {
+    await sendTelegramMessage(chatId, "Erro ao registrar receita. Tente novamente.");
+    return;
+  }
+
+  await sendTelegramMessage(
+    chatId,
+    `✅ *Receita registrada!*\n\n` +
+    `Valor: R$ ${parsed.amount.toFixed(2)}\n` +
+    `Categoria: ${parsed.category || "Não definida"}\n` +
+    `Grupo: ${parsed.group || "Pessoal"}\n` +
+    `Data: ${parsed.date || new Date().toISOString().split("T")[0]}`
+  );
+}
+
 async function handleExtrato(
   supabase: any,
   userId: number,
@@ -303,6 +402,68 @@ async function handleExtrato(
   }
 
   await sendTelegramMessage(chatId, message);
+}
+
+async function handleGrupo(
+  supabase: any,
+  userId: number,
+  chatId: number,
+  args: string[]
+): Promise<void> {
+  // Get user's internal ID
+  const { data: user } = await supabase
+    .from("users")
+    .select("id")
+    .eq("telegram_id", userId)
+    .single();
+
+  if (!user) {
+    await sendTelegramMessage(chatId, "Usuário não encontrado.");
+    return;
+  }
+
+  if (args.length === 0) {
+    // List groups
+    const { data: groups } = await supabase
+      .from("groups")
+      .select("name, is_default")
+      .eq("user_id", user.id)
+      .order("name");
+
+    if (!groups || groups.length === 0) {
+      await sendTelegramMessage(chatId, "Nenhum grupo encontrado.");
+      return;
+    }
+
+    let message = "📁 *Seus grupos:*\n\n";
+    for (const g of groups) {
+      const defaultTag = g.is_default ? " (padrão)" : "";
+      message += `• ${g.name}${defaultTag}\n`;
+    }
+    message += "\nPara adicionar: /grupo nome_do_grupo";
+    await sendTelegramMessage(chatId, message);
+    return;
+  }
+
+  // Add new group
+  const groupName = args.join(" ");
+
+  const { error } = await supabase.from("groups").insert({
+    user_id: user.id,
+    name: groupName,
+    is_default: false,
+  });
+
+  if (error) {
+    if (error.code === "23505") { // Unique violation
+      await sendTelegramMessage(chatId, "Já existe um grupo com esse nome.");
+    } else {
+      await sendTelegramMessage(chatId, "Erro ao criar grupo. Tente novamente.");
+    }
+    return;
+  }
+
+  await sendTelegramMessage(chatId, `✅ Grupo "${groupName}" criado!`);
 }
 
 serve(async (req: Request): Promise<Response> => {
@@ -406,8 +567,16 @@ serve(async (req: Request): Promise<Response> => {
           await handleGasto(supabase, message.from.id, message.chat.id, args);
           break;
 
+        case "/receita":
+          await handleReceita(supabase, message.from.id, message.chat.id, args);
+          break;
+
         case "/extrato":
           await handleExtrato(supabase, message.from.id, message.chat.id);
+          break;
+
+        case "/grupo":
+          await handleGrupo(supabase, message.from.id, message.chat.id, args);
           break;
 
         default:
