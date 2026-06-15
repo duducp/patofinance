@@ -20,7 +20,7 @@ Single Edge Function (`supabase/functions/bot-core/`) handles all Telegram webho
 ```text
 Telegram -> Edge Function (webhook) -> Supabase DB -> Bot API response
                               |
-                    handleCallbackQuery routes ~20 prefixes
+                    handleCallbackQuery routes ~25 prefixes
                     (pagination, filters, wizards, CRUD)
 ```
 
@@ -113,6 +113,48 @@ Adding a new interaction requires three things:
 { text: tag, callback_data: truncateCallbackData(`edit_tag_tog_${transactionId}_${tag}`) }
 ```
 
+### 3a. Callback Ordering Rule: Specific Before Generic
+
+**CRITICAL:** When routing callbacks with `startsWith()`, **always order more specific prefixes before less specific ones.** A generic prefix like `"cat_del_"` matches `"cat_del_yes_Casa"`, causing the specific handler to never fire.
+
+**Wrong** -- `cat_del_` catches `cat_del_yes_Casa` first, extracts `"yes_Casa"` as the name, and generates `cat_del_yes_yes_Casa` in an infinite loop:
+```typescript
+// ❌ Generic BEFORE specific -- cat_del_yes_Casa never reaches its handler
+if (selectedValue.startsWith("cat_del_")) { }
+if (selectedValue.startsWith("cat_del_yes_")) { } // DEAD CODE
+```
+
+**Correct** -- specific before generic:
+```typescript
+// ✅ Specific BEFORE generic -- cat_del_yes_Casa hits the right handler
+if (selectedValue.startsWith("cat_del_yes_")) { }
+if (selectedValue.startsWith("cat_del_")) { }
+```
+
+**Full ordering example** (from `callbacks.ts`):
+```text
+MOST SPECIFIC (order first):
+  edit_show_         → exact prefix match
+  edit_cat_select_   → specific confirm
+  edit_date_select_  → specific confirm
+  edit_date_custom_  → specific confirm
+  edit_group_sel_    → specific confirm (before edit_group_)
+  edit_group_        → broader group prefix
+  edit_tags_done_    → before edit_tags_ (both start with "edit_tags_")
+  edit_tags_clr_     → before edit_tags_
+  edit_tags_         → initial tag edit
+  edit_tag_tog_      → distinct prefix (differs at pos 7: 't' ≠ 's')
+LEAST SPECIFIC (order last):
+  edit_              → generic, handles only amount/category/date
+```
+
+**How to test if ordering is correct:** For each pair of prefixes where one is a prefix of the other (e.g., `"edit_tags_"` and `"edit_tags_done_"`), trace through `selectedValue.startsWith()`:
+- `"edit_tags_done_42".startsWith("edit_tags_")` → **TRUE** → must come AFTER `edit_tags_done_`
+- `"edit_tags_42".startsWith("edit_tags_done_")` → FALSE → fine after `edit_tags_done_`
+- `"edit_tag_tog_42".startsWith("edit_tags_")` → FALSE (pos 7: 't' ≠ 's') → no conflict
+
+This bug was fixed for all callback prefixes in a single session: `cat_del_yes_`, `grp_del_yes_`, `edit_group_sel_`, `edit_cat_select_`, `edit_date_select_`, `edit_date_custom_`, `edit_tags_done_`, and `edit_tags_clr_`.
+
 ### 4. Entity-Based Handler Pattern
 
 Category and group operations share ~95% of their logic. Instead of duplicating, use `handleEntity(type, ...)` with a parameterized builder:
@@ -199,7 +241,7 @@ Natural language via DeepSeek API.
 
 ### Flow
 
-1. **Common phrases** (no API call): `saldo`, `extrato`, `resumo`, `quais categorias`, `meus grupos`, `quais tags`, `ultimas transacoes`, `ultimo gasto`, `apagar ultima`, `limpe`, `limpar` -- mapped in `config.ts` `commonPhrases` map
+1. **Common phrases** (no API call): `quanto tenho`, `saldo`, `extrato`, `resumo`, `quais categorias`, `meus grupos`, `quais tags`, `ultimas transacoes`, `ultimo gasto`, `apagar ultima`, `limpe`, `limpar` -- mapped in `config.ts` `commonPhrases` map
 2. **Cache check**: 5-minute TTL (`nlCache` in `config.ts`)
 3. **DeepSeek API call**: 5s timeout, returns `DeepSeekResponse` with parsed intent + fields
 4. **Parse JSON**: Validates fields, fills `missingFields` array
@@ -606,7 +648,7 @@ Project ref: `zjcfjqtlijktrikgvwrv`
 
 ### `handlers/callbacks.ts` -- Inline keyboard routing
 
-Routes ~20 callback prefixes via `handleCallbackQuery`. Key callbacks:
+Routes ~25 callback prefixes via `handleCallbackQuery`. Key callbacks:
 
 | Prefix | Purpose | Sends vs Edits |
 |--------|---------|----------------|
@@ -620,21 +662,25 @@ Routes ~20 callback prefixes via `handleCallbackQuery`. Key callbacks:
 | `nl_cat_` | NL category selection | Sends new msg |
 | `nl_period_` | NL period selection | Sends new msg |
 | `edit_show_` | Show edit dialog | Sends new msg |
-| `edit_amount_/category_/date_` | Edit field selection | Sends new msg |
+| `edit_amount_` / `edit_category_` / `edit_date_` | Edit field selection (generic `edit_` handler) | Sends new msg |
+| `edit_date_custom_` | Custom date input via wizard | Sends new msg |
 | `edit_cat_select_` | Edit category confirm | Sends new msg |
 | `edit_date_select_` | Edit date confirm | Sends new msg |
-| `edit_group_/edit_group_sel_` | Edit group | Sends new msg |
-| `edit_tags_/edit_tag_tog_` | Edit tags toggle | Edits msg |
-| `edit_tags_done_/edit_tags_clr_` | Tags confirm/clear | Sends new msg |
+| `edit_group_` / `edit_group_sel_` | Edit group | Sends new msg |
+| `edit_tags_` / `edit_tag_tog_` | Edit tags toggle | Edits msg |
+| `edit_tags_done_` / `edit_tags_clr_` | Tags confirm/clear | Sends new msg |
+| `wizard_new_category` / `wizard_new_group` | Type custom name in wizard | Sends new msg |
 | `wiz_tag_` | Wizard tag toggle | Edits msg |
-| `wiz_done_tags/wizard_skip_tags` | Wizard tag confirm/skip | Delegates to advanceWizard |
-| `balance_shwgrp/balance_grp_` | Balance group filter | Sends new msg |
-| `summary_shwgrp/summary_grp_` | Summary group filter | Sends new msg |
-| `cat_sel_/grp_sel_` | Select entity to manage | Sends new msg |
-| `cat_ren_/grp_ren_` | Rename entity | Sends new msg |
-| `cat_del_/grp_del_` | Delete entity confirm | Sends new msg |
-| `cat_sug_use/cat_sug_new` | Category similarity resolve | Sends new msg |
-| `grp_sug_use/grp_sug_new` | Group similarity resolve | Sends new msg |
+| `wiz_done_tags` / `wizard_skip_tags` | Wizard tag confirm/skip | Delegates to advanceWizard |
+| `balance_shwgrp` / `balance_grp_` | Balance group filter | Sends new msg |
+| `summary_shwgrp` / `summary_grp_` | Summary group filter | Sends new msg |
+| `cat_sel_` / `grp_sel_` | Select entity to manage | Sends new msg |
+| `cat_ren_` / `grp_ren_` | Rename entity | Sends new msg |
+| `cat_del_yes_` / `grp_del_yes_` | Delete entity confirmed | Sends new msg |
+| `cat_del_` / `grp_del_` | Delete entity confirm prompt | Sends new msg |
+| `cat_back` / `grp_back` | Back to entity list | Sends new msg |
+| `cat_sug_use` / `cat_sug_new` | Category similarity resolve | Sends new msg |
+| `grp_sug_use` / `grp_sug_new` | Group similarity resolve | Sends new msg |
 | `custom_date` | Wizard custom date | Sends new msg |
 
 ## File Structure
@@ -667,6 +713,6 @@ supabase/
         ├── management.ts     # 9 entity management functions with pagination
         ├── queries.ts        # getSummaryData, formatSummaryMessage, query handlers
         ├── nl-processing.ts  # NL routing + wizard initiation
-        ├── callbacks.ts      # ~20 callback prefix handlers + handleGroupFilterCallback
+        ├── callbacks.ts      # ~25 callback prefix handlers + handleGroupFilterCallback
         └── wizard.ts         # 7 wizard functions (state + step + advance)
 ```

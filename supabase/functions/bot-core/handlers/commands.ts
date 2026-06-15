@@ -630,7 +630,7 @@ export async function handleEntity(
     for (const item of items) {
       const count = countMap[item.id] || 0;
       const defaultTag = item[flagColumn] ? ` ⭐ (padrão)` : "";
-      message += `• ${item.name}${defaultTag} — ${count} transação${count !== 1 ? "ões" : ""}\n`;
+      message += `• ${item.name}${defaultTag} — ${count} ${count !== 1 ? "transações" : "transação"}\n`;
     }
     message += `\n💡 Para adicionar: \`${cmdRef}\``;
 

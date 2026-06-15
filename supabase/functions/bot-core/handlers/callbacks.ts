@@ -193,7 +193,7 @@ export async function handleCallbackQuery(
       return;
     }
 
-    // Handle edit callbacks
+    // Handle edit callbacks (specific prefixes MUST come before generic edit_)
     if (selectedValue.startsWith("edit_show_")) {
       const transactionId = selectedValue.replace("edit_show_", "");
       const user = await getOrCreateUser(supabase, telegramId);
@@ -202,37 +202,7 @@ export async function handleCallbackQuery(
       return;
     }
 
-    if (selectedValue.startsWith("edit_")) {
-      const [action, transactionId] = selectedValue.replace("edit_", "").split("_");
-      const user = await getOrCreateUser(supabase, telegramId);
-      if (!user) return;
-      if (action === "amount") {
-        await sendTelegramMessage(chatId, "Informe o novo valor:");
-        await setWizardState(supabase, user.id, "edit_amount", { transaction_id: transactionId });
-      } else if (action === "category") {
-        const { data: categories } = await supabase.from("categories").select("name").eq("user_id", user.id).order("name");
-        if (categories && categories.length > 0) {
-          const keyboard: InlineKeyboard = categories.map((c: any) => [
-            { text: c.name, callback_data: truncateCallbackData(`edit_cat_select_${transactionId}_${c.name}`) }
-          ]);
-          await sendTelegramMessageWithKeyboard(chatId, "Escolha a nova categoria:", keyboard);
-        } else {
-          await sendTelegramMessage(chatId, "Nenhuma categoria disponível. Crie uma com /categoria");
-        }
-      } else if (action === "date") {
-        const today = getTodayISOBR();
-        const yesterday = new Date(Date.now() - 86400000).toISOString().split("T")[0];
-        const keyboard: InlineKeyboard = [
-          [{ text: "📅 Hoje", callback_data: truncateCallbackData(`edit_date_select_${transactionId}_${today}`) }],
-          [{ text: "📅 Ontem", callback_data: truncateCallbackData(`edit_date_select_${transactionId}_${yesterday}`) }],
-          [{ text: "📆 Outra data", callback_data: `edit_date_custom_${transactionId}` }],
-        ];
-        await sendTelegramMessageWithKeyboard(chatId, "Escolha a nova data:", keyboard);
-      }
-      return;
-    }
-
-    // Handle edit category selection
+    // Handle edit category selection (MUST come before edit_)
     if (selectedValue.startsWith("edit_cat_select_")) {
       const parts = selectedValue.replace("edit_cat_select_", "").split("_");
       const transactionId = parts[0];
@@ -251,7 +221,7 @@ export async function handleCallbackQuery(
       return;
     }
 
-    // Handle edit date selection
+    // Handle edit date selection (MUST come before edit_)
     if (selectedValue.startsWith("edit_date_select_")) {
       const parts = selectedValue.replace("edit_date_select_", "").split("_");
       const transactionId = parts[0];
@@ -267,12 +237,35 @@ export async function handleCallbackQuery(
       return;
     }
 
+    // Handle edit date custom (MUST come before edit_)
     if (selectedValue.startsWith("edit_date_custom_")) {
       const transactionId = selectedValue.replace("edit_date_custom_", "");
       const user = await getOrCreateUser(supabase, telegramId);
       if (!user) return;
       await sendTelegramMessage(chatId, "Informe a nova data (formato: DD/MM/YYYY):");
       await setWizardState(supabase, user.id, "edit_date", { transaction_id: transactionId });
+      return;
+    }
+
+    // Handle edit group selection confirm (MUST come before generic edit_)
+    if (selectedValue.startsWith("edit_group_sel_")) {
+      const rest = selectedValue.replace("edit_group_sel_", "");
+      const underscoreIdx = rest.indexOf("_");
+      if (underscoreIdx > 0) {
+        const transactionId = rest.substring(0, underscoreIdx);
+        const groupName = rest.substring(underscoreIdx + 1);
+        const user = await getOrCreateUser(supabase, telegramId);
+        if (!user) return;
+        const { data: group } = await supabase.from("groups").select("id").eq("user_id", user.id).ilike("name", groupName).single();
+        if (group) {
+          const { error } = await supabase.from("transactions").update({ group_id: group.id }).eq("id", transactionId).eq("user_id", user.id);
+          if (error) {
+            await sendTelegramMessage(chatId, "❌ Ops! Algo deu errado ao atualizar o grupo. Tente novamente.");
+          } else {
+            await sendTelegramMessage(chatId, `✅ Grupo alterado para "${groupName}"!`);
+          }
+        }
+      }
       return;
     }
 
@@ -293,25 +286,29 @@ export async function handleCallbackQuery(
       return;
     }
 
-    // Handle edit group selection confirm
-    if (selectedValue.startsWith("edit_group_sel_")) {
-      const rest = selectedValue.replace("edit_group_sel_", "");
-      const underscoreIdx = rest.indexOf("_");
-      if (underscoreIdx > 0) {
-        const transactionId = rest.substring(0, underscoreIdx);
-        const groupName = rest.substring(underscoreIdx + 1);
-        const user = await getOrCreateUser(supabase, telegramId);
-        if (!user) return;
-        const { data: group } = await supabase.from("groups").select("id").eq("user_id", user.id).ilike("name", groupName).single();
-        if (group) {
-          const { error } = await supabase.from("transactions").update({ group_id: group.id }).eq("id", transactionId).eq("user_id", user.id);
-          if (error) {
-            await sendTelegramMessage(chatId, "❌ Ops! Algo deu errado ao atualizar o grupo. Tente novamente.");
-          } else {
-            await sendTelegramMessage(chatId, `✅ Grupo alterado para "${groupName}"!`);
-          }
-        }
-      }
+    // Handle edit tags done (MUST come before edit_tags_)
+    if (selectedValue.startsWith("edit_tags_done_")) {
+      const transactionId = selectedValue.replace("edit_tags_done_", "");
+      const user = await getOrCreateUser(supabase, telegramId);
+      if (!user) return;
+      const { data: state } = await supabase.from("wizard_states").select("data").eq("user_id", user.id).single();
+      const tags = state?.data?.tags ? (Array.isArray(state.data.tags) ? state.data.tags : [state.data.tags]) : [];
+      const formattedTags = tags.map((t: string) => t.startsWith("#") ? t : `#${t}`);
+      await supabase.from("transactions").update({ tags: formattedTags }).eq("id", transactionId).eq("user_id", user.id);
+      await clearWizardState(supabase, user.id);
+      const tagsStr = formattedTags.length > 0 ? formattedTags.join(" ") : "—";
+      await sendTelegramMessage(chatId, `✅ Tags atualizadas: ${tagsStr}`);
+      return;
+    }
+
+    // Handle edit tags clear (MUST come before edit_tags_)
+    if (selectedValue.startsWith("edit_tags_clr_")) {
+      const transactionId = selectedValue.replace("edit_tags_clr_", "");
+      const user = await getOrCreateUser(supabase, telegramId);
+      if (!user) return;
+      await supabase.from("transactions").update({ tags: [] }).eq("id", transactionId).eq("user_id", user.id);
+      await clearWizardState(supabase, user.id);
+      await sendTelegramMessage(chatId, "✅ Tags removidas!");
       return;
     }
 
@@ -418,29 +415,34 @@ export async function handleCallbackQuery(
       return;
     }
 
-    // Handle edit tags done
-    if (selectedValue.startsWith("edit_tags_done_")) {
-      const transactionId = selectedValue.replace("edit_tags_done_", "");
+    // Handle edit amount/category/date (generic - keep last among edit_ handlers)
+    if (selectedValue.startsWith("edit_")) {
+      const [action, transactionId] = selectedValue.replace("edit_", "").split("_");
       const user = await getOrCreateUser(supabase, telegramId);
       if (!user) return;
-      const { data: state } = await supabase.from("wizard_states").select("data").eq("user_id", user.id).single();
-      const tags = state?.data?.tags ? (Array.isArray(state.data.tags) ? state.data.tags : [state.data.tags]) : [];
-      const formattedTags = tags.map((t: string) => t.startsWith("#") ? t : `#${t}`);
-      await supabase.from("transactions").update({ tags: formattedTags }).eq("id", transactionId).eq("user_id", user.id);
-      await clearWizardState(supabase, user.id);
-      const tagsStr = formattedTags.length > 0 ? formattedTags.join(" ") : "—";
-      await sendTelegramMessage(chatId, `✅ Tags atualizadas: ${tagsStr}`);
-      return;
-    }
-
-    // Handle edit tags clear
-    if (selectedValue.startsWith("edit_tags_clr_")) {
-      const transactionId = selectedValue.replace("edit_tags_clr_", "");
-      const user = await getOrCreateUser(supabase, telegramId);
-      if (!user) return;
-      await supabase.from("transactions").update({ tags: [] }).eq("id", transactionId).eq("user_id", user.id);
-      await clearWizardState(supabase, user.id);
-      await sendTelegramMessage(chatId, "✅ Tags removidas!");
+      if (action === "amount") {
+        await sendTelegramMessage(chatId, "Informe o novo valor:");
+        await setWizardState(supabase, user.id, "edit_amount", { transaction_id: transactionId });
+      } else if (action === "category") {
+        const { data: categories } = await supabase.from("categories").select("name").eq("user_id", user.id).order("name");
+        if (categories && categories.length > 0) {
+          const keyboard: InlineKeyboard = categories.map((c: any) => [
+            { text: c.name, callback_data: truncateCallbackData(`edit_cat_select_${transactionId}_${c.name}`) }
+          ]);
+          await sendTelegramMessageWithKeyboard(chatId, "Escolha a nova categoria:", keyboard);
+        } else {
+          await sendTelegramMessage(chatId, "Nenhuma categoria disponível. Crie uma com /categoria");
+        }
+      } else if (action === "date") {
+        const today = getTodayISOBR();
+        const yesterday = new Date(Date.now() - 86400000).toISOString().split("T")[0];
+        const keyboard: InlineKeyboard = [
+          [{ text: "📅 Hoje", callback_data: truncateCallbackData(`edit_date_select_${transactionId}_${today}`) }],
+          [{ text: "📅 Ontem", callback_data: truncateCallbackData(`edit_date_select_${transactionId}_${yesterday}`) }],
+          [{ text: "📆 Outra data", callback_data: `edit_date_custom_${transactionId}` }],
+        ];
+        await sendTelegramMessageWithKeyboard(chatId, "Escolha a nova data:", keyboard);
+      }
       return;
     }
 
@@ -559,20 +561,7 @@ export async function handleCallbackQuery(
       return;
     }
 
-    // Handle category delete confirm
-    if (selectedValue.startsWith("cat_del_")) {
-      const catName = selectedValue.replace("cat_del_", "");
-      const user = await getOrCreateUser(supabase, telegramId);
-      if (!user) return;
-      const keyboard: InlineKeyboard = [
-        [{ text: "✅ Sim, excluir", callback_data: `cat_del_yes_${catName}` }],
-        [{ text: "❌ Não, manter", callback_data: "cat_back" }],
-      ];
-      await sendTelegramMessageWithKeyboard(chatId, `🗑️ Tem certeza de que deseja excluir a categoria *${catName}*?`, keyboard);
-      return;
-    }
-
-    // Handle category delete confirmed
+    // Handle category delete confirmed (MUST come before cat_del_)
     if (selectedValue.startsWith("cat_del_yes_")) {
       const catName = selectedValue.replace("cat_del_yes_", "");
       const user = await getOrCreateUser(supabase, telegramId);
@@ -586,6 +575,19 @@ export async function handleCallbackQuery(
       await supabase.from("transactions").update({ category_id: null }).eq("category_id", cat.id).eq("user_id", user.id);
       await supabase.from("categories").delete().eq("id", cat.id).eq("user_id", user.id);
       await sendTelegramMessage(chatId, `✅ Categoria "${catName}" excluída!`);
+      return;
+    }
+
+    // Handle category delete confirm
+    if (selectedValue.startsWith("cat_del_")) {
+      const catName = selectedValue.replace("cat_del_", "");
+      const user = await getOrCreateUser(supabase, telegramId);
+      if (!user) return;
+      const keyboard: InlineKeyboard = [
+        [{ text: "✅ Sim, excluir", callback_data: `cat_del_yes_${catName}` }],
+        [{ text: "❌ Não, manter", callback_data: "cat_back" }],
+      ];
+      await sendTelegramMessageWithKeyboard(chatId, `🗑️ Tem certeza de que deseja excluir a categoria *${catName}*?`, keyboard);
       return;
     }
 
@@ -631,20 +633,7 @@ export async function handleCallbackQuery(
       return;
     }
 
-    // Handle group delete confirm
-    if (selectedValue.startsWith("grp_del_")) {
-      const grpName = selectedValue.replace("grp_del_", "");
-      const user = await getOrCreateUser(supabase, telegramId);
-      if (!user) return;
-      const keyboard: InlineKeyboard = [
-        [{ text: "✅ Sim, excluir", callback_data: `grp_del_yes_${grpName}` }],
-        [{ text: "❌ Não, manter", callback_data: "grp_back" }],
-      ];
-      await sendTelegramMessageWithKeyboard(chatId, `🗑️ Tem certeza de que deseja excluir o grupo *${grpName}*?`, keyboard);
-      return;
-    }
-
-    // Handle group delete confirmed
+    // Handle group delete confirmed (MUST come before grp_del_)
     if (selectedValue.startsWith("grp_del_yes_")) {
       const grpName = selectedValue.replace("grp_del_yes_", "");
       const user = await getOrCreateUser(supabase, telegramId);
@@ -659,6 +648,19 @@ export async function handleCallbackQuery(
       await supabase.from("transactions").update({ group_id: defaultGrp?.id || null }).eq("group_id", grp.id).eq("user_id", user.id);
       await supabase.from("groups").delete().eq("id", grp.id).eq("user_id", user.id);
       await sendTelegramMessage(chatId, `✅ Grupo "${grpName}" excluído!`);
+      return;
+    }
+
+    // Handle group delete confirm
+    if (selectedValue.startsWith("grp_del_")) {
+      const grpName = selectedValue.replace("grp_del_", "");
+      const user = await getOrCreateUser(supabase, telegramId);
+      if (!user) return;
+      const keyboard: InlineKeyboard = [
+        [{ text: "✅ Sim, excluir", callback_data: `grp_del_yes_${grpName}` }],
+        [{ text: "❌ Não, manter", callback_data: "grp_back" }],
+      ];
+      await sendTelegramMessageWithKeyboard(chatId, `🗑️ Tem certeza de que deseja excluir o grupo *${grpName}*?`, keyboard);
       return;
     }
 
