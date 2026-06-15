@@ -5,9 +5,9 @@ import { parseDateBR } from "../utils/formatting.ts";
 import { setWizardState } from "./wizard.ts";
 import {
   handleTransaction,
-  handleSaldo,
-  handleExtrato,
-  handleLimpar,
+  handleBalance,
+  handleStatement,
+  handleCleanup,
 } from "./commands.ts";
 import {
   handleCreateCategory,
@@ -135,7 +135,7 @@ export async function executeNaturalLanguageAction(
   }
 
   if (natural.intent === "query_balance") {
-    await handleSaldo(supabase, userId, chatId);
+    await handleBalance(supabase, userId, chatId);
     return;
   }
 
@@ -160,7 +160,7 @@ export async function executeNaturalLanguageAction(
   }
 
   if (natural.intent === "query_extract") {
-    await handleExtrato(supabase, userId, chatId);
+    await handleStatement(supabase, userId, chatId);
     return;
   }
 
@@ -211,7 +211,7 @@ export async function executeNaturalLanguageAction(
   }
 
   if (natural.intent === "cleanup") {
-    await handleLimpar(supabase, userId, chatId);
+    await handleCleanup(supabase, userId, chatId);
     return;
   }
 }

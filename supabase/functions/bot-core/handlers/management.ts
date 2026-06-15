@@ -370,7 +370,7 @@ export async function handleDeleteLastTransaction(supabase: any, userId: number,
     `💰 Valor: *${formatCurrencyBR(Number(transaction.amount))}*\n` +
     `🏷️ Categoria: ${catName}\n` +
     `📅 Data: ${formatDateBR(transaction.transaction_date)}\n\n` +
-    `Tem certeza que deseja excluir esta transação?`,
+    `Tem certeza de que deseja excluir esta transação?`,
     keyboard
   );
 }

@@ -5,14 +5,14 @@ import { formatDateBR, getTodayISOBR } from "../utils/formatting.ts";
 import { truncateCallbackData } from "../utils/rate-limiter.ts";
 import { getWizardState, setWizardState, clearWizardState, completeWizard, sendWizardStepMessage, getCurrentWizardStep, advanceWizardToNextStep } from "./wizard.ts";
 import { executeNaturalLanguageAction } from "./nl-processing.ts";
-import { handleExtrato, handleSaldo, handleResumo, handleEditar, handleGrupo, handleCategoria } from "./commands.ts";
+import { handleStatement, handleBalance, handleSummary, handleEdit, handleGroup, handleCategory } from "./commands.ts";
 import { handleListTransactions, handleListByTag } from "./management.ts";
 
 async function handleGroupFilterCallback(
   supabase: any,
   telegramId: number,
   chatId: number,
-  prefix: "saldo" | "resumo",
+  prefix: "balance" | "summary",
   selectedValue: string
 ): Promise<void> {
   if (selectedValue === `${prefix}_shwgrp`) {
@@ -24,7 +24,7 @@ async function handleGroupFilterCallback(
         { text: g.name, callback_data: `${prefix}_grp_${g.name}` }
       ]);
       keyboard.push([{ text: "📋 Todas as contas", callback_data: `${prefix}_grp_all` }]);
-      const title = prefix === "saldo" ? "saldo" : "resumo";
+      const title = prefix === "balance" ? "balance" : "summary";
       await sendTelegramMessageWithKeyboard(chatId, `📁 *Filtrar ${title} por grupo:*`, keyboard);
     }
     return;
@@ -34,7 +34,7 @@ async function handleGroupFilterCallback(
     const groupName = selectedValue.replace(`${prefix}_grp_`, "");
     const user = await getOrCreateUser(supabase, telegramId);
     if (!user) return;
-    const handler = prefix === "saldo" ? handleSaldo : handleResumo;
+    const handler = prefix === "balance" ? handleBalance : handleSummary;
     if (groupName === "all") {
       await handler(supabase, telegramId, chatId);
     } else {
@@ -72,10 +72,8 @@ export async function handleCallbackQuery(
     if (selectedValue === "cancel_delete") {
       await sendTelegramMessage(chatId, "👍 Tudo bem! Transação mantida.");
       return;
-    }
-
-    // Handle limpar (clean up unused categories/groups)
-    if (selectedValue === "confirm_limpar") {
+    }      // Handle cleanup (clean up unused categories/groups)
+    if (selectedValue === "confirm_cleanup") {
       const user = await getOrCreateUser(supabase, telegramId);
       if (!user) return;
 
@@ -116,15 +114,15 @@ export async function handleCallbackQuery(
       return;
     }
 
-    if (selectedValue === "cancel_limpar") {
+    if (selectedValue === "cancel_cleanup") {
       await sendTelegramMessage(chatId, "👍 Nenhum item foi removido.");
       return;
     }
 
-    // Handle extrato navigation (filter + pagination)
-    if (selectedValue.startsWith("extrato_")) {
-      // Format: extrato_{filterSuffix}_{page}
-      const rest = selectedValue.replace("extrato_", "");
+    // Handle statement navigation (filter + pagination)
+    if (selectedValue.startsWith("statement_")) {
+      // Format: statement_{filterSuffix}_{page}
+      const rest = selectedValue.replace("statement_", "");
       const underscoreIndex = rest.lastIndexOf("_");
       if (underscoreIndex > 0) {
         const filterSuffix = rest.substring(0, underscoreIndex);
@@ -134,7 +132,7 @@ export async function handleCallbackQuery(
           const filter = filterSuffix === "inc" ? "income" as const
             : filterSuffix === "exp" ? "expense" as const
             : "all" as const;
-          await handleExtrato(supabase, telegramId, chatId, page, filter);
+          await handleStatement(supabase, telegramId, chatId, page, filter);
         }
       }
       return;
@@ -200,7 +198,7 @@ export async function handleCallbackQuery(
       const transactionId = selectedValue.replace("edit_show_", "");
       const user = await getOrCreateUser(supabase, telegramId);
       if (!user) return;
-      await handleEditar(supabase, telegramId, chatId, [transactionId]);
+      await handleEdit(supabase, telegramId, chatId, [transactionId]);
       return;
     }
 
@@ -516,14 +514,14 @@ export async function handleCallbackQuery(
       return;
     }
 
-    // Handle saldo/resumo group filter
-    if (selectedValue === "saldo_shwgrp" || selectedValue.startsWith("saldo_grp_")) {
-      await handleGroupFilterCallback(supabase, telegramId, chatId, "saldo", selectedValue);
+    // Handle balance/summary group filter
+    if (selectedValue === "balance_shwgrp" || selectedValue.startsWith("balance_grp_")) {
+      await handleGroupFilterCallback(supabase, telegramId, chatId, "balance", selectedValue);
       return;
     }
 
-    if (selectedValue === "resumo_shwgrp" || selectedValue.startsWith("resumo_grp_")) {
-      await handleGroupFilterCallback(supabase, telegramId, chatId, "resumo", selectedValue);
+    if (selectedValue === "summary_shwgrp" || selectedValue.startsWith("summary_grp_")) {
+      await handleGroupFilterCallback(supabase, telegramId, chatId, "summary", selectedValue);
       return;
     }
 
@@ -570,7 +568,7 @@ export async function handleCallbackQuery(
         [{ text: "✅ Sim, excluir", callback_data: `cat_del_yes_${catName}` }],
         [{ text: "❌ Não, manter", callback_data: "cat_back" }],
       ];
-      await sendTelegramMessageWithKeyboard(chatId, `🗑️ Tem certeza que deseja excluir a categoria *${catName}*?`, keyboard);
+      await sendTelegramMessageWithKeyboard(chatId, `🗑️ Tem certeza de que deseja excluir a categoria *${catName}*?`, keyboard);
       return;
     }
 
@@ -595,7 +593,7 @@ export async function handleCallbackQuery(
     if (selectedValue === "cat_back") {
       const user = await getOrCreateUser(supabase, telegramId);
       if (!user) return;
-      await handleCategoria(supabase, telegramId, chatId, []);
+      await handleCategory(supabase, telegramId, chatId, []);
       return;
     }
 
@@ -642,7 +640,7 @@ export async function handleCallbackQuery(
         [{ text: "✅ Sim, excluir", callback_data: `grp_del_yes_${grpName}` }],
         [{ text: "❌ Não, manter", callback_data: "grp_back" }],
       ];
-      await sendTelegramMessageWithKeyboard(chatId, `🗑️ Tem certeza que deseja excluir o grupo *${grpName}*?`, keyboard);
+      await sendTelegramMessageWithKeyboard(chatId, `🗑️ Tem certeza de que deseja excluir o grupo *${grpName}*?`, keyboard);
       return;
     }
 
@@ -668,7 +666,7 @@ export async function handleCallbackQuery(
     if (selectedValue === "grp_back") {
       const user = await getOrCreateUser(supabase, telegramId);
       if (!user) return;
-      await handleGrupo(supabase, telegramId, chatId, []);
+      await handleGroup(supabase, telegramId, chatId, []);
       return;
     }
 

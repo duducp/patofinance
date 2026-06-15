@@ -17,7 +17,7 @@ export async function handleStart(chatId: number, firstName: string): Promise<vo
   );
 }
 
-export async function handleAjuda(chatId: number): Promise<void> {
+export async function handleHelp(chatId: number): Promise<void> {
   await sendTelegramMessage(
     chatId,
     `📚 *Comandos Disponíveis:*\n\n` +
@@ -66,7 +66,7 @@ export async function handleAjuda(chatId: number): Promise<void> {
   );
 }
 
-export async function handleSaldo(supabase: any, userId: number, chatId: number, args: string[] = []): Promise<void> {
+export async function handleBalance(supabase: any, userId: number, chatId: number, args: string[] = []): Promise<void> {
   const user = await getOrCreateUser(supabase, userId);
   if (!user) {
     await sendTelegramMessage(chatId, "Ops! Você ainda não está cadastrado. Use /start para começar.");
@@ -119,7 +119,7 @@ export async function handleSaldo(supabase: any, userId: number, chatId: number,
   const totalExpenses = expenses?.reduce((sum: number, t: any) => sum + Number(t.amount), 0) || 0;
 
   if (groupId && totalIncome === 0 && totalExpenses === 0) {
-    const keyboard: InlineKeyboard = [[{ text: "📋 Todas as contas", callback_data: "saldo_grp_all" }]];
+    const keyboard: InlineKeyboard = [[{ text: "📋 Todas as contas", callback_data: "balance_grp_all" }]];
     await sendTelegramMessageWithKeyboard(chatId, `📊 Nenhuma transação no grupo *${groupName}* este mês.`, keyboard);
     return;
   }
@@ -138,9 +138,9 @@ export async function handleSaldo(supabase: any, userId: number, chatId: number,
 
   const keyboard: InlineKeyboard = [];
   if (groupId) {
-    keyboard.push([{ text: "📋 Todas as contas", callback_data: "saldo_grp_all" }]);
+    keyboard.push([{ text: "📋 Todas as contas", callback_data: "balance_grp_all" }]);
   }
-  keyboard.push([{ text: "📁 Filtrar por grupo", callback_data: "saldo_shwgrp" }]);
+  keyboard.push([{ text: "📁 Filtrar por grupo", callback_data: "balance_shwgrp" }]);
 
   await sendTelegramMessageWithKeyboard(chatId, message, keyboard);
 }
@@ -232,11 +232,11 @@ export async function handleTransaction(
   );
 }
 
-const EXTRATO_PAGE_SIZE = 10;
+const STATEMENT_PAGE_SIZE = 10;
 
-type ExtratoFilter = "all" | "income" | "expense";
+type StatementFilter = "all" | "income" | "expense";
 
-function extratoFilterLabel(filter: ExtratoFilter): string {
+function statementFilterLabel(filter: StatementFilter): string {
   switch (filter) {
     case "income": return "📈 Receitas";
     case "expense": return "📉 Despesas";
@@ -244,7 +244,7 @@ function extratoFilterLabel(filter: ExtratoFilter): string {
   }
 }
 
-function extratoFilterSuffix(filter: ExtratoFilter): string {
+function statementFilterSuffix(filter: StatementFilter): string {
   switch (filter) {
     case "income": return "inc";
     case "expense": return "exp";
@@ -252,7 +252,7 @@ function extratoFilterSuffix(filter: ExtratoFilter): string {
   }
 }
 
-function parseExtratoFilter(suffix: string): ExtratoFilter {
+function parseStatementFilter(suffix: string): StatementFilter {
   switch (suffix) {
     case "inc": return "income";
     case "exp": return "expense";
@@ -260,7 +260,7 @@ function parseExtratoFilter(suffix: string): ExtratoFilter {
   }
 }
 
-export async function handleExtrato(supabase: any, userId: number, chatId: number, page: number = 0, typeFilter: ExtratoFilter = "all"): Promise<void> {
+export async function handleStatement(supabase: any, userId: number, chatId: number, page: number = 0, typeFilter: StatementFilter = "all"): Promise<void> {
   const user = await getOrCreateUser(supabase, userId);
   if (!user) {
     await sendTelegramMessage(chatId, "Ops! Você ainda não está cadastrado. Use /start para começar.");
@@ -289,7 +289,7 @@ export async function handleExtrato(supabase: any, userId: number, chatId: numbe
     return;
   }
 
-  const offset = page * EXTRATO_PAGE_SIZE;
+  const offset = page * STATEMENT_PAGE_SIZE;
 
   // Build data query
   let dataQuery = supabase
@@ -315,18 +315,18 @@ export async function handleExtrato(supabase: any, userId: number, chatId: numbe
   const { data: transactions } = await dataQuery
     .order("transaction_date", { ascending: false })
     .order("created_at", { ascending: false })
-    .range(offset, offset + EXTRATO_PAGE_SIZE - 1);
+    .range(offset, offset + STATEMENT_PAGE_SIZE - 1);
 
   if (!transactions || transactions.length === 0) {
-    await sendTelegramMessage(chatId, "📋 Nenhuma transação encontrada esta página.");
+    await sendTelegramMessage(chatId, "📋 Nenhuma transação encontrada nesta página.");
     return;
   }
 
-  const totalPages = Math.ceil(totalCount / EXTRATO_PAGE_SIZE);
+  const totalPages = Math.ceil(totalCount / STATEMENT_PAGE_SIZE);
   const startItem = offset + 1;
   const endItem = offset + transactions.length;
   let message = `📋 *Extrato - ${monthName}*\n`;
-  message += `🔽 ${extratoFilterLabel(typeFilter)}\n`;
+  message += `🔽 ${statementFilterLabel(typeFilter)}\n`;
   message += `📄 Página ${page + 1} de ${totalPages} (${startItem}-${endItem} de ${totalCount})\n\n`;
 
   for (let i = 0; i < transactions.length; i++) {
@@ -346,14 +346,14 @@ export async function handleExtrato(supabase: any, userId: number, chatId: numbe
 
   message += "\n💡 Use o \`#ID\` com \`/editar ID\` ou \`/excluir ID\`\n";
 
-  const currentSuffix = extratoFilterSuffix(typeFilter);
+  const currentSuffix = statementFilterSuffix(typeFilter);
 
   // Build filter buttons + pagination keyboard
   const keyboard: InlineKeyboard = [];
 
   // Filter row
   const filterRow: InlineKeyboard[0] = [];
-  const filterOptions: { label: string; filter: ExtratoFilter }[] = [
+  const filterOptions: { label: string; filter: StatementFilter }[] = [
     { label: "📈 Receitas", filter: "income" },
     { label: "📉 Despesas", filter: "expense" },
     { label: "📋 Todas", filter: "all" },
@@ -362,7 +362,7 @@ export async function handleExtrato(supabase: any, userId: number, chatId: numbe
     const isActive = typeFilter === opt.filter;
     filterRow.push({
       text: isActive ? `✅ ${opt.label}` : opt.label,
-      callback_data: `extrato_${extratoFilterSuffix(opt.filter)}_0`,
+      callback_data: `statement_${statementFilterSuffix(opt.filter)}_0`,
     });
   }
   keyboard.push(filterRow);
@@ -370,10 +370,10 @@ export async function handleExtrato(supabase: any, userId: number, chatId: numbe
   // Pagination row
   const navButtons: InlineKeyboard[0] = [];
   if (page > 0) {
-    navButtons.push({ text: "◀️ Anterior", callback_data: `extrato_${currentSuffix}_${page - 1}` });
+    navButtons.push({ text: "◀️ Anterior", callback_data: `statement_${currentSuffix}_${page - 1}` });
   }
   if (page + 1 < totalPages) {
-    navButtons.push({ text: "Próximo ▶️", callback_data: `extrato_${currentSuffix}_${page + 1}` });
+    navButtons.push({ text: "Próximo ▶️", callback_data: `statement_${currentSuffix}_${page + 1}` });
   }
   if (navButtons.length > 0) {
     keyboard.push(navButtons);
@@ -382,7 +382,7 @@ export async function handleExtrato(supabase: any, userId: number, chatId: numbe
   await sendTelegramMessageWithKeyboard(chatId, message, keyboard);
 }
 
-export async function handleResumo(supabase: any, userId: number, chatId: number, args: string[] = []): Promise<void> {
+export async function handleSummary(supabase: any, userId: number, chatId: number, args: string[] = []): Promise<void> {
   const user = await getOrCreateUser(supabase, userId);
   if (!user) {
     await sendTelegramMessage(chatId, "Ops! Você ainda não está cadastrado. Use /start para começar.");
@@ -409,7 +409,7 @@ export async function handleResumo(supabase: any, userId: number, chatId: number
   const data = await getSummaryData(supabase, user.id, null, groupId);
   if (!data) {
     if (groupName) {
-      const keyboard: InlineKeyboard = [[{ text: "📋 Todas as contas", callback_data: "resumo_grp_all" }]];
+      const keyboard: InlineKeyboard = [[{ text: "📋 Todas as contas", callback_data: "summary_grp_all" }]];
       await sendTelegramMessageWithKeyboard(chatId, `📊 Nenhuma transação no grupo *${groupName}* este mês.`, keyboard);
     } else {
       await sendTelegramMessage(chatId, "📊 Nenhuma transação encontrada este mês. Que tal começar registrando um gasto ou receita?");
@@ -420,14 +420,14 @@ export async function handleResumo(supabase: any, userId: number, chatId: number
   const message = formatSummaryMessage(data, groupName || undefined);
   const keyboard: InlineKeyboard = [];
   if (groupId) {
-    keyboard.push([{ text: "📋 Todas as contas", callback_data: "resumo_grp_all" }]);
+    keyboard.push([{ text: "📋 Todas as contas", callback_data: "summary_grp_all" }]);
   }
-  keyboard.push([{ text: "📁 Filtrar por grupo", callback_data: "resumo_shwgrp" }]);
+  keyboard.push([{ text: "📁 Filtrar por grupo", callback_data: "summary_shwgrp" }]);
 
   await sendTelegramMessageWithKeyboard(chatId, message, keyboard);
 }
 
-export async function handleEditar(supabase: any, userId: number, chatId: number, args: string[] = []): Promise<void> {
+export async function handleEdit(supabase: any, userId: number, chatId: number, args: string[] = []): Promise<void> {
   const user = await getOrCreateUser(supabase, userId);
   if (!user) {
     await sendTelegramMessage(chatId, "Ops! Você ainda não está cadastrado. Use /start para começar.");
@@ -507,7 +507,7 @@ export async function handleEditar(supabase: any, userId: number, chatId: number
   );
 }
 
-export async function handleExcluir(supabase: any, userId: number, chatId: number, args: string[] = []): Promise<void> {
+export async function handleDelete(supabase: any, userId: number, chatId: number, args: string[] = []): Promise<void> {
   const user = await getOrCreateUser(supabase, userId);
   if (!user) {
     await sendTelegramMessage(chatId, "Ops! Você ainda não está cadastrado. Use /start para começar.");
@@ -568,7 +568,7 @@ export async function handleExcluir(supabase: any, userId: number, chatId: numbe
     `💰 Valor: *${formatCurrencyBR(Number(transaction.amount))}*\n` +
     `🏷️ Categoria: ${catName}\n` +
     `📅 Data: ${formatDateBR(transaction.transaction_date)}\n\n` +
-    `Tem certeza que deseja excluir esta transação?`,
+    `Tem certeza de que deseja excluir esta transação?`,
     keyboard
   );
 }
@@ -692,15 +692,15 @@ export async function handleEntity(
   await sendTelegramMessage(chatId, `✅ ${icon} ${label.charAt(0).toUpperCase() + label.slice(1)} "${entityName}" criad${art} com sucesso!`);
 }
 
-export async function handleGrupo(supabase: any, userId: number, chatId: number, args: string[]): Promise<void> {
+export async function handleGroup(supabase: any, userId: number, chatId: number, args: string[]): Promise<void> {
   return handleEntity("group", supabase, userId, chatId, args);
 }
 
-export async function handleCategoria(supabase: any, userId: number, chatId: number, args: string[]): Promise<void> {
+export async function handleCategory(supabase: any, userId: number, chatId: number, args: string[]): Promise<void> {
   return handleEntity("category", supabase, userId, chatId, args);
 }
 
-export async function handleLimpar(supabase: any, userId: number, chatId: number): Promise<void> {
+export async function handleCleanup(supabase: any, userId: number, chatId: number): Promise<void> {
   const user = await getOrCreateUser(supabase, userId);
   if (!user) {
     await sendTelegramMessage(chatId, "Ops! Você ainda não está cadastrado. Use /start para começar.");
@@ -773,8 +773,8 @@ export async function handleLimpar(supabase: any, userId: number, chatId: number
   message += "Deseja removê-los?";
 
   const keyboard: InlineKeyboard = [
-    [{ text: "✅ Sim, limpar tudo", callback_data: "confirm_limpar" }],
-    [{ text: "❌ Não, cancelar", callback_data: "cancel_limpar" }],
+    [{ text: "✅ Sim, limpar tudo", callback_data: "confirm_cleanup" }],
+    [{ text: "❌ Não, cancelar", callback_data: "cancel_cleanup" }],
   ];
 
   await sendTelegramMessageWithKeyboard(chatId, message, keyboard);

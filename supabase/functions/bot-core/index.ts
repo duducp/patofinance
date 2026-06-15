@@ -25,16 +25,16 @@ import {
 } from "./handlers/wizard.ts";
 import {
   handleStart,
-  handleAjuda,
-  handleSaldo,
+  handleHelp,
+  handleBalance,
   handleTransaction,
-  handleExtrato,
-  handleResumo,
-  handleEditar,
-  handleExcluir,
-  handleGrupo,
-  handleCategoria,
-  handleLimpar,
+  handleStatement,
+  handleSummary,
+  handleEdit,
+  handleDelete,
+  handleGroup,
+  handleCategory,
+  handleCleanup,
 } from "./handlers/commands.ts";
 
 async function handleEntityRename(
@@ -281,11 +281,11 @@ serve(async (req: Request): Promise<Response> => {
 
         case "/ajuda":
         case "/help":
-          await handleAjuda(message.chat.id);
+          await handleHelp(message.chat.id);
           break;
 
         case "/saldo":
-          await handleSaldo(supabase, message.from.id, message.chat.id, args);
+          await handleBalance(supabase, message.from.id, message.chat.id, args);
           break;
 
         case "/gasto":
@@ -298,31 +298,31 @@ serve(async (req: Request): Promise<Response> => {
           break;
 
         case "/extrato":
-          await handleExtrato(supabase, message.from.id, message.chat.id);
+          await handleStatement(supabase, message.from.id, message.chat.id);
           break;
 
         case "/resumo":
-          await handleResumo(supabase, message.from.id, message.chat.id, args);
+          await handleSummary(supabase, message.from.id, message.chat.id, args);
           break;
 
         case "/editar":
-          await handleEditar(supabase, message.from.id, message.chat.id, args);
+          await handleEdit(supabase, message.from.id, message.chat.id, args);
           break;
 
         case "/excluir":
-          await handleExcluir(supabase, message.from.id, message.chat.id, args);
+          await handleDelete(supabase, message.from.id, message.chat.id, args);
           break;
 
         case "/grupo":
-          await handleGrupo(supabase, message.from.id, message.chat.id, args);
+          await handleGroup(supabase, message.from.id, message.chat.id, args);
           break;
 
         case "/categoria":
-          await handleCategoria(supabase, message.from.id, message.chat.id, args);
+          await handleCategory(supabase, message.from.id, message.chat.id, args);
           break;
 
         case "/limpar":
-          await handleLimpar(supabase, message.from.id, message.chat.id);
+          await handleCleanup(supabase, message.from.id, message.chat.id);
           break;
 
         case "/cancelar":
