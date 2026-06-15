@@ -54,8 +54,8 @@ Formato esperado:
 {"intent":"string|null","amount":number|null,"category":"string|null","date":"string|null","period":"this_month|last_month|null","name":"string|null","tag":"string|null","limit":number|null}
 
 Intents:
-- "expense": despesa (gastei, gasto, paguei, comprei, debitou, custou, gasolina, ifood, aluguel, conta, fatura, boleto, assinatura)
-- "income": receita (recebi, ganhei, salário, renda, bônus, freela, deposito, caiu, creditou, lucro, vendi, investimento)
+- "expense": despesa (gastei, gasto, paguei, comprei, debitou, custou, gasolina, ifood, aluguel, conta, fatura, boleto, assinatura, desembolsei, tirei do bolso, saiu, sangrou, pesei no bolso, quebrei, ralei, suei)
+- "income": receita (recebi, ganhei, salário, renda, bônus, freela, deposito, caiu, creditou, lucro, vendi, investimento, faturo, faturei, embolsei, tirei, bati, puxei, fiz um bico, quebra-galho)
 - "query_balance": ver saldo (quanto tenho, saldo)
 - "query_expenses_month": gastos do mês atual
 - "query_expenses_last_month": gastos do mês passado
@@ -78,6 +78,7 @@ Intents:
 REGRAS IMPORTANTES:
 - Identifique a intenção mesmo com typos do usuário (ex: "ganheir" quer dizer "ganhei")
 - Se não houver palavra-chave clara indicando despesa ou receita, retorne intent como null
+- category: palavras de moeda (reais, real, R$, dinheiro, conto, pila, grana, bufunfa, cascalho, mangos, pau, mila, k, din-din, tostão, cobre, vintém, caraminguá), data (ontem, hoje, amanhã), preposições (de, em, no, na, do, da, um, uma, uns) e verbos de ação (gastei, recebi, ganhei, etc.) NÃO são categorias. Ignore-as.
 - category: use nomes de categorias existentes quando possível (ex: "gasolina" → "Transporte", "ifood" → "Alimentação", "aluguel" → "Moradia"). Apenas crie categoria nova se for algo realmente específico que não se encaixa em categorias comuns.
 - amount numérico, date YYYY-MM-DD, period this_month/last_month, name para criar entidade, tag sem #
 - limit padrão 10`,

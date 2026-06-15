@@ -175,33 +175,49 @@ export async function executeNaturalLanguageAction(
   chatId: number,
   natural: DeepSeekResponse
 ): Promise<void> {
-  if (natural.intent === "expense" && natural.amount) {
+  if ((natural.intent === "expense" || natural.intent === "income") && natural.amount) {
     let category = natural.category;
-    if (category) {
-      const resolved = await resolveCategoryForNL(supabase, userId, category, "expense");
-      if (resolved && resolved.name !== category) {
-        await sendTelegramMessage(chatId, `💡 Usei a categoria *${resolved.name}* para "${category}"`);
-        category = resolved.name;
-      }
-    }
-    const user = await getOrCreateUser(supabase, userId);
-    if (!user) return;
-    await handleNLWithGroupCheck(supabase, userId, user.id, chatId, "expense", natural, category);
-    return;
-  }
 
-  if (natural.intent === "income" && natural.amount) {
-    let category = natural.category;
     if (category) {
-      const resolved = await resolveCategoryForNL(supabase, userId, category, "income");
-      if (resolved && resolved.name !== category) {
-        await sendTelegramMessage(chatId, `💡 Usei a categoria *${resolved.name}* para "${category}"`);
+      const resolved = await resolveCategoryForNL(supabase, userId, category, natural.intent);
+      if (resolved) {
+        if (resolved.name !== category) {
+          await sendTelegramMessage(chatId, `💡 Usei a categoria *${resolved.name}* para "${category}"`);
+        }
         category = resolved.name;
+      } else {
+        const user = await getOrCreateUser(supabase, userId);
+        if (!user) return;
+        const categories = await getCategories(supabase, user.id, natural.intent);
+        const keyboard: InlineKeyboard = [];
+        let row: { text: string; callback_data: string }[] = [];
+        for (const c of categories) {
+          row.push({ text: c.name, callback_data: `nl_cat_${c.name}` });
+          if (row.length === 3) {
+            keyboard.push(row);
+            row = [];
+          }
+        }
+        if (row.length > 0) keyboard.push(row);
+        keyboard.push([{ text: "⏭️ Sem categoria", callback_data: "nl_cat_none" }]);
+
+        await setWizardState(supabase, user.id, `nl_${natural.intent}_category`, {
+          intent: natural.intent,
+          amount: natural.amount,
+          date: natural.date,
+        });
+        await sendTelegramMessageWithKeyboard(
+          chatId,
+          `Não encontrei a categoria "${natural.category}". Escolha uma existente:`,
+          keyboard
+        );
+        return;
       }
     }
+
     const user = await getOrCreateUser(supabase, userId);
     if (!user) return;
-    await handleNLWithGroupCheck(supabase, userId, user.id, chatId, "income", natural, category);
+    await handleNLWithGroupCheck(supabase, userId, user.id, chatId, natural.intent, natural, category);
     return;
   }
 
