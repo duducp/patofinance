@@ -13,6 +13,9 @@ supabase/.env
 supabase/.temp/
 supabase/.branches/
 
+# Planning docs
+docs/superpowers/
+
 # Deno
 .deno/
 
