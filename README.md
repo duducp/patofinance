@@ -253,7 +253,7 @@ excluir - Excluir transacao pelo ID
 categoria - Gerenciar categorias
 grupo - Gerenciar grupos
 tag - Gerenciar tags
-limpar - Remover itens sem uso
+limpar - Remover categorias/grupos sem transacoes
 cancelar - Cancelar operacao em andamento
 ajuda - Ajuda completa
 ```

@@ -705,6 +705,23 @@ export async function handleEntity(
 
   const entityName = args.join(" ");
 
+  // Check for exact match first (prevents duplicate creation with friendly message)
+  const normalized = normalizeString(entityName);
+  const { data: existing } = await supabase
+    .from(table)
+    .select("id, name, " + flagColumn)
+    .eq("user_id", user.id)
+    .eq("normalized_name", normalized)
+    .maybeSingle();
+  if (existing) {
+    const defaultTag = existing[flagColumn] ? ` ⭐ (padrão)` : "";
+    await sendTelegramMessage(
+      chatId,
+      `⚠️ ${icon} ${label.charAt(0).toUpperCase() + label.slice(1)} "${existing.name}"${defaultTag} já existe.`
+    );
+    return;
+  }
+
   // Check for similar names before creating
   const similar = await suggestFn(supabase, user.id, entityName);
   if (similar && similar.length > 0) {

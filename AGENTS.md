@@ -632,7 +632,7 @@ Project ref: `zjcfjqtlijktrikgvwrv`
 | `handleGroup(supabase, userId, chatId, args)` | `/grupo` | Alias for `handleEntity("group", ...)` |
 | `handleCategory(supabase, userId, chatId, args)` | `/categoria` | Alias for `handleEntity("category", ...)` |
 | `handleTag(supabase, userId, chatId, args)` | `/tag` | Lists all tags with transaction counts + clickable buttons |
-| `handleCleanup(supabase, userId, chatId)` | `/limpar` | |
+| `handleCleanup(supabase, userId, chatId)` | `/limpar` | Removes unused categories (excluding `is_predefined`) + groups (excluding `is_default`). Tags are NOT shown — they're metadata on transactions, not deletable entities. |
 
 ### `handlers/management.ts` -- Entity management
 
@@ -684,7 +684,7 @@ Routes ~25 callback prefixes via `handleCallbackQuery`. Key callbacks:
 |--------|---------|----------------|
 | `confirm_delete_` | Delete confirmation | Sends new msg |
 | `cancel_delete` | Cancel delete | Sends new msg |
-| `confirm_cleanup` | Execute cleanup | Sends new msg |
+| `confirm_cleanup` | Execute cleanup (deletes only non-predefined cats + non-default groups) | Sends new msg |
 | `cancel_cleanup` | Cancel cleanup | Sends new msg |
 | `statement_` | Statement filter + page nav | Sends new msg |
 | `txlist_p` | List transactions page nav | Edits msg |
