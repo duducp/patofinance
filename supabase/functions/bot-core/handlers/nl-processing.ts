@@ -53,9 +53,16 @@ export async function handleNaturalLanguageWithFollowUp(
 
     if (!natural.category) {
       const categories = await getCategories(supabase, user.id, natural.intent);
-      const keyboard: InlineKeyboard = categories.map((c) => [
-        { text: c.name, callback_data: `nl_cat_${c.name}` }
-      ]);
+      const keyboard: InlineKeyboard = [];
+      let row: { text: string; callback_data: string }[] = [];
+      for (const c of categories) {
+        row.push({ text: c.name, callback_data: `nl_cat_${c.name}` });
+        if (row.length === 3) {
+          keyboard.push(row);
+          row = [];
+        }
+      }
+      if (row.length > 0) keyboard.push(row);
       keyboard.push([{ text: "⏭️ Sem categoria", callback_data: "nl_cat_none" }]);
 
       await setWizardState(supabase, user.id, `nl_${natural.intent}_category`, {

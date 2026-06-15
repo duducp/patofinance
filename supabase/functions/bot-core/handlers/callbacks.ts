@@ -270,9 +270,16 @@ async function handleGroupFilterCallback(
     const { data: groups } = await supabase.from("groups").select("name").eq("user_id", user.id).order("name");
     const sessionSeq = await getSessionSeq(supabase, user.id);
     if (groups && groups.length > 0) {
-      const keyboard: InlineKeyboard = groups.map((g: any) => [
-        { text: g.name, callback_data: addSession(`${prefix}_grp_${g.name}`, sessionSeq) }
-      ]);
+      const keyboard: InlineKeyboard = [];
+      let row: { text: string; callback_data: string }[] = [];
+      for (const g of groups) {
+        row.push({ text: g.name, callback_data: addSession(`${prefix}_grp_${g.name}`, sessionSeq) });
+        if (row.length === 3) {
+          keyboard.push(row);
+          row = [];
+        }
+      }
+      if (row.length > 0) keyboard.push(row);
       keyboard.push([{ text: "📋 Todas as contas", callback_data: addSession(`${prefix}_grp_all`, sessionSeq) }]);
       const title = prefix === "balance" ? "balance" : "summary";
       await sendTelegramMessageWithKeyboard(chatId, `📁 *Filtrar ${title} por grupo:*`, keyboard);
@@ -782,9 +789,16 @@ export async function handleCallbackQuery(
       if (!user) return;
       const { data: groups } = await supabase.from("groups").select("name").eq("user_id", user.id).order("name");
       if (groups && groups.length > 0) {
-        const keyboard: InlineKeyboard = groups.map((g: any) => [
-          { text: g.name, callback_data: truncateCallbackData(`edit_group_sel_${transactionId}_${g.name}`, sessionSeq) }
-        ]);
+        const keyboard: InlineKeyboard = [];
+        let row: { text: string; callback_data: string }[] = [];
+        for (const g of groups) {
+          row.push({ text: g.name, callback_data: truncateCallbackData(`edit_group_sel_${transactionId}_${g.name}`, sessionSeq) });
+          if (row.length === 3) {
+            keyboard.push(row);
+            row = [];
+          }
+        }
+        if (row.length > 0) keyboard.push(row);
         await sendTelegramMessageWithKeyboard(chatId, "📁 Selecione o novo grupo:", keyboard);
       } else {
         await sendTelegramMessage(chatId, "📁 Nenhum grupo disponível. Crie um com /grupo");
@@ -935,9 +949,16 @@ export async function handleCallbackQuery(
       } else if (action === "category") {
         const { data: categories } = await supabase.from("categories").select("name").eq("user_id", user.id).order("name");
         if (categories && categories.length > 0) {
-          const keyboard: InlineKeyboard = categories.map((c: any) => [
-            { text: c.name, callback_data: truncateCallbackData(`edit_cat_select_${transactionId}_${c.name}`, sessionSeq) }
-          ]);
+          const keyboard: InlineKeyboard = [];
+          let row: { text: string; callback_data: string }[] = [];
+          for (const c of categories) {
+            row.push({ text: c.name, callback_data: truncateCallbackData(`edit_cat_select_${transactionId}_${c.name}`, sessionSeq) });
+            if (row.length === 3) {
+              keyboard.push(row);
+              row = [];
+            }
+          }
+          if (row.length > 0) keyboard.push(row);
           await sendTelegramMessageWithKeyboard(chatId, "Escolha a nova categoria:", keyboard);
         } else {
           await sendTelegramMessage(chatId, "Nenhuma categoria disponível. Crie uma com /categoria");
