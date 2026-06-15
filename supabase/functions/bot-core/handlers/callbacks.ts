@@ -268,9 +268,7 @@ async function handleGroupFilterCallback(
     const user = await getOrCreateUser(supabase, telegramId);
     if (!user) return;
     const { data: groups } = await supabase.from("groups").select("name").eq("user_id", user.id).order("name");
-    const userData = await getOrCreateUser(supabase, telegramId);
-    if (!userData) return;
-    const sessionSeq = await getSessionSeq(supabase, userData.id);
+    const sessionSeq = await getSessionSeq(supabase, user.id);
     if (groups && groups.length > 0) {
       const keyboard: InlineKeyboard = groups.map((g: any) => [
         { text: g.name, callback_data: addSession(`${prefix}_grp_${g.name}`, sessionSeq) }
@@ -317,7 +315,7 @@ export async function handleCallbackQuery(
     if (!user) return;
     const isValid = await validateCallbackSession(supabase, user.id, decoded.seq);
     if (!isValid) {
-      await sendTelegramMessage(chatId, "⏰ Este botão não é mais válido. Execute o comando novamente.");
+      await sendTelegramMessage(chatId, "⏰ Este botão expirou pois você iniciou uma nova conversa. Execute o comando novamente.");
       return;
     }
     const sessionSeq = decoded.seq;

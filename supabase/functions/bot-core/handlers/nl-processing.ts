@@ -50,7 +50,7 @@ export async function handleNaturalLanguageWithFollowUp(
     }
 
     if (!natural.category) {
-      const categories = await getCategories(supabase, user.id);
+      const categories = await getCategories(supabase, user.id, natural.intent);
       const keyboard: InlineKeyboard = categories.map((c) => [
         { text: c.name, callback_data: `nl_cat_${c.name}` }
       ]);

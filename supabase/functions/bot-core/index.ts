@@ -16,7 +16,7 @@ import { formatCurrencyBR, formatDateBR, parseDateBR } from "./utils/formatting.
 import { parseNaturalLanguage } from "./services/deepseek.ts";
 import { sendTelegramMessage, sendTelegramMessageWithKeyboard } from "./services/telegram.ts";
 import { getCategories, sendSimilarityWarning, normalizeString } from "./services/database.ts";
-import { handleCallbackQuery } from "./handlers/callbacks.ts";
+import { handleCallbackQuery, handleFilterPanel } from "./handlers/callbacks.ts";
 import { handleNaturalLanguageWithFollowUp, executeNaturalLanguageAction } from "./handlers/nl-processing.ts";
 import {
   getWizardState,
@@ -39,7 +39,7 @@ import {
   handleCleanup,
   resolvePeriod,
 } from "./handlers/commands.ts";
-import { handleFilterPanel } from "./handlers/callbacks.ts";
+
 
 async function handleEntityRename(
   supabase: any,
@@ -313,6 +313,17 @@ serve(async (req: Request): Promise<Response> => {
       // Increment session to invalidate old callbacks
       await incrementSessionSeq(supabase, existingUser.id);
 
+      // Check for active wizard on non-wizard commands
+      const activeWizard = await getWizardState(supabase, existingUser.id);
+      const wizardCommands = ["/despesa", "/gasto", "/receita", "/cancelar"];
+      if (activeWizard && !wizardCommands.includes(command.toLowerCase())) {
+        await clearWizardState(supabase, existingUser.id);
+        await sendTelegramMessage(
+          message.chat.id,
+          `⚠️ Havia uma operação em andamento que foi cancelada para executar \`${command}\`.\n\nUse \`/cancelar\` se quiser cancelar manualmente antes de outro comando.`
+        );
+      }
+
       switch (command.toLowerCase()) {
         case "/start":
           await handleStart(message.chat.id, message.from.first_name);
@@ -369,8 +380,13 @@ serve(async (req: Request): Promise<Response> => {
           break;
 
         case "/cancelar":
+          const hadWizard = await getWizardState(supabase, existingUser.id);
           await clearWizardState(supabase, existingUser.id);
-          await sendTelegramMessage(message.chat.id, "❌ Operação cancelada. Pode ficar tranquilo!");
+          if (hadWizard) {
+            await sendTelegramMessage(message.chat.id, "❌ Operação cancelada. Pode ficar tranquilo!");
+          } else {
+            await sendTelegramMessage(message.chat.id, "ℹ️ Nenhuma operação em andamento para cancelar.");
+          }
           break;
 
         default:
