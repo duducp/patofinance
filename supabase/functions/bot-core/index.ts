@@ -98,6 +98,149 @@ async function handleSaldo(
   );
 }
 
+interface ParsedCommand {
+  amount: number | null;
+  category: string | null;
+  group: string | null;
+  date: string | null;
+  tags: string[];
+}
+
+function parseCommand(args: string[]): ParsedCommand {
+  const result: ParsedCommand = {
+    amount: null,
+    category: null,
+    group: null,
+    date: null,
+    tags: [],
+  };
+
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+
+    if (arg === "--grupo" && i + 1 < args.length) {
+      result.group = args[++i];
+    } else if (arg === "--data" && i + 1 < args.length) {
+      result.date = args[++i];
+    } else if (arg === "--tags" && i + 1 < args.length) {
+      // Collect all remaining tags
+      while (i + 1 < args.length && args[i + 1].startsWith("#")) {
+        result.tags.push(args[++i]);
+      }
+    } else if (arg.startsWith("#")) {
+      result.tags.push(arg);
+    } else if (!result.amount && !isNaN(parseFloat(arg))) {
+      result.amount = parseFloat(arg);
+    } else if (!result.category) {
+      result.category = arg;
+    }
+  }
+
+  return result;
+}
+
+async function handleGasto(
+  supabase: any,
+  userId: number,
+  chatId: number,
+  args: string[]
+): Promise<void> {
+  if (args.length === 0) {
+    // Start wizard
+    await sendTelegramMessage(chatId, "Quanto você gastou?");
+    // TODO: Implement wizard state management
+    return;
+  }
+
+  const parsed = parseCommand(args);
+
+  if (!parsed.amount) {
+    await sendTelegramMessage(chatId, "Por favor, informe o valor. Ex: /gasto 50 alimentação");
+    return;
+  }
+
+  // Get user's internal ID
+  const { data: user } = await supabase
+    .from("users")
+    .select("id")
+    .eq("telegram_id", userId)
+    .single();
+
+  if (!user) {
+    await sendTelegramMessage(chatId, "Usuário não encontrado.");
+    return;
+  }
+
+  // Get or create category
+  let categoryId = null;
+  if (parsed.category) {
+    const { data: existingCategory } = await supabase
+      .from("categories")
+      .select("id")
+      .eq("user_id", user.id)
+      .ilike("name", parsed.category)
+      .single();
+
+    if (existingCategory) {
+      categoryId = existingCategory.id;
+    } else {
+      const { data: newCategory } = await supabase
+        .from("categories")
+        .insert({ user_id: user.id, name: parsed.category })
+        .select("id")
+        .single();
+      categoryId = newCategory?.id;
+    }
+  }
+
+  // Get group
+  let groupId = null;
+  if (parsed.group) {
+    const { data: group } = await supabase
+      .from("groups")
+      .select("id")
+      .eq("user_id", user.id)
+      .ilike("name", parsed.group)
+      .single();
+    groupId = group?.id;
+  } else {
+    // Use default group
+    const { data: defaultGroup } = await supabase
+      .from("groups")
+      .select("id")
+      .eq("user_id", user.id)
+      .eq("is_default", true)
+      .single();
+    groupId = defaultGroup?.id;
+  }
+
+  // Create transaction
+  const { error } = await supabase.from("transactions").insert({
+    user_id: user.id,
+    group_id: groupId,
+    category_id: categoryId,
+    type: "expense",
+    amount: parsed.amount,
+    description: parsed.category,
+    tags: parsed.tags,
+    transaction_date: parsed.date || new Date().toISOString().split("T")[0],
+  });
+
+  if (error) {
+    await sendTelegramMessage(chatId, "Erro ao registrar gasto. Tente novamente.");
+    return;
+  }
+
+  await sendTelegramMessage(
+    chatId,
+    `✅ *Despesa registrada!*\n\n` +
+    `Valor: R$ ${parsed.amount.toFixed(2)}\n` +
+    `Categoria: ${parsed.category || "Não definida"}\n` +
+    `Grupo: ${parsed.group || "Pessoal"}\n` +
+    `Data: ${parsed.date || new Date().toISOString().split("T")[0]}`
+  );
+}
+
 serve(async (req: Request): Promise<Response> => {
   // Validate request method
   if (req.method !== "POST") {
@@ -193,6 +336,10 @@ serve(async (req: Request): Promise<Response> => {
 
         case "/saldo":
           await handleSaldo(supabase, message.from.id, message.chat.id);
+          break;
+
+        case "/gasto":
+          await handleGasto(supabase, message.from.id, message.chat.id, args);
           break;
 
         default:
