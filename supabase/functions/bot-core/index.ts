@@ -4,6 +4,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN");
 const TELEGRAM_SECRET_TOKEN = Deno.env.get("TELEGRAM_SECRET_TOKEN");
 // For local development, use the internal Supabase URL
+// For production, Supabase automatically sets SUPABASE_URL
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "http://kong:8000";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "your_service_role_key_here";
 
@@ -722,6 +723,20 @@ serve(async (req: Request): Promise<Response> => {
         name: "Pessoal",
         is_default: true,
       });
+
+      // Copy predefined categories
+      const { data: predefined } = await supabase
+        .from("predefined_categories")
+        .select("name");
+
+      if (predefined) {
+        const categories = predefined.map((pc) => ({
+          user_id: newUser.id,
+          name: pc.name,
+          is_predefined: true,
+        }));
+        await supabase.from("categories").insert(categories);
+      }
 
       await sendTelegramMessage(
         message.chat.id,
