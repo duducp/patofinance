@@ -6,6 +6,12 @@ export const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "http://kong:8000";
 export const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 export const DEEPSEEK_API_KEY = Deno.env.get("DEEPSEEK_API_KEY");
 
+if (!TELEGRAM_BOT_TOKEN) {
+  console.error("TELEGRAM_BOT_TOKEN is not set");
+}
+if (!TELEGRAM_SECRET_TOKEN) {
+  console.error("TELEGRAM_SECRET_TOKEN is not set");
+}
 if (!SUPABASE_SERVICE_ROLE_KEY) {
   console.error("SUPABASE_SERVICE_ROLE_KEY is not set");
 }

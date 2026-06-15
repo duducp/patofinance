@@ -14,7 +14,7 @@ import { isRateLimited } from "./utils/rate-limiter.ts";
 import { formatCurrencyBR, formatDateBR, parseDateBR } from "./utils/formatting.ts";
 import { parseNaturalLanguage } from "./services/deepseek.ts";
 import { sendTelegramMessage, sendTelegramMessageWithKeyboard } from "./services/telegram.ts";
-import { getCategories, sendSimilarityWarning } from "./services/database.ts";
+import { getCategories, sendSimilarityWarning, normalizeString } from "./services/database.ts";
 import { handleCallbackQuery } from "./handlers/callbacks.ts";
 import { handleNaturalLanguageWithFollowUp, executeNaturalLanguageAction } from "./handlers/nl-processing.ts";
 import {
@@ -56,7 +56,7 @@ async function handleEntityRename(
     return "noop";
   }
   const article = label === "categoria" ? "uma" : "um";
-  const { error } = await supabase.from(table).update({ name: newName }).eq("user_id", userId).ilike("name", oldName);
+  const { error } = await supabase.from(table).update({ name: newName, normalized_name: normalizeString(newName) }).eq("user_id", userId).eq("normalized_name", normalizeString(oldName));
   if (error) {
     if (error.code === "23505") {
       await sendTelegramMessage(chatId, `⚠️ Já existe ${article} ${label} com o nome "${newName}". Escolha outro nome.`);
@@ -107,7 +107,7 @@ serve(async (req: Request): Promise<Response> => {
       .from("users")
       .select("id")
       .eq("telegram_id", message.from.id)
-      .single();
+      .maybeSingle();
 
     if (!existingUser) {
       const { data: newUser, error: userError } = await supabase

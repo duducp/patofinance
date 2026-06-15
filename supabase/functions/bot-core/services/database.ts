@@ -13,7 +13,7 @@ export async function getOrCreateUser(supabase: any, telegramId: number): Promis
     .from("users")
     .select("id")
     .eq("telegram_id", telegramId)
-    .single();
+    .maybeSingle();
   return user || null;
 }
 

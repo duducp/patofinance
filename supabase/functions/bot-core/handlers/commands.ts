@@ -736,7 +736,8 @@ export async function handleTag(supabase: any, userId: number, chatId: number, a
   let message = "🏷️ *Suas tags:*\n\n";
   for (const tag of allTags) {
     const count = tagCount[tag] || 0;
-    message += `• #${tag} — ${count} ${count !== 1 ? "transações" : "transação"}\n`;
+    const displayTag = tag.startsWith("#") ? tag : `#${tag}`;
+    message += `• ${displayTag} — ${count} ${count !== 1 ? "transações" : "transação"}\n`;
   }
   message += "\n💡 Clique em uma tag para ver as transações.";
 

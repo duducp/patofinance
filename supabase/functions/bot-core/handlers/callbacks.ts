@@ -712,19 +712,21 @@ export async function handleCallbackQuery(
 
     // Handle category suggestion - use existing
     if (selectedValue === "cat_sug_use") {
-      const state = await getWizardState(supabase, telegramId);
+      const user = await getOrCreateUser(supabase, telegramId);
+      if (!user) return;
+      const state = await getWizardState(supabase, user.id);
       if (!state || state.step !== "suggest_cat") return;
-      await clearWizardState(supabase, telegramId);
+      await clearWizardState(supabase, user.id);
       await sendTelegramMessage(chatId, `✅ Usando categoria "${state.data.suggested_name}" — ela já existe.`);
       return;
     }
 
     // Handle category suggestion - create anyway
     if (selectedValue === "cat_sug_new") {
-      const state = await getWizardState(supabase, telegramId);
-      if (!state || state.step !== "suggest_cat") return;
       const user = await getOrCreateUser(supabase, telegramId);
       if (!user) return;
+      const state = await getWizardState(supabase, user.id);
+      if (!state || state.step !== "suggest_cat") return;
       const catName = state.data.original_name;
       const { error } = await supabase.from("categories").insert({
         user_id: user.id,
@@ -732,7 +734,7 @@ export async function handleCallbackQuery(
         normalized_name: normalizeString(catName),
         is_predefined: false,
       });
-      await clearWizardState(supabase, telegramId);
+      await clearWizardState(supabase, user.id);
       if (error) {
         await sendTelegramMessage(chatId, "❌ Ops! Algo deu errado ao criar a categoria.");
       } else {
@@ -743,19 +745,21 @@ export async function handleCallbackQuery(
 
     // Handle group suggestion - use existing
     if (selectedValue === "grp_sug_use") {
-      const state = await getWizardState(supabase, telegramId);
+      const user = await getOrCreateUser(supabase, telegramId);
+      if (!user) return;
+      const state = await getWizardState(supabase, user.id);
       if (!state || state.step !== "suggest_grp") return;
-      await clearWizardState(supabase, telegramId);
+      await clearWizardState(supabase, user.id);
       await sendTelegramMessage(chatId, `✅ Usando grupo "${state.data.suggested_name}" — ele já existe.`);
       return;
     }
 
     // Handle group suggestion - create anyway
     if (selectedValue === "grp_sug_new") {
-      const state = await getWizardState(supabase, telegramId);
-      if (!state || state.step !== "suggest_grp") return;
       const user = await getOrCreateUser(supabase, telegramId);
       if (!user) return;
+      const state = await getWizardState(supabase, user.id);
+      if (!state || state.step !== "suggest_grp") return;
       const grpName = state.data.original_name;
       const { error } = await supabase.from("groups").insert({
         user_id: user.id,
@@ -763,7 +767,7 @@ export async function handleCallbackQuery(
         normalized_name: normalizeString(grpName),
         is_default: false,
       });
-      await clearWizardState(supabase, telegramId);
+      await clearWizardState(supabase, user.id);
       if (error) {
         await sendTelegramMessage(chatId, "❌ Ops! Algo deu errado ao criar o grupo.");
       } else {

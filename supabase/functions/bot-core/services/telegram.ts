@@ -65,9 +65,16 @@ export async function editTelegramMessageWithKeyboard(
 }
 
 export async function answerCallbackQuery(callbackQueryId: string): Promise<void> {
-  await fetch(`${TELEGRAM_API_BASE}/answerCallbackQuery`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ callback_query_id: callbackQueryId }),
-  });
+  try {
+    const response = await fetch(`${TELEGRAM_API_BASE}/answerCallbackQuery`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ callback_query_id: callbackQueryId }),
+    });
+    if (!response.ok) {
+      console.error("Telegram answerCallbackQuery error:", await response.text());
+    }
+  } catch (error) {
+    console.error("Error calling answerCallbackQuery:", error);
+  }
 }

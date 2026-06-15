@@ -168,10 +168,6 @@ export async function handleListTransactions(supabase: any, userId: number, chat
     .select("*", { count: "exact", head: true })
     .eq("user_id", user.id);
 
-  if (tag) {
-    countQuery = countQuery.contains("tags", [tag]);
-  }
-
   let dataQuery = supabase
     .from("transactions")
     .select(`
@@ -209,7 +205,7 @@ export async function handleListTransactions(supabase: any, userId: number, chat
   const items = hasMore ? transactions.slice(0, limit) : transactions;
 
   const totalPages = totalCount ? Math.ceil(totalCount / limit) : 1;
-  const tagLabel = tag ? ` com #${tag}` : "";
+  const tagLabel = tag ? ` com ${tag.startsWith("#") ? tag : `#${tag}`}` : "";
   const pageInfo = totalPages > 1 ? ` (Página ${page + 1} de ${totalPages})` : "";
   let message = `📋 *Últimas transações${tagLabel}${pageInfo}:*\n\n`;
 
@@ -406,7 +402,8 @@ export async function handleListByTag(supabase: any, userId: number, chatId: num
 
   const totalPages = totalCount ? Math.ceil(totalCount / limit) : 1;
   const pageInfo = totalPages > 1 ? ` (Página ${page + 1} de ${totalPages})` : "";
-  let message = `🏷️ *Transações com #${tag}${pageInfo}:*\n\n`;
+  const tagDisplay = tag.startsWith("#") ? tag : `#${tag}`;
+  let message = `🏷️ *Transações com ${tagDisplay}${pageInfo}:*\n\n`;
 
   for (const t of items) {
     const emoji = t.type === "income" ? "📈" : "📉";
