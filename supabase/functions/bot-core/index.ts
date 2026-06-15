@@ -331,99 +331,27 @@ async function handleGastoWizard(
         await sendTelegramMessage(chatId, "Por favor, informe um valor válido.");
         return;
       }
-
-      // Fetch available categories
-      const { data: categories } = await supabase
-        .from("categories")
-        .select("name")
-        .eq("user_id", userId)
-        .order("name");
-
-      let categoryMessage = "Qual categoria?\n\n";
-      if (categories && categories.length > 0) {
-        categoryMessage += "📋 *Categorias disponíveis:*\n";
-        categories.forEach((cat, index) => {
-          categoryMessage += `${index + 1}. ${cat.name}\n`;
-        });
-        categoryMessage += "\nDigite o *número* ou *nome* da categoria";
-      } else {
-        categoryMessage += "Digite o nome da categoria";
-      }
-
       await setWizardState(supabase, userId, "gasto_category", { amount });
-      await sendTelegramMessage(chatId, categoryMessage);
+      await sendTelegramMessage(chatId, "Qual categoria?");
       break;
 
     case "gasto_category":
-      let finalCategory = input;
-
-      // Check if input is a number (selection from list)
-      const selectedIndex = parseInt(input);
-      if (!isNaN(selectedIndex) && selectedIndex >= 1) {
-        const { data: selectedCategory } = await supabase
-          .from("categories")
-          .select("name")
-          .eq("user_id", userId)
-          .order("name")
-          .range(selectedIndex - 1, selectedIndex);
-
-        if (selectedCategory && selectedCategory.length > 0) {
-          finalCategory = selectedCategory[0].name;
-        }
-      }
-
-      // Fetch available groups
-      const { data: groups } = await supabase
-        .from("groups")
-        .select("name, is_default")
-        .eq("user_id", userId)
-        .order("name");
-
-      let groupMessage = "Qual grupo?\n\n";
-      if (groups && groups.length > 0) {
-        groupMessage += "📋 *Grupos disponíveis:*\n";
-        groups.forEach((group, index) => {
-          const defaultLabel = group.is_default ? " ⭐" : "";
-          groupMessage += `${index + 1}. ${group.name}${defaultLabel}\n`;
-        });
-        groupMessage += "\nDigite o *número* ou *nome* do grupo";
-      } else {
-        groupMessage += "Digite o nome do grupo";
-      }
-
       await setWizardState(supabase, userId, "gasto_group", {
         ...state.data,
-        category: finalCategory,
+        category: input,
       });
-      await sendTelegramMessage(chatId, groupMessage);
+      await sendTelegramMessage(chatId, "Qual grupo?");
       break;
 
     case "gasto_group":
-      const { amount: wizardAmount, category: wizardCategory } = state.data;
-
-      let finalGroup = input;
-
-      // Check if input is a number (selection from list)
-      const selectedGroupIndex = parseInt(input);
-      if (!isNaN(selectedGroupIndex) && selectedGroupIndex >= 1) {
-        const { data: selectedGroup } = await supabase
-          .from("groups")
-          .select("name")
-          .eq("user_id", userId)
-          .order("name")
-          .range(selectedGroupIndex - 1, selectedGroupIndex);
-
-        if (selectedGroup && selectedGroup.length > 0) {
-          finalGroup = selectedGroup[0].name;
-        }
-      }
+      const { amount: finalAmount, category: finalCategory } = state.data;
 
       let categoryId = null;
       const { data: existingCategory } = await supabase
         .from("categories")
         .select("id")
         .eq("user_id", userId)
-        .ilike("name", wizardCategory)
+        .ilike("name", finalCategory)
         .single();
 
       if (existingCategory) {
@@ -431,7 +359,7 @@ async function handleGastoWizard(
       } else {
         const { data: newCategory } = await supabase
           .from("categories")
-          .insert({ user_id: userId, name: wizardCategory })
+          .insert({ user_id: userId, name: finalCategory })
           .select("id")
           .single();
         categoryId = newCategory?.id;
@@ -442,7 +370,7 @@ async function handleGastoWizard(
         .from("groups")
         .select("id")
         .eq("user_id", userId)
-        .ilike("name", finalGroup)
+        .ilike("name", input)
         .single();
       groupId = group?.id;
 
@@ -451,8 +379,8 @@ async function handleGastoWizard(
         group_id: groupId,
         category_id: categoryId,
         type: "expense",
-        amount: wizardAmount,
-        description: wizardCategory,
+        amount: finalAmount,
+        description: finalCategory,
         transaction_date: new Date().toISOString().split("T")[0],
       });
 
@@ -466,9 +394,9 @@ async function handleGastoWizard(
       await sendTelegramMessage(
         chatId,
         `✅ *Despesa registrada!*\n\n` +
-        `Valor: R$ ${wizardAmount.toFixed(2)}\n` +
-        `Categoria: ${wizardCategory}\n` +
-        `Grupo: ${finalGroup}`
+        `Valor: R$ ${finalAmount.toFixed(2)}\n` +
+        `Categoria: ${finalCategory}\n` +
+        `Grupo: ${input}`
       );
       break;
   }
