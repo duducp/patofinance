@@ -14,7 +14,7 @@ make help             # List all commands
 
 Single Edge Function (`supabase/functions/bot-core/index.ts`) handles all Telegram webhook processing.
 
-```
+```text
 Telegram → Edge Function (webhook) → Supabase DB → Bot API response
 ```
 
@@ -28,17 +28,29 @@ Runtime: **Deno** (not Node.js). Imports use `https://deno.land/std` and `https:
 - **Webhook secret token** must match between Telegram and Supabase secrets — mismatch causes 401 errors
 - **TypeScript variable redeclaration** — `const` in switch cases can cause boot errors. Use unique names per case.
 - **`supabase functions logs`** does not exist — use Supabase Dashboard or check webhook `last_error_message`
+- **ALWAYS use CLI for deploy** — `npx supabase functions deploy bot-core --no-verify-jwt`. The MCP tool `supabase_deploy_edge_function` doesn't read file content correctly.
 
 ## Development Workflow
 
 **Rule: Always test Edge Functions locally before deploying to production.**
+
+**Rule: Always use CLI for deploy, not the MCP tool.**
 
 ```bash
 make dev-deploy             # Deploy locally first
 make dev-test-start         # Test the change
 make dev-test-gasto         # Test another command
 # Only then:
-make prod-deploy            # Deploy to production
+make prod-deploy            # Deploy to production (uses CLI)
+```
+
+**Deploy method:**
+```bash
+# ✅ CORRECT - Use CLI
+npx supabase functions deploy bot-core --no-verify-jwt
+
+# ❌ WRONG - MCP tool doesn't read file content correctly
+# supabase_deploy_edge_function (not reliable)
 ```
 
 ## Local Development
@@ -53,6 +65,7 @@ make dev-db-reset           # Reset local database
 ```
 
 Local test requires env vars:
+
 - `SUPABASE_ANON_KEY` — from `supabase status`
 - `TELEGRAM_SECRET_TOKEN` — must match webhook config
 
@@ -68,7 +81,7 @@ make prod-webhook-info      # Check webhook status
 ## Environment Variables
 
 | Variable | Where | Description |
-|----------|-------|-------------|
+| -------- | ----- | ----------- |
 | `TELEGRAM_BOT_TOKEN` | Supabase Secrets | Bot token from @BotFather |
 | `TELEGRAM_SECRET_TOKEN` | Supabase Secrets | Webhook verification token |
 | `SUPABASE_URL` | Auto-set by Supabase | Internal URL (`http://kong:8000` locally) |
@@ -84,7 +97,7 @@ Migrations: `supabase/migrations/`
 
 ## File Structure
 
-```
+```text
 supabase/
 ├── config.toml              # Supabase config (verify_jwt, ports)
 ├── migrations/              # SQL migrations

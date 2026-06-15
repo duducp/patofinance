@@ -1,1032 +1,47 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN");
-const TELEGRAM_SECRET_TOKEN = Deno.env.get("TELEGRAM_SECRET_TOKEN");
-// For local development, use the internal Supabase URL
-// For production, Supabase automatically sets SUPABASE_URL
-const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "http://kong:8000";
-const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-
-if (!SUPABASE_SERVICE_ROLE_KEY) {
-  console.error("SUPABASE_SERVICE_ROLE_KEY is not set");
-}
-
-interface TelegramMessage {
-  message_id: number;
-  from: {
-    id: number;
-    is_bot: boolean;
-    first_name: string;
-    username?: string;
-  };
-  chat: {
-    id: number;
-    type: string;
-  };
-  date: number;
-  text?: string;
-}
-
-interface TelegramCallbackQuery {
-  id: string;
-  from: {
-    id: number;
-    is_bot: boolean;
-    first_name: string;
-    username?: string;
-  };
-  message: TelegramMessage;
-  data: string;
-}
-
-interface TelegramUpdate {
-  update_id: number;
-  message?: TelegramMessage;
-  callback_query?: TelegramCallbackQuery;
-}
-
-interface InlineKeyboardButton {
-  text: string;
-  callback_data: string;
-}
-
-type InlineKeyboard = InlineKeyboardButton[][];
-
-async function sendTelegramMessage(chatId: number, text: string): Promise<void> {
-  try {
-    const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        chat_id: chatId,
-        text: text,
-        parse_mode: "Markdown",
-      }),
-    });
-    if (!response.ok) {
-      console.error("Telegram API error:", await response.text());
-    }
-  } catch (error) {
-    console.error("Error sending Telegram message:", error);
-  }
-}
-
-async function sendTelegramMessageWithKeyboard(
-  chatId: number,
-  text: string,
-  keyboard: InlineKeyboard
-): Promise<void> {
-  try {
-    const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        chat_id: chatId,
-        text: text,
-        parse_mode: "Markdown",
-        reply_markup: {
-          inline_keyboard: keyboard,
-        },
-      }),
-    });
-    if (!response.ok) {
-      console.error("Telegram API error:", await response.text());
-    }
-  } catch (error) {
-    console.error("Error sending Telegram message with keyboard:", error);
-  }
-}
-
-async function handleSaldo(
-  supabase: any,
-  userId: number,
-  chatId: number
-): Promise<void> {
-  const now = new Date();
-  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
-    .toISOString()
-    .split("T")[0];
-  const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0)
-    .toISOString()
-    .split("T")[0];
-
-  // Get user's internal ID
-  const { data: user } = await supabase
-    .from("users")
-    .select("id")
-    .eq("telegram_id", userId)
-    .single();
-
-  if (!user) {
-    await sendTelegramMessage(chatId, "Usuário não encontrado.");
-    return;
-  }
-
-  // Get total income
-  const { data: income } = await supabase
-    .from("transactions")
-    .select("amount")
-    .eq("user_id", user.id)
-    .eq("type", "income")
-    .gte("transaction_date", startOfMonth)
-    .lte("transaction_date", endOfMonth);
-
-  // Get total expenses
-  const { data: expenses } = await supabase
-    .from("transactions")
-    .select("amount")
-    .eq("user_id", user.id)
-    .eq("type", "expense")
-    .gte("transaction_date", startOfMonth)
-    .lte("transaction_date", endOfMonth);
-
-  const totalIncome = income?.reduce((sum, t) => sum + Number(t.amount), 0) || 0;
-  const totalExpenses = expenses?.reduce((sum, t) => sum + Number(t.amount), 0) || 0;
-  const balance = totalIncome - totalExpenses;
-
-  const monthName = now.toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
-
-  await sendTelegramMessage(
-    chatId,
-    `💰 *Saldo - ${monthName}*\n\n` +
-    `Entradas: R$ ${totalIncome.toFixed(2)}\n` +
-    `Saídas: R$ ${totalExpenses.toFixed(2)}\n` +
-    `*Saldo: R$ ${balance.toFixed(2)}*`
-  );
-}
-
-interface WizardState {
-  step: string;
-  data: Record<string, any>;
-}
-
-async function getWizardState(
-  supabase: any,
-  userId: number
-): Promise<WizardState | null> {
-  const { data } = await supabase
-    .from("wizard_states")
-    .select("step, data, expires_at")
-    .eq("user_id", userId)
-    .single();
-
-  if (!data) return null;
-
-  if (new Date(data.expires_at) < new Date()) {
-    await supabase.from("wizard_states").delete().eq("user_id", userId);
-    return null;
-  }
-
-  return { step: data.step, data: data.data };
-}
-
-async function setWizardState(
-  supabase: any,
-  userId: number,
-  step: string,
-  data: Record<string, any> = {}
-): Promise<void> {
-  const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
-
-  await supabase.from("wizard_states").upsert({
-    user_id: userId,
-    step: step,
-    data: data,
-    expires_at: expiresAt,
-  });
-}
-
-async function clearWizardState(
-  supabase: any,
-  userId: number
-): Promise<void> {
-  await supabase.from("wizard_states").delete().eq("user_id", userId);
-}
-
-interface ParsedCommand {
-  amount: number | null;
-  category: string | null;
-  group: string | null;
-  date: string | null;
-  tags: string[];
-}
-
-function parseCommand(args: string[]): ParsedCommand {
-  const result: ParsedCommand = {
-    amount: null,
-    category: null,
-    group: null,
-    date: null,
-    tags: [],
-  };
-
-  for (let i = 0; i < args.length; i++) {
-    const arg = args[i];
-
-    if (arg === "--grupo" && i + 1 < args.length) {
-      result.group = args[++i];
-    } else if (arg === "--data" && i + 1 < args.length) {
-      result.date = args[++i];
-    } else if (arg === "--tags" && i + 1 < args.length) {
-      // Collect all remaining tags
-      while (i + 1 < args.length && args[i + 1].startsWith("#")) {
-        result.tags.push(args[++i]);
-      }
-    } else if (arg.startsWith("#")) {
-      result.tags.push(arg);
-    } else if (!result.amount && !isNaN(parseFloat(arg))) {
-      result.amount = parseFloat(arg);
-    } else if (!result.category) {
-      result.category = arg;
-    }
-  }
-
-  return result;
-}
-
-async function handleGasto(
-  supabase: any,
-  userId: number,
-  chatId: number,
-  args: string[]
-): Promise<void> {
-  const { data: user } = await supabase
-    .from("users")
-    .select("id")
-    .eq("telegram_id", userId)
-    .single();
-
-  if (!user) {
-    await sendTelegramMessage(chatId, "Usuário não encontrado.");
-    return;
-  }
-
-  const wizardState = await getWizardState(supabase, user.id);
-
-  if (wizardState) {
-    await handleGastoWizard(supabase, user.id, chatId, wizardState, args[0] || "");
-    return;
-  }
-
-  if (args.length === 0) {
-    await sendTelegramMessage(chatId, "Quanto você gastou?");
-    await setWizardState(supabase, user.id, "gasto_amount");
-    return;
-  }
-
-  const parsed = parseCommand(args);
-
-  if (!parsed.amount) {
-    await sendTelegramMessage(chatId, "Por favor, informe o valor. Ex: /gasto 50 alimentação");
-    return;
-  }
-
-  let categoryId = null;
-  if (parsed.category) {
-    const { data: existingCategory } = await supabase
-      .from("categories")
-      .select("id")
-      .eq("user_id", user.id)
-      .ilike("name", parsed.category)
-      .single();
-
-    if (existingCategory) {
-      categoryId = existingCategory.id;
-    } else {
-      const { data: newCategory } = await supabase
-        .from("categories")
-        .insert({ user_id: user.id, name: parsed.category })
-        .select("id")
-        .single();
-      categoryId = newCategory?.id;
-    }
-  }
-
-  let groupId = null;
-  if (parsed.group) {
-    const { data: group } = await supabase
-      .from("groups")
-      .select("id")
-      .eq("user_id", user.id)
-      .ilike("name", parsed.group)
-      .single();
-    groupId = group?.id;
-  } else {
-    const { data: defaultGroup } = await supabase
-      .from("groups")
-      .select("id")
-      .eq("user_id", user.id)
-      .eq("is_default", true)
-      .single();
-    groupId = defaultGroup?.id;
-  }
-
-  const { error } = await supabase.from("transactions").insert({
-    user_id: user.id,
-    group_id: groupId,
-    category_id: categoryId,
-    type: "expense",
-    amount: parsed.amount,
-    description: parsed.category,
-    tags: parsed.tags,
-    transaction_date: parsed.date || new Date().toISOString().split("T")[0],
-  });
-
-  if (error) {
-    await sendTelegramMessage(chatId, "Erro ao registrar gasto. Tente novamente.");
-    return;
-  }
-
-  await sendTelegramMessage(
-    chatId,
-    `✅ *Despesa registrada!*\n\n` +
-    `Valor: R$ ${parsed.amount.toFixed(2)}\n` +
-    `Categoria: ${parsed.category || "Não definida"}\n` +
-    `Grupo: ${parsed.group || "Pessoal"}\n` +
-    `Data: ${parsed.date || new Date().toISOString().split("T")[0]}`
-  );
-}
-
-async function handleCallbackQuery(
-  supabase: any,
-  callbackQuery: TelegramCallbackQuery
-): Promise<void> {
-  const { data, message } = callbackQuery;
-  const chatId = message.chat.id;
-  const telegramId = callbackQuery.from.id;
-  const selectedValue = data;
-
-  // Answer callback query to remove loading state
-  await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/answerCallbackQuery`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ callback_query_id: callbackQuery.id }),
-  });
-
-  // Handle custom_date callback - send message asking for date text
-  if (selectedValue === "custom_date") {
-    const { data: user } = await supabase
-      .from("users")
-      .select("id")
-      .eq("telegram_id", telegramId)
-      .single();
-
-    if (!user) return;
-
-    const state = await getWizardState(supabase, user.id);
-    if (!state) return;
-
-    const underscoreIndex = state.step.indexOf("_");
-    const currentWizardName = state.step.substring(0, underscoreIndex);
-
-    await sendTelegramMessage(chatId, "Informe a data (formato: YYYY-MM-DD):");
-    await setWizardState(supabase, user.id, `${currentWizardName}_custom_date`, state.data);
-    return;
-  }
-
-  // Get internal user ID
-  const { data: user } = await supabase
-    .from("users")
-    .select("id")
-    .eq("telegram_id", telegramId)
-    .single();
-
-  if (!user) return;
-  const userId = user.id;
-
-  // Get current wizard state
-  const { data: state } = await supabase
-    .from("wizard_states")
-    .select("*")
-    .eq("user_id", userId)
-    .single();
-
-  if (!state) return;
-
-  // Get current step info
-  const underscoreIndex = state.step.indexOf("_");
-  const wizardName = state.step.substring(0, underscoreIndex);
-  const stepKey = state.step.substring(underscoreIndex + 1);
-  const { data: currentStep } = await supabase
-    .from("wizard_steps")
-    .select("*")
-    .eq("wizard_name", wizardName)
-    .eq("step_key", stepKey)
-    .single();
-
-  if (!currentStep) return;
-
-  // Update state with selected value
-  const newStateData = { ...state.data, [currentStep.step_key]: selectedValue };
-
-  // Get next step
-  const { data: nextStep } = await supabase
-    .from("wizard_steps")
-    .select("*")
-    .eq("wizard_name", currentStep.wizard_name)
-    .gt("step_order", currentStep.step_order)
-    .order("step_order")
-    .limit(1)
-    .single();
-
-  if (nextStep) {
-    // Update wizard state
-    await supabase
-      .from("wizard_states")
-      .update({
-        step: `${nextStep.wizard_name}_${nextStep.step_key}`,
-        data: newStateData,
-        expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
-      })
-      .eq("user_id", userId);
-
-    // Send next step message
-    await sendWizardStepMessage(chatId, nextStep, userId, supabase);
-  } else {
-    // Wizard complete - save transaction
-    await completeWizard(supabase, userId, chatId, newStateData);
-  }
-}
-
-async function sendWizardStepMessage(
-  chatId: number,
-  step: any,
-  userId: number,
-  supabase: any
-): Promise<void> {
-  if (step.input_type === "select") {
-    // Fetch options from database
-    const { data: options } = await supabase
-      .from(step.options_source)
-      .select("name")
-      .eq("user_id", userId)
-      .order("name");
-
-    if (options && options.length > 0) {
-      const keyboard: InlineKeyboard = options.map(opt => [
-        { text: opt.name, callback_data: opt.name }
-      ]);
-      await sendTelegramMessageWithKeyboard(chatId, step.prompt, keyboard);
-    } else {
-      await sendTelegramMessage(chatId, step.prompt + "\n\n(Nenhuma opção disponível. Crie primeiro.)");
-    }
-  } else if (step.input_type === "date") {
-    const today = new Date().toISOString().split("T")[0];
-    const yesterday = new Date(Date.now() - 86400000).toISOString().split("T")[0];
-    const keyboard: InlineKeyboard = [
-      [{ text: "Hoje", callback_data: today }],
-      [{ text: "Ontem", callback_data: yesterday }],
-      [{ text: "Outra data", callback_data: "custom_date" }],
-    ];
-    await sendTelegramMessageWithKeyboard(chatId, step.prompt, keyboard);
-  } else if (step.input_type === "tags") {
-    await sendTelegramMessage(chatId, step.prompt + "\n\nExemplo: #trabalho #casa");
-  } else {
-    await sendTelegramMessage(chatId, step.prompt);
-  }
-}
-
-async function completeWizard(
-  supabase: any,
-  userId: number,
-  chatId: number,
-  data: Record<string, any>
-): Promise<void> {
-  // Get or create category
-  let categoryId = null;
-  if (data.category) {
-    const { data: existingCategory } = await supabase
-      .from("categories")
-      .select("id")
-      .eq("user_id", userId)
-      .ilike("name", data.category)
-      .single();
-
-    if (existingCategory) {
-      categoryId = existingCategory.id;
-    } else {
-      const { data: newCategory } = await supabase
-        .from("categories")
-        .insert({ user_id: userId, name: data.category })
-        .select("id")
-        .single();
-      categoryId = newCategory?.id;
-    }
-  }
-
-  // Get group
-  let groupId = null;
-  if (data.group) {
-    const { data: group } = await supabase
-      .from("groups")
-      .select("id")
-      .eq("user_id", userId)
-      .ilike("name", data.group)
-      .single();
-    groupId = group?.id;
-  } else {
-    const { data: defaultGroup } = await supabase
-      .from("groups")
-      .select("id")
-      .eq("user_id", userId)
-      .eq("is_default", true)
-      .single();
-    groupId = defaultGroup?.id;
-  }
-
-  // Parse tags
-  let tags: string[] = [];
-  if (data.tags) {
-    if (Array.isArray(data.tags)) {
-      tags = data.tags;
-    } else if (typeof data.tags === "string") {
-      tags = data.tags.split(/[\s,]+/).filter((t: string) => t.startsWith("#")).map((t: string) => t.replace("#", ""));
-    }
-  }
-
-  // Create transaction
-  const transactionType = data.type || "expense";
-  const { error } = await supabase.from("transactions").insert({
-    user_id: userId,
-    group_id: groupId,
-    category_id: categoryId,
-    type: transactionType,
-    amount: data.amount,
-    description: data.category,
-    tags: tags,
-    transaction_date: data.date || new Date().toISOString().split("T")[0],
-  });
-
-  await clearWizardState(supabase, userId);
-
-  if (error) {
-    await sendTelegramMessage(chatId, "Erro ao registrar. Tente novamente.");
-    return;
-  }
-
-  const typeLabel = transactionType === "income" ? "Receita" : "Despesa";
-  const emoji = transactionType === "income" ? "📈" : "📉";
-
-  await sendTelegramMessage(
-    chatId,
-    `${emoji} *${typeLabel} registrada!*\n\n` +
-    `Valor: R$ ${Number(data.amount).toFixed(2)}\n` +
-    `Categoria: ${data.category || "Não definida"}\n` +
-    `Grupo: ${data.group || "Pessoal"}\n` +
-    `Data: ${data.date || new Date().toISOString().split("T")[0]}` +
-    (tags.length > 0 ? `\nTags: ${tags.map((t: string) => `#${t}`).join(" ")}` : "")
-  );
-}
-
-async function handleGastoWizard(
-  supabase: any,
-  userId: number,
-  chatId: number,
-  state: WizardState,
-  input: string
-): Promise<void> {
-  // Handle custom_date step
-  if (state.step === "gasto_custom_date") {
-    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
-    if (!dateRegex.test(input)) {
-      await sendTelegramMessage(chatId, "Formato inválido. Use YYYY-MM-DD (ex: 2024-01-15)");
-      return;
-    }
-    await setWizardState(supabase, userId, "gasto_tags", { ...state.data, date: input });
-    const { data: tagsStep } = await supabase
-      .from("wizard_steps")
-      .select("*")
-      .eq("wizard_name", "gasto")
-      .eq("step_key", "tags")
-      .single();
-    if (tagsStep) {
-      await sendWizardStepMessage(chatId, tagsStep, userId, supabase);
-    } else {
-      await completeWizard(supabase, userId, chatId, { ...state.data, date: input });
-    }
-    return;
-  }
-
-  const stepKey = state.step.replace("gasto_", "");
-  const { data: currentStep } = await supabase
-    .from("wizard_steps")
-    .select("*")
-    .eq("wizard_name", "gasto")
-    .eq("step_key", stepKey)
-    .single();
-
-  if (!currentStep) {
-    await sendTelegramMessage(chatId, "Erro ao processar wizard.");
-    return;
-  }
-
-  let value = input;
-
-  if (currentStep.input_type === "text" && stepKey === "amount") {
-    const amount = parseFloat(input);
-    if (isNaN(amount) || amount <= 0) {
-      await sendTelegramMessage(chatId, "Por favor, informe um valor válido.");
-      return;
-    }
-    value = amount.toString();
-  }
-
-  const { data: nextStep } = await supabase
-    .from("wizard_steps")
-    .select("*")
-    .eq("wizard_name", "gasto")
-    .gt("step_order", currentStep.step_order)
-    .order("step_order")
-    .limit(1)
-    .single();
-
-  if (nextStep) {
-    await setWizardState(supabase, userId, `gasto_${nextStep.step_key}`, {
-      ...state.data,
-      [stepKey]: value,
-    });
-    await sendWizardStepMessage(chatId, nextStep, userId, supabase);
-  } else {
-    await completeWizard(supabase, userId, chatId, {
-      ...state.data,
-      [stepKey]: value,
-    });
-  }
-}
-
-async function handleReceitaWizard(
-  supabase: any,
-  userId: number,
-  chatId: number,
-  state: WizardState,
-  input: string
-): Promise<void> {
-  // Handle custom_date step
-  if (state.step === "receita_custom_date") {
-    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
-    if (!dateRegex.test(input)) {
-      await sendTelegramMessage(chatId, "Formato inválido. Use YYYY-MM-DD (ex: 2024-01-15)");
-      return;
-    }
-    await completeWizard(supabase, userId, chatId, {
-      ...state.data,
-      date: input,
-      type: "income",
-    });
-    return;
-  }
-
-  const stepKey = state.step.replace("receita_", "");
-  const { data: currentStep } = await supabase
-    .from("wizard_steps")
-    .select("*")
-    .eq("wizard_name", "receita")
-    .eq("step_key", stepKey)
-    .single();
-
-  if (!currentStep) {
-    await sendTelegramMessage(chatId, "Erro ao processar wizard.");
-    return;
-  }
-
-  let value = input;
-
-  if (currentStep.input_type === "text" && stepKey === "amount") {
-    const amount = parseFloat(input);
-    if (isNaN(amount) || amount <= 0) {
-      await sendTelegramMessage(chatId, "Por favor, informe um valor válido.");
-      return;
-    }
-    value = amount.toString();
-  }
-
-  const { data: nextStep } = await supabase
-    .from("wizard_steps")
-    .select("*")
-    .eq("wizard_name", "receita")
-    .gt("step_order", currentStep.step_order)
-    .order("step_order")
-    .limit(1)
-    .single();
-
-  if (nextStep) {
-    await setWizardState(supabase, userId, `receita_${nextStep.step_key}`, {
-      ...state.data,
-      [stepKey]: value,
-    });
-    await sendWizardStepMessage(chatId, nextStep, userId, supabase);
-  } else {
-    await completeWizard(supabase, userId, chatId, {
-      ...state.data,
-      [stepKey]: value,
-      type: "income",
-    });
-  }
-}
-
-async function handleReceita(
-  supabase: any,
-  userId: number,
-  chatId: number,
-  args: string[]
-): Promise<void> {
-  const { data: user } = await supabase
-    .from("users")
-    .select("id")
-    .eq("telegram_id", userId)
-    .single();
-
-  if (!user) {
-    await sendTelegramMessage(chatId, "Usuário não encontrado.");
-    return;
-  }
-
-  const wizardState = await getWizardState(supabase, user.id);
-
-  if (wizardState) {
-    await handleReceitaWizard(supabase, user.id, chatId, wizardState, args[0] || "");
-    return;
-  }
-
-  if (args.length === 0) {
-    await sendTelegramMessage(chatId, "Quanto você recebeu?");
-    await setWizardState(supabase, user.id, "receita_amount");
-    return;
-  }
-
-  const parsed = parseCommand(args);
-
-  if (!parsed.amount) {
-    await sendTelegramMessage(chatId, "Por favor, informe o valor. Ex: /receita 3000 salário");
-    return;
-  }
-
-  // Get or create category
-  let categoryId = null;
-  if (parsed.category) {
-    const { data: existingCategory } = await supabase
-      .from("categories")
-      .select("id")
-      .eq("user_id", user.id)
-      .ilike("name", parsed.category)
-      .single();
-
-    if (existingCategory) {
-      categoryId = existingCategory.id;
-    } else {
-      const { data: newCategory } = await supabase
-        .from("categories")
-        .insert({ user_id: user.id, name: parsed.category })
-        .select("id")
-        .single();
-      categoryId = newCategory?.id;
-    }
-  }
-
-  // Get group
-  let groupId = null;
-  if (parsed.group) {
-    const { data: group } = await supabase
-      .from("groups")
-      .select("id")
-      .eq("user_id", user.id)
-      .ilike("name", parsed.group)
-      .single();
-    groupId = group?.id;
-  } else {
-    const { data: defaultGroup } = await supabase
-      .from("groups")
-      .select("id")
-      .eq("user_id", user.id)
-      .eq("is_default", true)
-      .single();
-    groupId = defaultGroup?.id;
-  }
-
-  // Create transaction
-  const { error } = await supabase.from("transactions").insert({
-    user_id: user.id,
-    group_id: groupId,
-    category_id: categoryId,
-    type: "income",
-    amount: parsed.amount,
-    description: parsed.category,
-    tags: parsed.tags,
-    transaction_date: parsed.date || new Date().toISOString().split("T")[0],
-  });
-
-  if (error) {
-    await sendTelegramMessage(chatId, "Erro ao registrar receita. Tente novamente.");
-    return;
-  }
-
-  await sendTelegramMessage(
-    chatId,
-    `✅ *Receita registrada!*\n\n` +
-    `Valor: R$ ${parsed.amount.toFixed(2)}\n` +
-    `Categoria: ${parsed.category || "Não definida"}\n` +
-    `Grupo: ${parsed.group || "Pessoal"}\n` +
-    `Data: ${parsed.date || new Date().toISOString().split("T")[0]}`
-  );
-}
-
-async function handleExtrato(
-  supabase: any,
-  userId: number,
-  chatId: number
-): Promise<void> {
-  const now = new Date();
-  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
-    .toISOString()
-    .split("T")[0];
-  const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0)
-    .toISOString()
-    .split("T")[0];
-
-  // Get user's internal ID
-  const { data: user } = await supabase
-    .from("users")
-    .select("id")
-    .eq("telegram_id", userId)
-    .single();
-
-  if (!user) {
-    await sendTelegramMessage(chatId, "Usuário não encontrado.");
-    return;
-  }
-
-  // Get transactions with category and group names
-  const { data: transactions } = await supabase
-    .from("transactions")
-    .select(`
-      id,
-      type,
-      amount,
-      description,
-      tags,
-      transaction_date,
-      categories (name),
-      groups (name)
-    `)
-    .eq("user_id", user.id)
-    .gte("transaction_date", startOfMonth)
-    .lte("transaction_date", endOfMonth)
-    .order("transaction_date", { ascending: false });
-
-  if (!transactions || transactions.length === 0) {
-    await sendTelegramMessage(chatId, "Nenhuma transação encontrada neste mês.");
-    return;
-  }
-
-  const monthName = now.toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
-  let message = `📋 *Extrato - ${monthName}*\n\n`;
-
-  for (const t of transactions) {
-    const emoji = t.type === "income" ? "📈" : "📉";
-    const category = t.categories?.name || "Sem categoria";
-    const group = t.groups?.name || "Sem grupo";
-    const tags = t.tags?.length ? ` ${t.tags.join(" ")}` : "";
-
-    message += `${emoji} ${t.transaction_date} - R$ ${Number(t.amount).toFixed(2)}\n`;
-    message += `   ${category} | ${group}${tags}\n`;
-  }
-
-  await sendTelegramMessage(chatId, message);
-}
-
-async function handleGrupo(
-  supabase: any,
-  userId: number,
-  chatId: number,
-  args: string[]
-): Promise<void> {
-  // Get user's internal ID
-  const { data: user } = await supabase
-    .from("users")
-    .select("id")
-    .eq("telegram_id", userId)
-    .single();
-
-  if (!user) {
-    await sendTelegramMessage(chatId, "Usuário não encontrado.");
-    return;
-  }
-
-  if (args.length === 0) {
-    // List groups
-    const { data: groups } = await supabase
-      .from("groups")
-      .select("name, is_default")
-      .eq("user_id", user.id)
-      .order("name");
-
-    if (!groups || groups.length === 0) {
-      await sendTelegramMessage(chatId, "Nenhum grupo encontrado.");
-      return;
-    }
-
-    let message = "📁 *Seus grupos:*\n\n";
-    for (const g of groups) {
-      const defaultTag = g.is_default ? " (padrão)" : "";
-      message += `• ${g.name}${defaultTag}\n`;
-    }
-    message += "\nPara adicionar: /grupo nome_do_grupo";
-    await sendTelegramMessage(chatId, message);
-    return;
-  }
-
-  // Add new group
-  const groupName = args.join(" ");
-
-  const { error } = await supabase.from("groups").insert({
-    user_id: user.id,
-    name: groupName,
-    is_default: false,
-  });
-
-  if (error) {
-    if (error.code === "23505") { // Unique violation
-      await sendTelegramMessage(chatId, "Já existe um grupo com esse nome.");
-    } else {
-      await sendTelegramMessage(chatId, "Erro ao criar grupo. Tente novamente.");
-    }
-    return;
-  }
-
-  await sendTelegramMessage(chatId, `✅ Grupo "${groupName}" criado!`);
-}
-
-async function handleCategoria(
-  supabase: any,
-  userId: number,
-  chatId: number,
-  args: string[]
-): Promise<void> {
-  // Get user's internal ID
-  const { data: user } = await supabase
-    .from("users")
-    .select("id")
-    .eq("telegram_id", userId)
-    .single();
-
-  if (!user) {
-    await sendTelegramMessage(chatId, "Usuário não encontrado.");
-    return;
-  }
-
-  if (args.length === 0 || args[0] === "listar") {
-    // List categories
-    const { data: categories } = await supabase
-      .from("categories")
-      .select("name, is_predefined")
-      .eq("user_id", user.id)
-      .order("is_predefined", { ascending: false })
-      .order("name");
-
-    if (!categories || categories.length === 0) {
-      await sendTelegramMessage(chatId, "Nenhuma categoria encontrada.");
-      return;
-    }
-
-    let message = "🏷️ *Suas categorias:*\n\n";
-    for (const c of categories) {
-      const tag = c.is_predefined ? " (padrão)" : "";
-      message += `• ${c.name}${tag}\n`;
-    }
-    message += "\nPara adicionar: /categoria nome_da_categoria";
-    await sendTelegramMessage(chatId, message);
-    return;
-  }
-
-  // Add new category
-  const categoryName = args.join(" ");
-
-  const { error } = await supabase.from("categories").insert({
-    user_id: user.id,
-    name: categoryName,
-    is_predefined: false,
-  });
-
-  if (error) {
-    if (error.code === "23505") { // Unique violation
-      await sendTelegramMessage(chatId, "Já existe uma categoria com esse nome.");
-    } else {
-      await sendTelegramMessage(chatId, "Erro ao criar categoria. Tente novamente.");
-    }
-    return;
-  }
-
-  await sendTelegramMessage(chatId, `✅ Categoria "${categoryName}" criada!`);
-}
+import {
+  TELEGRAM_BOT_TOKEN,
+  TELEGRAM_SECRET_TOKEN,
+  SUPABASE_URL,
+  SUPABASE_SERVICE_ROLE_KEY,
+} from "./config.ts";
+import type {
+  DeepSeekResponse,
+  TelegramUpdate,
+  InlineKeyboard,
+} from "./types/index.ts";
+import { isRateLimited } from "./utils/rate-limiter.ts";
+import { formatCurrencyBR, formatDateBR, parseDateBR } from "./utils/formatting.ts";
+import { parseNaturalLanguage } from "./services/deepseek.ts";
+import { sendTelegramMessage, sendTelegramMessageWithKeyboard } from "./services/telegram.ts";
+import { getCategories } from "./services/database.ts";
+import { handleCallbackQuery } from "./handlers/callbacks.ts";
+import { handleNaturalLanguageWithFollowUp, executeNaturalLanguageAction } from "./handlers/nl-processing.ts";
+import {
+  getWizardState,
+  setWizardState,
+  clearWizardState,
+  handleTransactionWizard,
+} from "./handlers/wizard.ts";
+import {
+  handleStart,
+  handleAjuda,
+  handleSaldo,
+  handleTransaction,
+  handleExtrato,
+  handleResumo,
+  handleEditar,
+  handleExcluir,
+  handleGrupo,
+  handleCategoria,
+} from "./handlers/commands.ts";
 
 serve(async (req: Request): Promise<Response> => {
-  // Validate request method
   if (req.method !== "POST") {
     return new Response("Method not allowed", { status: 405 });
   }
 
-  // Validate secret token
   const secretToken = req.headers.get("X-Telegram-Bot-Api-Secret-Token");
   if (secretToken !== TELEGRAM_SECRET_TOKEN) {
     return new Response("Unauthorized", { status: 401 });
@@ -1035,7 +50,6 @@ serve(async (req: Request): Promise<Response> => {
   try {
     const update: TelegramUpdate = await req.json();
 
-    // Handle callback queries (inline keyboard clicks)
     if (update.callback_query) {
       const supabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
       await handleCallbackQuery(supabase, update.callback_query);
@@ -1049,10 +63,13 @@ serve(async (req: Request): Promise<Response> => {
     const message = update.message;
     const text = message.text || "";
 
-    // Create Supabase client
+    if (isRateLimited(message.from.id)) {
+      await sendTelegramMessage(message.chat.id, "⏳ Aguarde um momento antes de enviar outra mensagem.");
+      return new Response("OK", { status: 200 });
+    }
+
     const supabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
 
-    // Ensure user exists
     const { data: existingUser } = await supabase
       .from("users")
       .select("id")
@@ -1060,7 +77,6 @@ serve(async (req: Request): Promise<Response> => {
       .single();
 
     if (!existingUser) {
-      // Create user
       const { data: newUser, error: userError } = await supabase
         .from("users")
         .insert({
@@ -1073,27 +89,22 @@ serve(async (req: Request): Promise<Response> => {
 
       if (userError || !newUser) {
         console.error("Error creating user:", userError);
-        await sendTelegramMessage(
-          message.chat.id,
-          "Erro ao criar usuário. Tente novamente."
-        );
+        await sendTelegramMessage(message.chat.id, "❌ Ops! Algo deu errado ao criar sua conta. Tente novamente.");
         return new Response("OK", { status: 200 });
       }
 
-      // Create default group "Pessoal"
       await supabase.from("groups").insert({
         user_id: newUser.id,
         name: "Pessoal",
         is_default: true,
       });
 
-      // Copy predefined categories
       const { data: predefined } = await supabase
         .from("predefined_categories")
         .select("name");
 
       if (predefined) {
-        const categories = predefined.map((pc) => ({
+        const categories = predefined.map((pc: any) => ({
           user_id: newUser.id,
           name: pc.name,
           is_predefined: true,
@@ -1101,49 +112,122 @@ serve(async (req: Request): Promise<Response> => {
         await supabase.from("categories").insert(categories);
       }
 
-      await sendTelegramMessage(
-        message.chat.id,
-        `Olá ${message.from.first_name}! 👋\n\nBem-vindo ao Bot de Controle Financeiro!\n\nUse /ajuda para ver os comandos disponíveis.`
-      );
+      await handleStart(message.chat.id, message.from.first_name);
       return new Response("OK", { status: 200 });
     }
 
-    // Check for active wizard
     const wizardState = await getWizardState(supabase, existingUser.id);
     if (wizardState && !text.startsWith("/")) {
       if (wizardState.step.startsWith("gasto_")) {
-        await handleGastoWizard(supabase, existingUser.id, message.chat.id, wizardState, text);
+        await handleTransactionWizard("expense", supabase, existingUser.id, message.chat.id, wizardState, text);
       } else if (wizardState.step.startsWith("receita_")) {
-        await handleReceitaWizard(supabase, existingUser.id, message.chat.id, wizardState, text);
+        await handleTransactionWizard("income", supabase, existingUser.id, message.chat.id, wizardState, text);
+      } else if (wizardState.step === "edit_amount") {
+        const amount = parseFloat(text.replace(",", "."));
+        if (isNaN(amount) || amount <= 0) {
+          await sendTelegramMessage(message.chat.id, "Por favor, informe um valor válido (ex: 50,00 ou 50)");
+          return new Response("OK", { status: 200 });
+        }
+        const transactionId = wizardState.data.transaction_id;
+        await supabase.from("transactions").update({ amount }).eq("id", transactionId).eq("user_id", existingUser.id);
+        await clearWizardState(supabase, existingUser.id);
+        await sendTelegramMessage(message.chat.id, `✅ Valor atualizado para ${formatCurrencyBR(amount)}!`);
+      } else if (wizardState.step === "edit_date") {
+        const parsed = parseDateBR(text);
+        if (!parsed) {
+          await sendTelegramMessage(message.chat.id, "Formato inválido. Use DD/MM/YYYY (ex: 15/01/2024)");
+          return new Response("OK", { status: 200 });
+        }
+        const transactionId = wizardState.data.transaction_id;
+        await supabase.from("transactions").update({ transaction_date: parsed }).eq("id", transactionId).eq("user_id", existingUser.id);
+        await clearWizardState(supabase, existingUser.id);
+        await sendTelegramMessage(message.chat.id, `✅ Data atualizada para ${formatDateBR(parsed)}!`);
+      } else if (wizardState.step === "nl_expense_amount" || wizardState.step === "nl_income_amount") {
+        const amount = parseFloat(text.replace(",", "."));
+        if (isNaN(amount) || amount <= 0) {
+          await sendTelegramMessage(message.chat.id, "Por favor, informe um valor válido (ex: 50,00 ou 50)");
+          return new Response("OK", { status: 200 });
+        }
+
+        const intent = wizardState.step === "nl_expense_amount" ? "expense" : "income";
+        const category = wizardState.data.category;
+        const date = wizardState.data.date;
+
+        if (category) {
+          const natural: DeepSeekResponse = { intent, amount, category, date, period: null, name: null, tag: null, limit: null, missingFields: [] };
+          await clearWizardState(supabase, existingUser.id);
+          await executeNaturalLanguageAction(supabase, existingUser.id, message.chat.id, natural);
+        } else {
+          const categories = await getCategories(supabase, existingUser.id);
+          const keyboard: InlineKeyboard = categories.map((c) => [
+            { text: c.name, callback_data: `nl_cat_${c.name}` }
+          ]);
+          keyboard.push([{ text: "⏭️ Sem categoria", callback_data: "nl_cat_none" }]);
+
+          await setWizardState(supabase, existingUser.id, `nl_${intent}_category`, {
+            intent,
+            amount,
+            date,
+          });
+          await sendTelegramMessageWithKeyboard(message.chat.id, "Em que categoria?", keyboard);
+        }
+      } else if (wizardState.step === "nl_expense_category" || wizardState.step === "nl_income_category") {
+        const intent = wizardState.step === "nl_expense_category" ? "expense" : "income";
+        const amount = wizardState.data.amount;
+        const date = wizardState.data.date;
+
+        const natural: DeepSeekResponse = { intent, amount, category: text, date, period: null, name: null, tag: null, limit: null, missingFields: [] };
+        await clearWizardState(supabase, existingUser.id);
+        await executeNaturalLanguageAction(supabase, existingUser.id, message.chat.id, natural);
+      } else if (wizardState.step.startsWith("nl_") && wizardState.step.endsWith("_period")) {
+        const intent = wizardState.step.replace("nl_", "").replace("_period", "");
+        const period = text.toLowerCase().includes("passado") ? "last_month" : "this_month";
+
+        const natural: DeepSeekResponse = { intent, amount: null, category: wizardState.data.category, date: null, period, name: null, tag: null, limit: null, missingFields: [] };
+        await clearWizardState(supabase, existingUser.id);
+        await executeNaturalLanguageAction(supabase, existingUser.id, message.chat.id, natural);
+      } else if (wizardState.step === "nl_create_category_name") {
+        const natural: DeepSeekResponse = { intent: "create_category", amount: null, category: null, date: null, period: null, name: text, tag: null, limit: null, missingFields: [] };
+        await clearWizardState(supabase, existingUser.id);
+        await executeNaturalLanguageAction(supabase, existingUser.id, message.chat.id, natural);
+      } else if (wizardState.step === "nl_create_group_name") {
+        const natural: DeepSeekResponse = { intent: "create_group", amount: null, category: null, date: null, period: null, name: text, tag: null, limit: null, missingFields: [] };
+        await clearWizardState(supabase, existingUser.id);
+        await executeNaturalLanguageAction(supabase, existingUser.id, message.chat.id, natural);
+      } else if (wizardState.step === "nl_list_by_tag_name") {
+        const tag = text.replace("#", "").trim();
+        const natural: DeepSeekResponse = { intent: "list_by_tag", amount: null, category: null, date: null, period: null, name: null, tag, limit: null, missingFields: [] };
+        await clearWizardState(supabase, existingUser.id);
+        await executeNaturalLanguageAction(supabase, existingUser.id, message.chat.id, natural);
       }
       return new Response("OK", { status: 200 });
     }
 
-    // Handle commands
+    if (!text.startsWith("/") && existingUser) {
+      const natural = await parseNaturalLanguage(text);
+
+      if (natural.intent === null) {
+        await sendTelegramMessage(
+          message.chat.id,
+          `🤔 Não entendi. Você pode usar comandos como /gasto ou digitar algo como "gastei 50 no almoço".\n\nUse /ajuda para ver todos os comandos.`
+        );
+        return new Response("OK", { status: 200 });
+      }
+
+      await handleNaturalLanguageWithFollowUp(supabase, existingUser.id, message.chat.id, natural);
+      return new Response("OK", { status: 200 });
+    }
+
     if (text.startsWith("/")) {
       const [command, ...args] = text.split(" ");
 
       switch (command.toLowerCase()) {
         case "/start":
-          await sendTelegramMessage(
-            message.chat.id,
-            `Olá ${message.from.first_name}! 👋\n\nBem-vindo ao Bot de Controle Financeiro!\n\nUse /ajuda para ver os comandos disponíveis.`
-          );
+          await handleStart(message.chat.id, message.from.first_name);
           break;
 
         case "/ajuda":
-          await sendTelegramMessage(
-            message.chat.id,
-            `📚 *Comandos Disponíveis:*\n\n` +
-            `/gasto - Adicionar despesa\n` +
-            `/receita - Adicionar receita\n` +
-            `/saldo - Ver saldo do mês\n` +
-            `/extrato - Ver extrato do mês\n` +
-            `/grupo - Gerenciar grupos\n` +
-            `/categoria - Gerenciar categorias\n` +
-            `/cancelar - Cancelar operação em andamento\n` +
-            `/ajuda - Esta mensagem`
-          );
+          await handleAjuda(message.chat.id);
           break;
 
         case "/saldo":
@@ -1151,15 +235,27 @@ serve(async (req: Request): Promise<Response> => {
           break;
 
         case "/gasto":
-          await handleGasto(supabase, message.from.id, message.chat.id, args);
+          await handleTransaction("expense", supabase, message.from.id, message.chat.id, args);
           break;
 
         case "/receita":
-          await handleReceita(supabase, message.from.id, message.chat.id, args);
+          await handleTransaction("income", supabase, message.from.id, message.chat.id, args);
           break;
 
         case "/extrato":
           await handleExtrato(supabase, message.from.id, message.chat.id);
+          break;
+
+        case "/resumo":
+          await handleResumo(supabase, message.from.id, message.chat.id);
+          break;
+
+        case "/editar":
+          await handleEditar(supabase, message.from.id, message.chat.id);
+          break;
+
+        case "/excluir":
+          await handleExcluir(supabase, message.from.id, message.chat.id, args);
           break;
 
         case "/grupo":
@@ -1172,13 +268,13 @@ serve(async (req: Request): Promise<Response> => {
 
         case "/cancelar":
           await clearWizardState(supabase, existingUser.id);
-          await sendTelegramMessage(message.chat.id, "❌ Operação cancelada.");
+          await sendTelegramMessage(message.chat.id, "❌ Operação cancelada. Pode ficar tranquilo!");
           break;
 
         default:
           await sendTelegramMessage(
             message.chat.id,
-            `Comando não reconhecido. Use /ajuda para ver os comandos disponíveis.`
+            `🤔 Comando não reconhecido. Use /ajuda para ver todos os comandos disponíveis.`
           );
       }
     }
@@ -1186,6 +282,6 @@ serve(async (req: Request): Promise<Response> => {
     return new Response("OK", { status: 200 });
   } catch (error) {
     console.error("Error processing update:", error);
-    return new Response("OK", { status: 200 }); // Always return 200 to Telegram
+    return new Response("OK", { status: 200 });
   }
 });
