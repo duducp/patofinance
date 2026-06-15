@@ -11,6 +11,7 @@ node_modules/
 # Supabase
 supabase/.env
 supabase/.temp/
+supabase/.branches/
 
 # Deno
 .deno/
