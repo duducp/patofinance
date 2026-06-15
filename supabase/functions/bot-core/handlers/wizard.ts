@@ -53,11 +53,16 @@ export async function sendWizardStepMessage(
   messageId?: number
 ): Promise<void> {
   if (step.step_key === "category") {
-    const { data: categories } = await supabase
+    // Filter categories by transaction type based on wizard
+    const wizardType = step.wizard_name === "receita" ? "income" : step.wizard_name === "gasto" ? "expense" : undefined;
+    let catQuery = supabase
       .from("categories")
       .select("name")
-      .eq("user_id", userId)
-      .order("name");
+      .eq("user_id", userId);
+    if (wizardType) {
+      catQuery = catQuery.or(`transaction_type.eq.${wizardType},transaction_type.is.null`);
+    }
+    const { data: categories } = await catQuery.order("name");
     const keyboard: { text: string; callback_data: string }[][] = [];
     if (categories && categories.length > 0) {
       let row: { text: string; callback_data: string }[] = [];
@@ -302,7 +307,7 @@ export async function handleTransactionWizard(
     .single();
 
   if (!currentStep) {
-    const cmd = type === "expense" ? "/gasto" : "/receita";
+    const cmd = type === "expense" ? "/despesa" : "/receita";
     await sendTelegramMessage(chatId, `❌ Ops! Algo deu errado com o wizard. Tente novamente com ${cmd}`);
     return;
   }

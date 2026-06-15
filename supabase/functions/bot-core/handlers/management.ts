@@ -107,7 +107,7 @@ export async function handleListCategories(supabase: any, userId: number, chatId
 
   const { data: categories } = await supabase
     .from("categories")
-    .select("name, is_predefined")
+    .select("name, is_predefined, transaction_type")
     .eq("user_id", user.id)
     .order("name");
 
@@ -116,10 +116,16 @@ export async function handleListCategories(supabase: any, userId: number, chatId
     return;
   }
 
+  const typeLabels: Record<string, string> = {
+    expense: "💸",
+    income: "💰",
+  };
+
   let message = "🏷️ *Suas categorias:*\n\n";
   for (const c of categories) {
     const defaultTag = c.is_predefined ? " ⭐ (padrão)" : "";
-    message += `• ${c.name}${defaultTag}\n`;
+    const typeIcon = c.transaction_type ? ` ${typeLabels[c.transaction_type]}` : "";
+    message += `• ${c.name}${defaultTag}${typeIcon}\n`;
   }
   message += "\n💡 Para criar: `/categoria nome_da_categoria`";
   await sendTelegramMessage(chatId, message);

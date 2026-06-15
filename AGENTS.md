@@ -319,7 +319,7 @@ If `DEEPSEEK_API_KEY` is not set, falls back to commands only.
 # Test /start
 make dev-test-start
 
-# Test /gasto 50 alimentacao
+# Test /despesa 50 alimentacao (/gasto also works)
 make dev-test-gasto
 
 # Test a custom webhook payload (edit the JSON inline)
@@ -513,7 +513,7 @@ make dev-deploy         # Deploy Edge Function locally
 make dev-db-push        # Push migrations locally
 make dev-db-reset       # Reset local database
 make dev-test-start     # Test /start via curl
-make dev-test-gasto     # Test /gasto via curl
+make dev-test-despesa  # Test /despesa via curl
 ```
 
 ### Production

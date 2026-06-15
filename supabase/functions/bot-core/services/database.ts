@@ -26,12 +26,16 @@ export async function requireUser(supabase: any, userId: number, chatId: number)
   return user;
 }
 
-export async function getCategories(supabase: any, userId: number): Promise<{ name: string }[]> {
-  const { data } = await supabase
+export async function getCategories(supabase: any, userId: number, type?: "expense" | "income"): Promise<{ name: string }[]> {
+  let query = supabase
     .from("categories")
     .select("name")
-    .eq("user_id", userId)
-    .order("name");
+    .eq("user_id", userId);
+  if (type) {
+    // Show categories matching the type OR with no type restriction (null = both)
+    query = query.or(`transaction_type.eq.${type},transaction_type.is.null`);
+  }
+  const { data } = await query.order("name");
   return data || [];
 }
 

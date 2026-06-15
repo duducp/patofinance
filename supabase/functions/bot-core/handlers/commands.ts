@@ -55,7 +55,7 @@ export async function handleHelp(chatId: number): Promise<void> {
     chatId,
     `📚 *Comandos Disponíveis:*\n\n` +
     `💰 *Financeiros:*\n` +
-    `/gasto - Registrar despesa\n` +
+    `/despesa - Registrar despesa (/gasto também funciona)\n` +
     `/receita - Registrar receita\n` +
     `/saldo - Ver saldo do mês\n` +
     `/extrato - Ver extrato do mês\n` +
@@ -204,14 +204,14 @@ export async function handleTransaction(
       ? "💸 Quanto você gastou? Informe o valor:"
       : "💰 Quanto você recebeu? Informe o valor:";
     await sendTelegramMessage(chatId, msg);
-    await setWizardState(supabase, user.id, `${type === "expense" ? "gasto" : "receita"}_amount`);
+    await setWizardState(supabase, user.id, `${type === "expense" ? "gasto" : "receita"}_amount`, { type });
     return;
   }
 
   const parsed = parseCommand(args);
 
   if (!parsed.amount) {
-    const cmd = type === "expense" ? "/gasto" : "/receita";
+    const cmd = type === "expense" ? "/despesa" : "/receita";
     await sendTelegramMessage(chatId, `Por favor, informe o valor. Ex: \`${cmd} 50 alimentação\``);
     return;
   }
@@ -756,9 +756,10 @@ export async function handleEntity(
   const cmdRef = isCategory ? "/categoria nome_da_categoria" : "/grupo nome_do_grupo";
 
   if (args.length === 0 || (isCategory && args[0] === "listar")) {
+    const selectFields = isCategory ? `id, name, ${flagColumn}, transaction_type` : `id, name, ${flagColumn}`;
     const orderQuery = isCategory
-      ? supabase.from(table).select(`id, name, ${flagColumn}`).eq("user_id", user.id).order("is_predefined", { ascending: false }).order("name")
-      : supabase.from(table).select(`id, name, ${flagColumn}`).eq("user_id", user.id).order("name");
+      ? supabase.from(table).select(selectFields).eq("user_id", user.id).order("is_predefined", { ascending: false }).order("name")
+      : supabase.from(table).select(selectFields).eq("user_id", user.id).order("name");
     const { data: items } = await orderQuery;
 
     if (!items || items.length === 0) {
@@ -782,12 +783,18 @@ export async function handleEntity(
       }
     }
 
+    const typeLabels: Record<string, string> = {
+      expense: "💸",
+      income: "💰",
+    };
+
     const pluralNoun = isCategory ? "categorias" : "grupos";
     let message = `${icon} *Su${isCategory ? "as" : "s"} ${pluralNoun}:*\n\n`;
     for (const item of items) {
       const count = countMap[item.id] || 0;
       const defaultTag = item[flagColumn] ? ` ⭐ (padrão)` : "";
-      message += `• ${item.name}${defaultTag} — ${count} ${count !== 1 ? "transações" : "transação"}\n`;
+      const typeIcon = item.transaction_type ? ` ${typeLabels[item.transaction_type]}` : "";
+      message += `• ${item.name}${defaultTag}${typeIcon} — ${count} ${count !== 1 ? "transações" : "transação"}\n`;
     }
     message += `\n💡 Para adicionar: \`${cmdRef}\``;
 

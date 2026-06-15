@@ -21,8 +21,6 @@
   <a href="CI_WORKFLOW_URL"><img src="https://img.shields.io/badge/CI-Passing-success?style=flat-square&logo=githubactions" alt="CI"></a>
 </p>
 
----<!-- CI_WORKFLOW_URL: substitua pela URL do seu workflow, ex: https://github.com/seuusuario/fincance/actions/workflows/ci.yml/badge.svg -->
-
 ---
 
 ## ✨ About
@@ -31,7 +29,7 @@
 
 ## 🎯 Funcionalidades
 
-- **💸 Registrar despesas** — `/gasto 50 mercado` ou "gastei 50 no almoço"
+- **💸 Registrar despesas** — `/despesa 50 mercado` ou `/gasto 50 mercado` ou "gastei 50 no almoço"
 - **💰 Registrar receitas** — `/receita 3000 salário` ou "recebi 3000 de salário"
 - **📊 Saldo mensal** — `/saldo` com filtro por grupo
 - **📋 Extrato interativo** — `/extrato` com painel de filtros (categoria, grupo, tags, tipo, período), paginação e visualização otimizada
@@ -243,7 +241,7 @@ Resposta esperada:
 4. Cole:
 
 ```
-gasto - Registrar despesa (ex: /gasto 50 mercado)
+despesa - Registrar despesa (ex: /despesa 50 mercado, /gasto também funciona)
 receita - Registrar receita (ex: /receita 3000 salario)
 saldo - Ver saldo do mes
 extrato - Ver extrato do mes com filtros
@@ -272,7 +270,7 @@ ajuda - Ajuda completa
 
 | Comando | Descri\u00E7\u00E3o | Exemplo |
 |---------|-----------|---------|
-| `/gasto` | Registrar despesa | `/gasto 50 mercado` |
+| `/despesa` | Registrar despesa (ou `/gasto`) | `/despesa 50 mercado` |
 | `/receita` | Registrar receita | `/receita 3000 salario` |
 | `/saldo` | Saldo do m\u00EAs | `/saldo` |
 | `/extrato` | Extrato interativo — painel de filtros + paginação | `/extrato` |

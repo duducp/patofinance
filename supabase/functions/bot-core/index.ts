@@ -136,13 +136,14 @@ serve(async (req: Request): Promise<Response> => {
 
       const { data: predefined } = await supabase
         .from("predefined_categories")
-        .select("name");
+        .select("name, transaction_type");
 
       if (predefined) {
         const categories = predefined.map((pc: any) => ({
           user_id: newUser.id,
           name: pc.name,
           is_predefined: true,
+          transaction_type: pc.transaction_type || null,
         }));
         await supabase.from("categories").insert(categories);
       }
@@ -225,7 +226,7 @@ serve(async (req: Request): Promise<Response> => {
           await clearWizardState(supabase, existingUser.id);
           await executeNaturalLanguageAction(supabase, message.from.id, message.chat.id, natural);
         } else {
-          const categories = await getCategories(supabase, existingUser.id);
+          const categories = await getCategories(supabase, existingUser.id, intent);
           const keyboard: InlineKeyboard = categories.map((c) => [
             { text: c.name, callback_data: `nl_cat_${c.name}` }
           ]);
@@ -295,7 +296,7 @@ serve(async (req: Request): Promise<Response> => {
       if (natural.intent === null) {
         await sendTelegramMessage(
           message.chat.id,
-          `🤔 Não entendi. Você pode usar comandos como /gasto ou digitar algo como "gastei 50 no almoço".\n\nUse /ajuda para ver todos os comandos.`
+          `🤔 Não entendi. Você pode usar comandos como /despesa ou digitar algo como "gastei 50 no almoço".\n\nUse /ajuda para ver todos os comandos.`
         );
         return new Response("OK", { status: 200 });
       }
@@ -321,8 +322,8 @@ serve(async (req: Request): Promise<Response> => {
           await handleBalance(supabase, message.from.id, message.chat.id, args);
           break;
 
-        case "/gasto":
         case "/despesa":
+        case "/gasto":
           await handleTransaction("expense", supabase, message.from.id, message.chat.id, args);
           break;
 
