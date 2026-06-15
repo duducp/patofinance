@@ -241,6 +241,70 @@ async function handleGasto(
   );
 }
 
+async function handleExtrato(
+  supabase: any,
+  userId: number,
+  chatId: number
+): Promise<void> {
+  const now = new Date();
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
+    .toISOString()
+    .split("T")[0];
+  const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0)
+    .toISOString()
+    .split("T")[0];
+
+  // Get user's internal ID
+  const { data: user } = await supabase
+    .from("users")
+    .select("id")
+    .eq("telegram_id", userId)
+    .single();
+
+  if (!user) {
+    await sendTelegramMessage(chatId, "Usuário não encontrado.");
+    return;
+  }
+
+  // Get transactions with category and group names
+  const { data: transactions } = await supabase
+    .from("transactions")
+    .select(`
+      id,
+      type,
+      amount,
+      description,
+      tags,
+      transaction_date,
+      categories (name),
+      groups (name)
+    `)
+    .eq("user_id", user.id)
+    .gte("transaction_date", startOfMonth)
+    .lte("transaction_date", endOfMonth)
+    .order("transaction_date", { ascending: false });
+
+  if (!transactions || transactions.length === 0) {
+    await sendTelegramMessage(chatId, "Nenhuma transação encontrada neste mês.");
+    return;
+  }
+
+  const monthName = now.toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
+  let message = `📋 *Extrato - ${monthName}*\n\n`;
+
+  for (const t of transactions) {
+    const emoji = t.type === "income" ? "📈" : "📉";
+    const category = t.categories?.name || "Sem categoria";
+    const group = t.groups?.name || "Sem grupo";
+    const tags = t.tags?.length ? ` ${t.tags.join(" ")}` : "";
+
+    message += `${emoji} ${t.transaction_date} - R$ ${Number(t.amount).toFixed(2)}\n`;
+    message += `   ${category} | ${group}${tags}\n`;
+  }
+
+  await sendTelegramMessage(chatId, message);
+}
+
 serve(async (req: Request): Promise<Response> => {
   // Validate request method
   if (req.method !== "POST") {
@@ -340,6 +404,10 @@ serve(async (req: Request): Promise<Response> => {
 
         case "/gasto":
           await handleGasto(supabase, message.from.id, message.chat.id, args);
+          break;
+
+        case "/extrato":
+          await handleExtrato(supabase, message.from.id, message.chat.id);
           break;
 
         default:
