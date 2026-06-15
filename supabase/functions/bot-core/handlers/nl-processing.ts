@@ -102,7 +102,7 @@ export async function handleNaturalLanguageWithFollowUp(
     return;
   }
 
-  await executeNaturalLanguageAction(supabase, user.id, chatId, natural);
+  await executeNaturalLanguageAction(supabase, userId, chatId, natural);
 }
 
 export async function executeNaturalLanguageAction(

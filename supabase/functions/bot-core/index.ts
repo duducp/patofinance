@@ -155,7 +155,7 @@ serve(async (req: Request): Promise<Response> => {
         if (category) {
           const natural: DeepSeekResponse = { intent, amount, category, date, period: null, name: null, tag: null, limit: null, missingFields: [] };
           await clearWizardState(supabase, existingUser.id);
-          await executeNaturalLanguageAction(supabase, existingUser.id, message.chat.id, natural);
+          await executeNaturalLanguageAction(supabase, message.from.id, message.chat.id, natural);
         } else {
           const categories = await getCategories(supabase, existingUser.id);
           const keyboard: InlineKeyboard = categories.map((c) => [
@@ -177,27 +177,27 @@ serve(async (req: Request): Promise<Response> => {
 
         const natural: DeepSeekResponse = { intent, amount, category: text, date, period: null, name: null, tag: null, limit: null, missingFields: [] };
         await clearWizardState(supabase, existingUser.id);
-        await executeNaturalLanguageAction(supabase, existingUser.id, message.chat.id, natural);
+        await executeNaturalLanguageAction(supabase, message.from.id, message.chat.id, natural);
       } else if (wizardState.step.startsWith("nl_") && wizardState.step.endsWith("_period")) {
         const intent = wizardState.step.replace("nl_", "").replace("_period", "") as DeepSeekResponse["intent"];
         const period = text.toLowerCase().includes("passado") ? "last_month" : "this_month";
 
         const natural: DeepSeekResponse = { intent, amount: null, category: wizardState.data.category, date: null, period, name: null, tag: null, limit: null, missingFields: [] };
         await clearWizardState(supabase, existingUser.id);
-        await executeNaturalLanguageAction(supabase, existingUser.id, message.chat.id, natural);
+        await executeNaturalLanguageAction(supabase, message.from.id, message.chat.id, natural);
       } else if (wizardState.step === "nl_create_category_name") {
         const natural: DeepSeekResponse = { intent: "create_category", amount: null, category: null, date: null, period: null, name: text, tag: null, limit: null, missingFields: [] };
         await clearWizardState(supabase, existingUser.id);
-        await executeNaturalLanguageAction(supabase, existingUser.id, message.chat.id, natural);
+        await executeNaturalLanguageAction(supabase, message.from.id, message.chat.id, natural);
       } else if (wizardState.step === "nl_create_group_name") {
         const natural: DeepSeekResponse = { intent: "create_group", amount: null, category: null, date: null, period: null, name: text, tag: null, limit: null, missingFields: [] };
         await clearWizardState(supabase, existingUser.id);
-        await executeNaturalLanguageAction(supabase, existingUser.id, message.chat.id, natural);
+        await executeNaturalLanguageAction(supabase, message.from.id, message.chat.id, natural);
       } else if (wizardState.step === "nl_list_by_tag_name") {
         const tag = text.replace("#", "").trim();
         const natural: DeepSeekResponse = { intent: "list_by_tag", amount: null, category: null, date: null, period: null, name: null, tag, limit: null, missingFields: [] };
         await clearWizardState(supabase, existingUser.id);
-        await executeNaturalLanguageAction(supabase, existingUser.id, message.chat.id, natural);
+        await executeNaturalLanguageAction(supabase, message.from.id, message.chat.id, natural);
       }
       return new Response("OK", { status: 200 });
     }
@@ -213,7 +213,7 @@ serve(async (req: Request): Promise<Response> => {
         return new Response("OK", { status: 200 });
       }
 
-      await handleNaturalLanguageWithFollowUp(supabase, existingUser.id, message.chat.id, natural);
+      await handleNaturalLanguageWithFollowUp(supabase, message.from.id, message.chat.id, natural);
       return new Response("OK", { status: 200 });
     }
 
