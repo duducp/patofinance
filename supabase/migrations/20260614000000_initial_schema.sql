@@ -84,3 +84,12 @@ INSERT INTO predefined_categories (name) VALUES
   ('Vestuário'),
   ('Contas'),
   ('Outros');
+
+-- Grant permissions to service_role
+GRANT SELECT, INSERT, UPDATE, DELETE ON users TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE ON groups TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE ON categories TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE ON transactions TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE ON wizard_states TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE ON predefined_categories TO service_role;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO service_role;
