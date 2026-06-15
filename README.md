@@ -34,7 +34,7 @@
 - **💸 Registrar despesas** — `/gasto 50 mercado` ou "gastei 50 no almoço"
 - **💰 Registrar receitas** — `/receita 3000 salário` ou "recebi 3000 de salário"
 - **📊 Saldo mensal** — `/saldo` com filtro por grupo
-- **📋 Extrato interativo** — `/extrato` com paginação e filtros (receitas/despesas)
+- **📋 Extrato interativo** — `/extrato` com painel de filtros (categoria, grupo, tags, tipo, período), paginação e visualização otimizada
 - **📈 Resumo por categoria** — `/resumo` com totais agrupados
 - **📁 Grupos (contas)** — Organize por conta bancária, cartão de crédito, etc.
 - **🏷️ Categorias** — Pré-definidas + personalizadas
@@ -275,7 +275,7 @@ ajuda - Ajuda completa
 | `/gasto` | Registrar despesa | `/gasto 50 mercado` |
 | `/receita` | Registrar receita | `/receita 3000 salario` |
 | `/saldo` | Saldo do m\u00EAs | `/saldo` |
-| `/extrato` | Extrato com filtros e paginação | `/extrato` |
+| `/extrato` | Extrato interativo — painel de filtros + paginação | `/extrato` |
 | `/resumo` | Resumo por categoria | `/resumo` |
 | `/editar` | Editar transação pelo ID | `/editar 42` |
 | `/excluir` | Excluir transação pelo ID | `/excluir 42` |

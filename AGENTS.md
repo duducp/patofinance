@@ -624,7 +624,8 @@ Project ref: `zjcfjqtlijktrikgvwrv`
 | `handleHelp(chatId)` | `/ajuda` | |
 | `handleBalance(supabase, userId, chatId, args?)` | `/saldo` | Optional group filter via args |
 | `handleTransaction(type, supabase, userId, chatId, args)` | `/gasto`, `/receita` | Unified handler, `type: "expense"|"income"` |
-| `handleStatement(supabase, userId, chatId, page?, filter?)` | `/extrato` | Pagination: `page` (0-indexed), `filter: "all"|"income"|"expense"` |
+| `handleStatement(supabase, userId, chatId, page?, filter?, filters?)` | `/extrato` | Pagination + optional `ExtratoFilters` object (category_id, group_id, tags, type, period) |
+| `resolvePeriod(period)` | (utility) | `PeriodPreset` or `{start,end}` → `{start, end, label}` |
 | `handleSummary(supabase, userId, chatId, args?)` | `/resumo` | Delegates to `getSummaryData` + `formatSummaryMessage` |
 | `handleEdit(supabase, userId, chatId, args)` | `/editar` | |
 | `handleDelete(supabase, userId, chatId, args)` | `/excluir` | |
@@ -678,7 +679,7 @@ Project ref: `zjcfjqtlijktrikgvwrv`
 
 ### `handlers/callbacks.ts` -- Inline keyboard routing
 
-Routes ~25 callback prefixes via `handleCallbackQuery`. Key callbacks:
+Routes ~42 callback prefixes via `handleCallbackQuery`. Key callbacks:
 
 | Prefix | Purpose | Sends vs Edits |
 |--------|---------|----------------|
@@ -686,7 +687,23 @@ Routes ~25 callback prefixes via `handleCallbackQuery`. Key callbacks:
 | `cancel_delete` | Cancel delete | Sends new msg |
 | `confirm_cleanup` | Execute cleanup (deletes only non-predefined cats + non-default groups) | Sends new msg |
 | `cancel_cleanup` | Cancel cleanup | Sends new msg |
-| `statement_` | Statement filter + page nav | Sends new msg |
+| `stmt_filter` | Open filter panel | Sends new msg |
+| `stmt_f_cat` | Open category selector | Edits msg |
+| `stmt_f_cat_{id}` | Select category (`0` = limpar) | Edits msg |
+| `stmt_f_grp` | Open group selector | Edits msg |
+| `stmt_f_grp_{id}` | Select group (`0` = limpar) | Edits msg |
+| `stmt_f_tag` | Open tag multiselect | Edits msg |
+| `stmt_f_tag_{tag}` | Toggle tag selection | Edits msg |
+| `stmt_f_tag_done` | Confirm tag selection | Edits msg |
+| `stmt_f_tag_clr` | Clear tag selection | Edits msg |
+| `stmt_f_type` | Open type selector | Edits msg |
+| `stmt_f_type_{type}` | Select type (all/income/expense) | Edits msg |
+| `stmt_f_period` | Open period selector | Edits msg |
+| `stmt_f_period_{key}` | Select period preset | Edits msg |
+| `stmt_f_period_custom` | Custom date range via wizard (2-step: start + end) | Sends new msg |
+| `stmt_f_apply` | Apply filters → run `handleStatement` with `ExtratoFilters` | Sends new msg |
+| `stmt_f_clear` | Reset all filters to defaults | Edits msg |
+| `statement_` | Statement quick-filter (type) + page nav | Sends new msg |
 | `txlist_p` | List transactions page nav | Edits msg |
 | `txlist_t` | Tag-filtered list page nav | Edits msg |
 | `nl_cat_` | NL category selection | Sends new msg |
