@@ -336,7 +336,7 @@ async function handleCallbackQuery(
 ): Promise<void> {
   const { data, message } = callbackQuery;
   const chatId = message.chat.id;
-  const userId = callbackQuery.from.id;
+  const telegramId = callbackQuery.from.id;
   const selectedValue = data;
 
   // Answer callback query to remove loading state
@@ -345,6 +345,37 @@ async function handleCallbackQuery(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ callback_query_id: callbackQuery.id }),
   });
+
+  // Handle custom_date callback - send message asking for date text
+  if (selectedValue === "custom_date") {
+    const { data: user } = await supabase
+      .from("users")
+      .select("id")
+      .eq("telegram_id", telegramId)
+      .single();
+
+    if (!user) return;
+
+    const state = await getWizardState(supabase, user.id);
+    if (!state) return;
+
+    const underscoreIndex = state.step.indexOf("_");
+    const currentWizardName = state.step.substring(0, underscoreIndex);
+
+    await sendTelegramMessage(chatId, "Informe a data (formato: YYYY-MM-DD):");
+    await setWizardState(supabase, user.id, `${currentWizardName}_custom_date`, state.data);
+    return;
+  }
+
+  // Get internal user ID
+  const { data: user } = await supabase
+    .from("users")
+    .select("id")
+    .eq("telegram_id", telegramId)
+    .single();
+
+  if (!user) return;
+  const userId = user.id;
 
   // Get current wizard state
   const { data: state } = await supabase
@@ -356,8 +387,9 @@ async function handleCallbackQuery(
   if (!state) return;
 
   // Get current step info
-  const wizardName = state.step.replace("gasto_", "").replace("receita_", "");
-  const stepKey = state.step.split("_").pop();
+  const underscoreIndex = state.step.indexOf("_");
+  const wizardName = state.step.substring(0, underscoreIndex);
+  const stepKey = state.step.substring(underscoreIndex + 1);
   const { data: currentStep } = await supabase
     .from("wizard_steps")
     .select("*")
@@ -534,7 +566,7 @@ async function handleGastoWizard(
   input: string
 ): Promise<void> {
   switch (state.step) {
-    case "gasto_amount":
+    case "gasto_amount": {
       const amount = parseFloat(input);
       if (isNaN(amount) || amount <= 0) {
         await sendTelegramMessage(chatId, "Por favor, informe um valor válido.");
@@ -543,6 +575,18 @@ async function handleGastoWizard(
       await setWizardState(supabase, userId, "gasto_category", { amount });
       await sendTelegramMessage(chatId, "Qual categoria?");
       break;
+    }
+
+    case "gasto_custom_date": {
+      const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+      if (!dateRegex.test(input)) {
+        await sendTelegramMessage(chatId, "Formato inválido. Use YYYY-MM-DD (ex: 2024-01-15).");
+        return;
+      }
+      await setWizardState(supabase, userId, "gasto_category", { ...state.data, date: input });
+      await sendTelegramMessage(chatId, "Qual categoria?");
+      break;
+    }
 
     case "gasto_category":
       await setWizardState(supabase, userId, "gasto_group", {

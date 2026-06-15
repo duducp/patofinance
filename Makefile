@@ -37,7 +37,7 @@ dev-logs: ## [LOCAL] Show local Edge Function logs
 	supabase functions serve bot-core
 
 dev-deploy: ## [LOCAL] Deploy Edge Function locally
-	supabase functions deploy bot-core --no-verify-jwt --local
+	supabase functions deploy bot-core --no-verify-jwt
 
 dev-db-push: ## [LOCAL] Push database migrations locally
 	supabase db push --local
@@ -48,16 +48,16 @@ dev-db-reset: ## [LOCAL] Reset local database
 dev-test-start: ## [LOCAL] Test /start command locally
 	curl -X POST http://127.0.0.1:54321/functions/v1/bot-core \
 		-H "Content-Type: application/json" \
-		-H "apikey: $(SUPABASE_ANON_KEY)" \
-		-H "X-Telegram-Bot-Api-Secret-Token: $(TELEGRAM_SECRET_TOKEN)" \
-		-d '{"update_id": 1, "message": {"message_id": 1, "from": {"id": 123, "first_name": "Test"}, "chat": {"id": 123, "type": "private"}, "date": 1234567890, "text": "/start"}}' | jq .
+		-H "apikey: sb_publishable_ACJWlzQHlZjBrEguHvfOxg_3BJgxAaH" \
+		-H "X-Telegram-Bot-Api-Secret-Token: test_secret" \
+		-d '{"update_id": 1, "message": {"message_id": 1, "from": {"id": 123, "first_name": "Test"}, "chat": {"id": 123, "type": "private"}, "date": 1234567890, "text": "/start"}}'
 
 dev-test-gasto: ## [LOCAL] Test /gasto command locally
 	curl -X POST http://127.0.0.1:54321/functions/v1/bot-core \
 		-H "Content-Type: application/json" \
-		-H "apikey: $(SUPABASE_ANON_KEY)" \
-		-H "X-Telegram-Bot-Api-Secret-Token: $(TELEGRAM_SECRET_TOKEN)" \
-		-d '{"update_id": 2, "message": {"message_id": 2, "from": {"id": 123, "first_name": "Test"}, "chat": {"id": 123, "type": "private"}, "date": 1234567890, "text": "/gasto 50 alimentação"}}' | jq .
+		-H "apikey: sb_publishable_ACJWlzQHlZjBrEguHvfOxg_3BJgxAaH" \
+		-H "X-Telegram-Bot-Api-Secret-Token: test_secret" \
+		-d '{"update_id": 2, "message": {"message_id": 2, "from": {"id": 123, "first_name": "Test"}, "chat": {"id": 123, "type": "private"}, "date": 1234567890, "text": "/gasto 50 alimentação"}}'
 
 # ============================================
 # PRODUÇÃO
