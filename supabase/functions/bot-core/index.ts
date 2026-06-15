@@ -466,6 +466,69 @@ async function handleGrupo(
   await sendTelegramMessage(chatId, `✅ Grupo "${groupName}" criado!`);
 }
 
+async function handleCategoria(
+  supabase: any,
+  userId: number,
+  chatId: number,
+  args: string[]
+): Promise<void> {
+  // Get user's internal ID
+  const { data: user } = await supabase
+    .from("users")
+    .select("id")
+    .eq("telegram_id", userId)
+    .single();
+
+  if (!user) {
+    await sendTelegramMessage(chatId, "Usuário não encontrado.");
+    return;
+  }
+
+  if (args.length === 0 || args[0] === "listar") {
+    // List categories
+    const { data: categories } = await supabase
+      .from("categories")
+      .select("name, is_predefined")
+      .eq("user_id", user.id)
+      .order("is_predefined", { ascending: false })
+      .order("name");
+
+    if (!categories || categories.length === 0) {
+      await sendTelegramMessage(chatId, "Nenhuma categoria encontrada.");
+      return;
+    }
+
+    let message = "🏷️ *Suas categorias:*\n\n";
+    for (const c of categories) {
+      const tag = c.is_predefined ? " (padrão)" : "";
+      message += `• ${c.name}${tag}\n`;
+    }
+    message += "\nPara adicionar: /categoria nome_da_categoria";
+    await sendTelegramMessage(chatId, message);
+    return;
+  }
+
+  // Add new category
+  const categoryName = args.join(" ");
+
+  const { error } = await supabase.from("categories").insert({
+    user_id: user.id,
+    name: categoryName,
+    is_predefined: false,
+  });
+
+  if (error) {
+    if (error.code === "23505") { // Unique violation
+      await sendTelegramMessage(chatId, "Já existe uma categoria com esse nome.");
+    } else {
+      await sendTelegramMessage(chatId, "Erro ao criar categoria. Tente novamente.");
+    }
+    return;
+  }
+
+  await sendTelegramMessage(chatId, `✅ Categoria "${categoryName}" criada!`);
+}
+
 serve(async (req: Request): Promise<Response> => {
   // Validate request method
   if (req.method !== "POST") {
@@ -577,6 +640,10 @@ serve(async (req: Request): Promise<Response> => {
 
         case "/grupo":
           await handleGrupo(supabase, message.from.id, message.chat.id, args);
+          break;
+
+        case "/categoria":
+          await handleCategoria(supabase, message.from.id, message.chat.id, args);
           break;
 
         default:
