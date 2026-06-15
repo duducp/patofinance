@@ -1,7 +1,27 @@
-.PHONY: help dev dev-stop dev-logs dev-deploy dev-db-push dev-db-reset dev-test-start dev-test-gasto prod-deploy prod-db-push prod-webhook-set prod-webhook-info prod-webhook-delete prod-logs secrets status open
+.PHONY: help install install-login install-link dev dev-stop dev-logs dev-deploy dev-db-push dev-db-reset dev-test-start dev-test-gasto prod-deploy prod-db-push prod-webhook-set prod-webhook-info prod-webhook-delete prod-logs secrets status open
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-25s\033[0m %s\n", $$1, $$2}'
+
+# ============================================
+# INSTALAÇÃO
+# ============================================
+
+install: ## Install Supabase CLI
+	@if command -v supabase >/dev/null 2>&1; then \
+		echo "Supabase CLI already installed"; \
+		supabase --version; \
+	else \
+		echo "Installing Supabase CLI..."; \
+		brew install supabase/tap/supabase; \
+	fi
+
+install-login: ## Login to Supabase (run after install)
+	@read -p "Supabase Access Token: " token; \
+	supabase login --token $$token
+
+install-link: ## Link to Supabase project (run after login)
+	supabase link --project-ref zjcfjqtlijktrikgvwrv
 
 # ============================================
 # LOCAL
