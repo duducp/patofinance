@@ -476,12 +476,10 @@ export async function handleStatement(
   function appendTxLine(t: any): string {
     const shortDate = formatDateBR(t.transaction_date).slice(0, 5);
     const isFuture = t.transaction_date > today;
-    const prefix = isFuture ? "⏳ " : "• ";
+    const prefix = isFuture ? "⏳ " : "";
     const catName = t.categories?.name || "—";
     const grpName = t.groups?.name || "Pessoal";
-    const tags = t.tags?.length ? ` ${t.tags.join(" ")}` : "";
-    const desc = t.description ? ` (${t.description})` : "";
-    return `${prefix}\`#${t.id}\`  ${shortDate}  *${formatCurrencyBR(Number(t.amount))}*   ${catName} · ${grpName}${desc}${tags}\n`;
+    return `${prefix}\`#${t.id}\`  ${shortDate}  ${formatCurrencyBR(Number(t.amount))}  - ${grpName} - ${catName}\n`;
   }
 
   // Income section
