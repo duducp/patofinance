@@ -245,6 +245,22 @@ export async function createTransaction(
 }
 
 /**
+ * Deduplicate categories (or any items with normalized_name) when joining
+ * system categories (user_id=NULL) and user-created categories.
+ * User's own category overrides system one with same normalized_name.
+ */
+export function deduplicateByNormalizedName(items: any[]): any[] {
+  const seen = new Set<string>();
+  const result: any[] = [];
+  for (const item of items) {
+    if (seen.has(item.normalized_name)) continue;
+    seen.add(item.normalized_name);
+    result.push(item);
+  }
+  return result;
+}
+
+/**
  * Standard transaction select fields for detail/edit views.
  */
 export const TRANSACTION_DETAIL_FIELDS = `

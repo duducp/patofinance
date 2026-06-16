@@ -1,6 +1,6 @@
 import { InlineKeyboard, ExtratoFilters, PeriodPreset } from "../types/index.ts";
 import { sendTelegramMessage, sendTelegramMessageWithKeyboard, editTelegramMessageWithKeyboard } from "../services/telegram.ts";
-import { getOrCreateUser, getAllUserTags } from "../services/database.ts";
+import { getOrCreateUser, getAllUserTags, deduplicateByNormalizedName } from "../services/database.ts";
 import { addSession, getSessionSeq } from "../utils/session.ts";
 import { buildKeyboardGrid } from "../utils/keyboard.ts";
 import { setWizardState, getWizardState, clearWizardState } from "./wizard.ts";
@@ -112,13 +112,7 @@ export async function showCategorySelector(
     .order("user_id", { ascending: false, nullsFirst: false })
     .order("name");
 
-  // Deduplicate: user's own overrides system
-  const seen = new Set<string>();
-  const unique = (categories || []).filter((c: any) => {
-    if (seen.has(c.normalized_name)) return false;
-    seen.add(c.normalized_name);
-    return true;
-  });
+  const unique = deduplicateByNormalizedName(categories || []);
 
   const keyboard: InlineKeyboard = [];
   if (unique.length > 0) {

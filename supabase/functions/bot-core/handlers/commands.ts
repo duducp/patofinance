@@ -7,7 +7,7 @@ import { parseCommand, parsePeriodFromArgs } from "../utils/command-parsing.ts";
 import { addSession, getSessionSeq } from "../utils/session.ts";
 import { buildKeyboardGrid, buildEditKeyboard } from "../utils/keyboard.ts";
 
-import { getSummaryData, formatSummaryMessage } from "./queries.ts";
+import { getSummaryData, formatSummaryMessage, formatFutureBlock } from "./queries.ts";
 import { getWizardState, setWizardState, handleTransactionWizard } from "./wizard.ts";
 
 export function resolvePeriod(period: ExtratoFilters["period"]): { start: string; end: string; label: string } {
@@ -204,14 +204,7 @@ export async function handleBalance(supabase: any, userId: number, chatId: numbe
     `💰 *Saldo atual: ${formatCurrencyBR(balance)}*`;
 
   if (hasFuture) {
-    message += `\n\n⏳ *Agendados:*\n`;
-    if (totalFutureIncome > 0) {
-      message += `   📈 ${formatCurrencyBR(totalFutureIncome)}\n`;
-    }
-    if (totalFutureExpenses > 0) {
-      message += `   📉 ${formatCurrencyBR(totalFutureExpenses)}\n`;
-    }
-    message += `\n📊 *Saldo projetado: ${formatCurrencyBR(projectedBalance)}*`;
+    message += `\n\n${formatFutureBlock(totalFutureIncome, totalFutureExpenses, balance)}`;
   }
 
   const sessionSeq = await getSessionSeq(supabase, user.id);
@@ -592,17 +585,9 @@ export async function handleSummary(supabase: any, userId: number, chatId: numbe
   }
 
   if (futureData) {
-    const futureTotal = futureData.totalIncomes - futureData.totalExpenses;
-    if (message) message += `\n\n`;
-    message += `⏳ *Agendados:*\n`;
-    if (futureData.totalIncomes > 0) {
-      message += `   📈 ${formatCurrencyBR(futureData.totalIncomes)}\n`;
-    }
-    if (futureData.totalExpenses > 0) {
-      message += `   📉 ${formatCurrencyBR(futureData.totalExpenses)}\n`;
-    }
     const currentBalance = data ? data.totalIncomes - data.totalExpenses : 0;
-    message += `\n📊 *Saldo projetado: ${formatCurrencyBR(currentBalance + futureTotal)}*`;
+    if (message) message += `\n\n`;
+    message += formatFutureBlock(futureData.totalIncomes, futureData.totalExpenses, currentBalance);
   }
 
   const sessionSeq = await getSessionSeq(supabase, user.id);

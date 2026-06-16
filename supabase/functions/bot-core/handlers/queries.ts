@@ -3,6 +3,25 @@ import { requireUser } from "../services/database.ts";
 import { formatCurrencyBR, formatDateBR, getTodayISOBR } from "../utils/formatting.ts";
 import { getDateRange } from "../utils/date-helpers.ts";
 
+/**
+ * Format the future/scheduled transactions block used in balance, summary, and query.
+ */
+export function formatFutureBlock(
+  totalIncomes: number,
+  totalExpenses: number,
+  currentBalance: number
+): string {
+  let block = `⏳ *Agendados:*\n`;
+  if (totalIncomes > 0) {
+    block += `   📈 ${formatCurrencyBR(totalIncomes)}\n`;
+  }
+  if (totalExpenses > 0) {
+    block += `   📉 ${formatCurrencyBR(totalExpenses)}\n`;
+  }
+  block += `\n📊 *Saldo projetado: ${formatCurrencyBR(currentBalance + totalIncomes - totalExpenses)}*`;
+  return block;
+}
+
 export interface SummaryData {
   monthName: string;
   totalIncomes: number;
@@ -172,17 +191,9 @@ export async function handleQuerySummary(
   }
 
   if (futureData) {
-    const futureTotal = futureData.totalIncomes - futureData.totalExpenses;
-    if (message) message += `\n\n`;
-    message += `⏳ *Agendados:*\n`;
-    if (futureData.totalIncomes > 0) {
-      message += `   📈 ${formatCurrencyBR(futureData.totalIncomes)}\n`;
-    }
-    if (futureData.totalExpenses > 0) {
-      message += `   📉 ${formatCurrencyBR(futureData.totalExpenses)}\n`;
-    }
     const currentBalance = data ? data.totalIncomes - data.totalExpenses : 0;
-    message += `\n📊 *Saldo projetado: ${formatCurrencyBR(currentBalance + futureTotal)}*`;
+    if (message) message += `\n\n`;
+    message += formatFutureBlock(futureData.totalIncomes, futureData.totalExpenses, currentBalance);
   }
 
   await sendTelegramMessage(chatId, message);

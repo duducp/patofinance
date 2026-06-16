@@ -1,7 +1,7 @@
 import { WizardState } from "../types/index.ts";
 import { InlineKeyboard } from "../types/index.ts";
 import { sendTelegramMessage, sendTelegramMessageWithKeyboard, editTelegramMessageWithKeyboard } from "../services/telegram.ts";
-import { getOrCreateCategory, getOrCreateGroup, sendSimilarityWarning, getAllUserTags } from "../services/database.ts";
+import { getOrCreateCategory, getOrCreateGroup, sendSimilarityWarning, getAllUserTags, deduplicateByNormalizedName } from "../services/database.ts";
 import { formatCurrencyBR, formatDateBR, parseDateBR, getTodayISOBR } from "../utils/formatting.ts";
 import { addSession, getSessionSeq } from "../utils/session.ts";
 import { buildKeyboardGrid } from "../utils/keyboard.ts";
@@ -69,13 +69,7 @@ export async function sendWizardStepMessage(
       catQuery = catQuery.or(`transaction_type.eq.${wizardType},transaction_type.is.null`);
     }
     const { data: categories } = await catQuery;
-    // Deduplicate: user's own overrides system
-    const seen = new Set<string>();
-    const unique = (categories || []).filter((c: any) => {
-      if (seen.has(c.normalized_name)) return false;
-      seen.add(c.normalized_name);
-      return true;
-    });
+    const unique = deduplicateByNormalizedName(categories || []);
     const keyboard: InlineKeyboard = [];
     if (unique.length > 0) {
       const grid = buildKeyboardGrid(unique, (c) => ({
