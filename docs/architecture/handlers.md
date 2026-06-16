@@ -68,6 +68,11 @@ Alias: `handleEntity("category", …)`
 - Confirm dialog: `confirm_cleanup` / `cancel_cleanup`
 - Does NOT show or delete tags (tags are metadata)
 
+### `handleReset(supabase, userId, chatId)`
+- Shows stats (transactions, categories, groups) and asks user to type `RESETAR` to confirm
+- Sets wizard state `reset_confirm` with `user_id` and `telegram_id`
+- On confirmation text in `index.ts`: deletes wizard_states → transactions → categories → groups → users (cascade handles all FKs)
+
 ## Module: `handlers/management.ts` — Entity Management
 
 ### `handleCreateCategory / handleCreateGroup`

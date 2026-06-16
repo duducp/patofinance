@@ -42,8 +42,9 @@ serve()
   │   ├── nl_ask_type ──► type disambiguation
   │   ├── nl_*_group ──► handleTransaction()
   │   ├── nl_list_by_tag_name ──► executeNL
-  │   └── extrato_custom_period / extrato_custom_period_end ──► date wizard
-  │
+   │   ├── reset_confirm ──► deletes all user data if text === "RESETAR"
+   │   └── extrato_custom_period / extrato_custom_period_end ──► date wizard
+   │
   ├── Non-slash text (NL)?
   │   ├── fetchUserContext() (categories + groups + tags, parallel)
   │   ├── parseNaturalLanguage() → DeepSeekResponse
@@ -68,8 +69,9 @@ serve()
           /grupo → handleGroup()
           /categoria → handleCategory()
           /tag → handleTag()
-          /limpar → handleCleanup()
-          /cancelar → clear wizard
+           /resetar → handleReset()
+           /limpar → handleCleanup()
+           /cancelar → clear wizard
 ```
 
 ## Key Details
@@ -96,7 +98,7 @@ If a user has an active wizard state and sends non-slash text, the text is treat
 - NL follow-up wizards
 - Statement custom date wizards
 
-Slash commands `/despesa`, `/gasto`, `/receita`, and `/cancelar` can interrupt wizards.
+Slash commands `/despesa`, `/gasto`, `/receita`, `/cancelar`, and `/resetar` can interrupt wizards.
 
 ### Helper Functions
 
