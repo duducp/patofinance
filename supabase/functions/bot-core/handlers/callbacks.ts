@@ -7,7 +7,7 @@ import { getWizardState, setWizardState, clearWizardState, sendWizardStepMessage
 import { executeNaturalLanguageAction } from "./nl-processing.ts";
 import { handleStatement, handleBalance, handleSummary, handleEdit, handleGroup, handleCategory, handleTransaction } from "./commands.ts";
 import { handleListTransactions, handleListByTag } from "./management.ts";
-import { handleFilterPanel, handleFilterCallback } from "./filters.ts";
+import { handleFilterCallback } from "./filters.ts";
 import { addSession, removeSession, validateCallbackSession, getSessionSeq } from "../utils/session.ts";
 
 async function handleGroupFilterCallback(

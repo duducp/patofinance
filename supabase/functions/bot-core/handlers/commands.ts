@@ -1,6 +1,6 @@
 import type { InlineKeyboard, ExtratoFilters } from "../types/index.ts";
 import { sendTelegramMessage, sendTelegramMessageWithKeyboard } from "../services/telegram.ts";
-import { requireUser, getOrCreateUser, getOrCreateCategory, getOrCreateGroup, normalizeString, suggestSimilarCategories, suggestSimilarGroups, sendSimilarityWarning, getAllUserTags, createTransaction } from "../services/database.ts";
+import { requireUser, getOrCreateUser, getOrCreateCategory, getOrCreateGroup, normalizeString, suggestSimilarCategories, suggestSimilarGroups, sendSimilarityWarning, getAllUserTags, createTransaction, applyFiltersToQuery } from "../services/database.ts";
 import { formatCurrencyBR, formatDateBR, getTodayISOBR, getMonthName } from "../utils/formatting.ts";
 import { getDateRange } from "../utils/date-helpers.ts";
 import { parseCommand } from "../utils/command-parsing.ts";
@@ -314,27 +314,14 @@ export async function handleStatement(
   const { start: periodStart, end: periodEnd, label: periodLabel } = resolvePeriod(period);
 
   // Build base query for count
-  let countQuery = supabase
-    .from("transactions")
-    .select("id", { count: "exact", head: true })
-    .eq("user_id", user.id)
-    .gte("transaction_date", periodStart)
-    .lte("transaction_date", periodEnd);
-
-  if (typeFilter !== "all") {
-    countQuery = countQuery.eq("type", typeFilter);
-  }
-  if (filters?.category_id) {
-    countQuery = countQuery.eq("category_id", filters.category_id);
-  }
-  if (filters?.group_id) {
-    countQuery = countQuery.eq("group_id", filters.group_id);
-  }
-  if (filters?.tags && filters.tags.length > 0) {
-    for (const tag of filters.tags) {
-      countQuery = countQuery.contains("tags", [tag]);
-    }
-  }
+  const countQuery = applyFiltersToQuery(
+    supabase.from("transactions").select("id", { count: "exact", head: true }),
+    user.id,
+    periodStart,
+    periodEnd,
+    typeFilter,
+    filters,
+  );
 
   const { count: totalCount } = await countQuery;
 
@@ -347,9 +334,8 @@ export async function handleStatement(
   const offset = page * STATEMENT_PAGE_SIZE;
 
   // Build data query
-  let dataQuery = supabase
-    .from("transactions")
-    .select(`
+  const dataQuery = applyFiltersToQuery(
+    supabase.from("transactions").select(`
       id,
       type,
       amount,
@@ -358,25 +344,13 @@ export async function handleStatement(
       transaction_date,
       categories (name),
       groups (name)
-    `)
-    .eq("user_id", user.id)
-    .gte("transaction_date", periodStart)
-    .lte("transaction_date", periodEnd);
-
-  if (typeFilter !== "all") {
-    dataQuery = dataQuery.eq("type", typeFilter);
-  }
-  if (filters?.category_id) {
-    dataQuery = dataQuery.eq("category_id", filters.category_id);
-  }
-  if (filters?.group_id) {
-    dataQuery = dataQuery.eq("group_id", filters.group_id);
-  }
-  if (filters?.tags && filters.tags.length > 0) {
-    for (const tag of filters.tags) {
-      dataQuery = dataQuery.contains("tags", [tag]);
-    }
-  }
+    `),
+    user.id,
+    periodStart,
+    periodEnd,
+    typeFilter,
+    filters,
+  );
 
   const { data: transactions } = await dataQuery
     .order("transaction_date", { ascending: false })
@@ -389,27 +363,14 @@ export async function handleStatement(
   }
 
   // Fetch totals for the period (independent of pagination)
-  let totalsQuery = supabase
-    .from("transactions")
-    .select("type, amount")
-    .eq("user_id", user.id)
-    .gte("transaction_date", periodStart)
-    .lte("transaction_date", periodEnd);
-
-  if (typeFilter !== "all") {
-    totalsQuery = totalsQuery.eq("type", typeFilter);
-  }
-  if (filters?.category_id) {
-    totalsQuery = totalsQuery.eq("category_id", filters.category_id);
-  }
-  if (filters?.group_id) {
-    totalsQuery = totalsQuery.eq("group_id", filters.group_id);
-  }
-  if (filters?.tags && filters.tags.length > 0) {
-    for (const tag of filters.tags) {
-      totalsQuery = totalsQuery.contains("tags", [tag]);
-    }
-  }
+  const totalsQuery = applyFiltersToQuery(
+    supabase.from("transactions").select("type, amount"),
+    user.id,
+    periodStart,
+    periodEnd,
+    typeFilter,
+    filters,
+  );
 
   const { data: periodData } = await totalsQuery;
 

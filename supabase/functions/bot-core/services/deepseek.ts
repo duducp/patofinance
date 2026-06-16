@@ -2,40 +2,12 @@ import { DeepSeekResponse } from "../types/index.ts";
 import { DEEPSEEK_API_KEY, nlCache, NL_CACHE_TTL } from "../config.ts";
 import { getTodayISOBR } from "../utils/formatting.ts";
 
-// Common phrases that don't need API calls
-const commonPhrases: Record<string, DeepSeekResponse> = {
-  "quanto tenho": { intent: "query_balance", amount: null, category: null, date: null, period: "this_month", name: null, tag: null, limit: null, missingFields: [] },
-  "saldo": { intent: "query_balance", amount: null, category: null, date: null, period: "this_month", name: null, tag: null, limit: null, missingFields: [] },
-  "extrato": { intent: "query_extract", amount: null, category: null, date: null, period: "this_month", name: null, tag: null, limit: null, missingFields: [] },
-  "resumo": { intent: "query_summary", amount: null, category: null, date: null, period: "this_month", name: null, tag: null, limit: null, missingFields: [] },
-  "quais categorias": { intent: "list_categories", amount: null, category: null, date: null, period: null, name: null, tag: null, limit: null, missingFields: [] },
-  "meus grupos": { intent: "list_groups", amount: null, category: null, date: null, period: null, name: null, tag: null, limit: null, missingFields: [] },
-  "quais tags": { intent: "list_tags", amount: null, category: null, date: null, period: null, name: null, tag: null, limit: null, missingFields: [] },
-  "últimas transações": { intent: "list_transactions", amount: null, category: null, date: null, period: null, name: null, tag: null, limit: 10, missingFields: [] },
-  "último gasto": { intent: "show_last_transaction", amount: null, category: null, date: null, period: null, name: null, tag: null, limit: null, missingFields: [] },
-  "apagar última": { intent: "delete_last_transaction", amount: null, category: null, date: null, period: null, name: null, tag: null, limit: null, missingFields: [] },
-  "limpe": { intent: "cleanup", amount: null, category: null, date: null, period: null, name: null, tag: null, limit: null, missingFields: [] },
-  "limpar": { intent: "cleanup", amount: null, category: null, date: null, period: null, name: null, tag: null, limit: null, missingFields: [] },
-};
+// ============================================================
+// System Prompt Building Blocks
+// ============================================================
 
-interface UserContext {
-  categories: { name: string; transaction_type: string | null }[];
-  groups: { name: string; is_default: boolean }[];
-  tags: string[];
-}
-
-function buildSystemPrompt(context?: UserContext, forceIntent?: "expense" | "income"): string {
-  const today = getTodayISOBR();
-  const todayDate = new Date(today + "T12:00:00");
-  const yesterdayDate = new Date(todayDate.getTime() - 86400000);
-  const tomorrowDate = new Date(todayDate.getTime() + 86400000);
-  const yesterday = yesterdayDate.toISOString().split("T")[0];
-  const tomorrow = tomorrowDate.toISOString().split("T")[0];
-  const typeName = forceIntent === "expense" ? "DESPESA" : forceIntent === "income" ? "RECEITA" : null;
-  const forceLine = typeName
-    ? `IMPORTANTE: Esta transação é do tipo ${typeName}. Use APENAS intent = "${forceIntent}". NÃO tente identificar o tipo — ele já é conhecido. Ignore qualquer palavra-chave que sugira o tipo contrário.\n\n`
-    : "";
-  let prompt = forceLine + `Você é um assistente que analisa mensagens em português para extrair informações financeiras.
+/** Base prompt: JSON format, available intents, and general rules */
+const BASE_SYSTEM_PROMPT = `Você é um assistente que analisa mensagens em português para extrair informações financeiras.
 Responda APENAS com JSON válido, sem texto adicional.
 
 Formato esperado:
@@ -77,54 +49,123 @@ REGRAS IMPORTANTES:
 - description deve guardar o contexto útil da transação quando não for categoria/grupo/tag/data/valor (ex: pessoa, loja, motivo curto)
 - limit padrão 10
 
-DATA ATUAL: ${today} (fuso horário: America/Sao_Paulo)
-"hoje" = ${today}
-"ontem" = ${yesterday}
-"amanhã" = ${tomorrow}
+DATA ATUAL: TODAY_PLACEHOLDER (fuso horário: America/Sao_Paulo)
+"hoje" = TODAY_PLACEHOLDER
+"ontem" = YESTERDAY_PLACEHOLDER
+"amanhã" = TOMORROW_PLACEHOLDER
 Sempre converta "hoje", "ontem" e "amanhã" para a data real no campo "date" em YYYY-MM-DD.
 Se o usuário mencionar um dia da semana (ex: "segunda", "terça"), calcule a data relativa a partir de hoje.`;
 
+/** Category type rules appended when user has categories */
+const CATEGORY_TYPE_RULES = `REGRAS DE CATEGORIA POR TIPO:
+- Se intent = "income" → category DEVE ser uma das listadas como [receita] ou [despesa e receita]
+- Se intent = "expense" → category DEVE ser uma das listadas como [despesa] ou [despesa e receita]
+- Analise CADA palavra individualmente. Se UMA palavra da frase corresponder a uma categoria, use essa
+- Se NENHUMA palavra individual corresponder a nenhuma categoria → category = null
+- NUNCA use a frase inteira nem múltiplas palavras como category
+- NUNCA invente categorias. Use APENAS os nomes EXATOS da lista acima.
+- NUNCA deduza a categoria a partir de verbos/palavras-chave de intenção. Ex: "recebi" NÃO significa Salário, "gastei" NÃO significa nenhuma categoria.`;
+
+/** Correct category matching examples */
+const CATEGORY_CORRECT_EXAMPLES = `EXEMPLOS CORRETOS (uma palavra → categoria):
+- "comprei remedio na farmacia" → palavra "remedio" → categoria "Saúde" (se existir)
+- "pedi ifood" → palavra "ifood" → categoria "Alimentação" (se existir)
+- "paguei gasolina" → palavra "gasolina" → categoria "Transporte" (se existir)`;
+
+/** Examples that should return null category */
+const CATEGORY_NULL_EXAMPLES = `EXEMPLOS QUE DEVEM RETORNAR null (nenhuma palavra corresponde):
+- "Transferi 10 pra Angela" → "transferi" é verbo, "Angela" é nome próprio, nenhuma palavra é categoria → category = null
+- "comprei um presente" → "presente" não corresponde a nenhuma categoria → category = null
+- "paguei 10" → nenhuma categoria mencionada → category = null`;
+
+// ============================================================
+// Common Phrases Cache (no API call needed)
+// ============================================================
+
+const commonPhrases: Record<string, DeepSeekResponse> = {
+  "quanto tenho": { intent: "query_balance", amount: null, category: null, date: null, period: "this_month", name: null, tag: null, limit: null, missingFields: [] },
+  "saldo": { intent: "query_balance", amount: null, category: null, date: null, period: "this_month", name: null, tag: null, limit: null, missingFields: [] },
+  "extrato": { intent: "query_extract", amount: null, category: null, date: null, period: "this_month", name: null, tag: null, limit: null, missingFields: [] },
+  "resumo": { intent: "query_summary", amount: null, category: null, date: null, period: "this_month", name: null, tag: null, limit: null, missingFields: [] },
+  "quais categorias": { intent: "list_categories", amount: null, category: null, date: null, period: null, name: null, tag: null, limit: null, missingFields: [] },
+  "meus grupos": { intent: "list_groups", amount: null, category: null, date: null, period: null, name: null, tag: null, limit: null, missingFields: [] },
+  "quais tags": { intent: "list_tags", amount: null, category: null, date: null, period: null, name: null, tag: null, limit: null, missingFields: [] },
+  "últimas transações": { intent: "list_transactions", amount: null, category: null, date: null, period: null, name: null, tag: null, limit: 10, missingFields: [] },
+  "último gasto": { intent: "show_last_transaction", amount: null, category: null, date: null, period: null, name: null, tag: null, limit: null, missingFields: [] },
+  "apagar última": { intent: "delete_last_transaction", amount: null, category: null, date: null, period: null, name: null, tag: null, limit: null, missingFields: [] },
+  "limpe": { intent: "cleanup", amount: null, category: null, date: null, period: null, name: null, tag: null, limit: null, missingFields: [] },
+  "limpar": { intent: "cleanup", amount: null, category: null, date: null, period: null, name: null, tag: null, limit: null, missingFields: [] },
+};
+
+interface UserContext {
+  categories: { name: string; transaction_type: string | null }[];
+  groups: { name: string; is_default: boolean }[];
+  tags: string[];
+}
+
+export function buildForceIntentLine(forceIntent?: "expense" | "income"): string {
+  if (forceIntent === "expense") {
+    return `IMPORTANTE: Esta transação é do tipo DESPESA. Use APENAS intent = "expense". NÃO tente identificar o tipo — ele já é conhecido. Ignore qualquer palavra-chave que sugira o tipo contrário.\n\n`;
+  }
+  if (forceIntent === "income") {
+    return `IMPORTANTE: Esta transação é do tipo RECEITA. Use APENAS intent = "income". NÃO tente identificar o tipo — ele já é conhecido. Ignore qualquer palavra-chave que sugira o tipo contrário.\n\n`;
+  }
+  return "";
+}
+
+export function buildCategoriesSection(categories: { name: string; transaction_type: string | null }[], forceIntent?: "expense" | "income"): string {
+  let section = `\n\nSUAS CATEGORIAS (use o nome EXATO):\n`;
+  const filteredCategories = forceIntent
+    ? categories.filter(c => c.transaction_type === null || c.transaction_type === forceIntent)
+    : categories;
+  for (const c of filteredCategories) {
+    const tipo = c.transaction_type === "expense" ? " [despesa]"
+      : c.transaction_type === "income" ? " [receita]"
+      : " [despesa e receita]";
+    section += `- ${c.name}${tipo}\n`;
+  }
+  section += `\n${CATEGORY_TYPE_RULES}\n\n${CATEGORY_CORRECT_EXAMPLES}\n\n${CATEGORY_NULL_EXAMPLES}\n`;
+  return section;
+}
+
+export function buildGroupsSection(groups: { name: string; is_default: boolean }[]): string {
+  let section = `\nSEUS GRUPOS:\n`;
+  for (const g of groups) {
+    section += `- ${g.name}${g.is_default ? " (padrão)" : ""}\n`;
+  }
+  return section;
+}
+
+export function buildTagsSection(tags: string[]): string {
+  let section = `\nSUAS TAGS:\n`;
+  for (const t of tags) {
+    section += `- ${t}\n`;
+  }
+  return section;
+}
+
+export function buildSystemPrompt(context?: UserContext, forceIntent?: "expense" | "income"): string {
+  const today = getTodayISOBR();
+  const todayDate = new Date(today + "T12:00:00");
+  const yesterdayDate = new Date(todayDate.getTime() - 86400000);
+  const tomorrowDate = new Date(todayDate.getTime() + 86400000);
+  const yesterday = yesterdayDate.toISOString().split("T")[0];
+  const tomorrow = tomorrowDate.toISOString().split("T")[0];
+
+  let prompt = buildForceIntentLine(forceIntent);
+  prompt += BASE_SYSTEM_PROMPT
+    .replaceAll("TODAY_PLACEHOLDER", today)
+    .replaceAll("YESTERDAY_PLACEHOLDER", yesterday)
+    .replaceAll("TOMORROW_PLACEHOLDER", tomorrow);
+
   if (context?.categories?.length) {
-    prompt += `\n\nSUAS CATEGORIAS (use o nome EXATO):\n`;
-    const filteredCategories = forceIntent
-      ? context.categories.filter(c => c.transaction_type === null || c.transaction_type === forceIntent)
-      : context.categories;
-    for (const c of filteredCategories) {
-      const tipo = c.transaction_type === "expense" ? " [despesa]"
-        : c.transaction_type === "income" ? " [receita]"
-        : " [despesa e receita]";
-      prompt += `- ${c.name}${tipo}\n`;
-    }
-    prompt += `\nREGRAS DE CATEGORIA POR TIPO:\n`;
-    prompt += `- Se intent = "income" → category DEVE ser uma das listadas como [receita] ou [despesa e receita]\n`;
-    prompt += `- Se intent = "expense" → category DEVE ser uma das listadas como [despesa] ou [despesa e receita]\n`;
-    prompt += `- Analise CADA palavra individualmente. Se UMA palavra da frase corresponder a uma categoria, use essa\n`;
-    prompt += `- Se NENHUMA palavra individual corresponder a nenhuma categoria → category = null\n`;
-    prompt += `- NUNCA use a frase inteira nem múltiplas palavras como category\n`;
-    prompt += `- NUNCA invente categorias. Use APENAS os nomes EXATOS da lista acima.\n`;
-    prompt += `- NUNCA deduza a categoria a partir de verbos/palavras-chave de intenção. Ex: "recebi" NÃO significa Salário, "gastei" NÃO significa nenhuma categoria.\n`;
-    prompt += `\nEXEMPLOS CORRETOS (uma palavra → categoria):\n`;
-    prompt += `- "comprei remedio na farmacia" → palavra "remedio" → categoria "Saúde" (se existir)\n`;
-    prompt += `- "pedi ifood" → palavra "ifood" → categoria "Alimentação" (se existir)\n`;
-    prompt += `- "paguei gasolina" → palavra "gasolina" → categoria "Transporte" (se existir)\n`;
-    prompt += `\nEXEMPLOS QUE DEVEM RETORNAR null (nenhuma palavra corresponde):\n`;
-    prompt += `- "Transferi 10 pra Angela" → "transferi" é verbo, "Angela" é nome próprio, nenhuma palavra é categoria → category = null\n`;
-    prompt += `- "comprei um presente" → "presente" não corresponde a nenhuma categoria → category = null\n`;
-    prompt += `- "paguei 10" → nenhuma categoria mencionada → category = null\n`;
+    prompt += buildCategoriesSection(context.categories, forceIntent);
   }
-
   if (context?.groups?.length) {
-    prompt += `\nSEUS GRUPOS:\n`;
-    for (const g of context.groups) {
-      prompt += `- ${g.name}${g.is_default ? " (padrão)" : ""}\n`;
-    }
+    prompt += buildGroupsSection(context.groups);
   }
-
   if (context?.tags?.length) {
-    prompt += `\nSUAS TAGS:\n`;
-    for (const t of context.tags) {
-      prompt += `- ${t}\n`;
-    }
+    prompt += buildTagsSection(context.tags);
   }
 
   return prompt;
