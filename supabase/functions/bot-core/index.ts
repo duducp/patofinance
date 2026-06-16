@@ -18,6 +18,7 @@ import { formatCurrencyBR, formatDateBR, parseDateBR } from "./utils/formatting.
 import { parseNaturalLanguage } from "./services/deepseek.ts";
 import { sendTelegramMessage, sendTelegramMessageWithKeyboard } from "./services/telegram.ts";
 import { getCategories, sendSimilarityWarning, normalizeString, getAllUserTags } from "./services/database.ts";
+import { handleCreateCategory } from "./handlers/management.ts";
 import { handleCallbackQuery, handleFilterPanel } from "./handlers/callbacks.ts";
 import { handleNaturalLanguageWithFollowUp, executeNaturalLanguageAction } from "./handlers/nl-processing.ts";
 import {
@@ -239,6 +240,7 @@ serve(async (req: Request): Promise<Response> => {
             { text: c.name, callback_data: truncateCallbackData(`nl_cat_${c.name}`, seq) }
           ]);
           keyboard.push([{ text: "⏭️ Sem categoria", callback_data: truncateCallbackData("nl_cat_none", seq) }]);
+          keyboard.push([{ text: "✏️ Nova categoria", callback_data: addSession("nl_cat_new", seq) }]);
 
           await setWizardState(supabase, existingUser.id, `nl_${intent}_category`, {
             intent,
@@ -250,6 +252,22 @@ serve(async (req: Request): Promise<Response> => {
           });
           await sendTelegramMessageWithKeyboard(message.chat.id, "Em que categoria?", keyboard);
         }
+      } else if (wizardState.step.startsWith("nl_creating_category_")) {
+        const intent = wizardState.step.includes("expense") ? "expense" : "income";
+        const user = existingUser;
+        await handleCreateCategory(supabase, user.id, message.chat.id, text);
+        const categories = await getCategories(supabase, user.id, intent);
+        const seq = await getSessionSeq(supabase, user.id);
+        const keyboard: InlineKeyboard = categories.map((c) => [
+          { text: c.name, callback_data: truncateCallbackData(`nl_cat_${c.name}`, seq) }
+        ]);
+        keyboard.push([{ text: "⏭️ Sem categoria", callback_data: truncateCallbackData("nl_cat_none", seq) }]);
+        keyboard.push([{ text: "✏️ Nova categoria", callback_data: addSession("nl_cat_new", seq) }]);
+        await supabase
+          .from("wizard_states")
+          .update({ step: `nl_${intent}_category`, data: wizardState.data })
+          .eq("user_id", user.id);
+        await sendTelegramMessageWithKeyboard(message.chat.id, "Em que categoria?", keyboard);
       } else if (wizardState.step === "nl_expense_category" || wizardState.step === "nl_income_category") {
         const intent = wizardState.step === "nl_expense_category" ? "expense" : "income";
         const amount = wizardState.data.amount;

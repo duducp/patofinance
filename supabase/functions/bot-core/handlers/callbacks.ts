@@ -661,6 +661,21 @@ export async function handleCallbackQuery(
       return;
     }
 
+    // Handle NL new category creation (must be before generic nl_cat_)
+    if (selectedValue === "nl_cat_new") {
+      const user = await getOrCreateUser(supabase, telegramId);
+      if (!user) return;
+      const state = await getWizardState(supabase, user.id);
+      if (!state) return;
+      const intent = state.step.includes("expense") ? "expense" : "income";
+      await supabase
+        .from("wizard_states")
+        .update({ step: `nl_creating_category_${intent}`, data: state.data })
+        .eq("user_id", user.id);
+      await sendTelegramMessage(chatId, "✏️ Digite o nome da nova categoria:");
+      return;
+    }
+
     // Handle NL category selection
     if (selectedValue.startsWith("nl_cat_")) {
       const category = selectedValue.replace("nl_cat_", "");

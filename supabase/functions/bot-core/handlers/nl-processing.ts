@@ -68,6 +68,7 @@ export async function handleNaturalLanguageWithFollowUp(
       }
       if (row.length > 0) keyboard.push(row);
       keyboard.push([{ text: "⏭️ Sem categoria", callback_data: truncateCallbackData("nl_cat_none", sessionSeq) }]);
+      keyboard.push([{ text: "✏️ Nova categoria", callback_data: addSession("nl_cat_new", sessionSeq) }]);
 
       await setWizardState(supabase, user.id, `nl_${natural.intent}_category`, {
         intent: natural.intent,
@@ -219,6 +220,7 @@ export async function executeNaturalLanguageAction(
       }
       if (row.length > 0) keyboard.push(row);
       keyboard.push([{ text: "⏭️ Sem categoria", callback_data: truncateCallbackData("nl_cat_none", seq) }]);
+      keyboard.push([{ text: "✏️ Nova categoria", callback_data: addSession("nl_cat_new", seq) }]);
 
       await setWizardState(supabase, user.id, `nl_${natural.intent}_category`, {
         intent: natural.intent,
