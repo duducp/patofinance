@@ -5,7 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="color-scheme" content="light dark">
   <meta name="robots" content="index, follow">
+  <meta name="theme-color" content="#1e4d7b">
   <link rel="canonical" href="https://duducp.github.io/patofinance/">
+  <link rel="alternate" hreflang="pt-BR" href="https://duducp.github.io/patofinance/">
   <title>Pato Finance — Controle financeiro no Telegram</title>
   <meta name="description" content="Registre gastos e receitas, veja extratos, saldo e resumo com comandos simples ou linguagem natural no Telegram.">
   <meta property="og:locale" content="pt_BR">
@@ -13,15 +15,22 @@
   <meta property="og:description" content="Seu assistente de finanças pessoais no Telegram">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://duducp.github.io/patofinance/">
-  <meta property="og:image" content="https://raw.githubusercontent.com/duducp/patofinance/main/landing/picture.png">
+  <meta property="og:image" content="https://raw.githubusercontent.com/duducp/patofinance/main/landing/picture.webp">
   <meta property="og:image:width" content="512">
   <meta property="og:image:height" content="512">
   <meta property="og:image:alt" content="Pato Finance logo">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="Pato Finance — Controle financeiro no Telegram">
-  <meta name="twitter:description" content="Seu assistente de finanças pessoais no Telegram. Registre gastos e receitas com comandos ou linguagem natural.">
-  <meta name="twitter:image" content="https://raw.githubusercontent.com/duducp/patofinance/main/landing/picture.png">
-  <link rel="icon" href="favicon.png">
+  <meta name="twitter:title" content="Pato Finance — Controle financeiro no Telegram">    <meta name="twitter:description" content="Seu assistente de finanças pessoais no Telegram. Registre gastos e receitas com comandos ou linguagem natural.">
+    <meta name="twitter:image" content="https://raw.githubusercontent.com/duducp/patofinance/main/landing/picture.webp">
+    <meta property="og:site_name" content="Pato Finance">
+    <meta name="twitter:site" content="@patofinancebot">
+  <link rel="icon" href="favicon.ico" type="image/png">
+  <link rel="preload" href="logo.webp" as="image" type="image/webp" width="140" height="140">
+  <link rel="preload" href="picture.webp" as="image" type="image/webp">
+  <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" integrity="sha512-DTOQO9RWCH3ppGqcWaEA1BIZOC6xxalwEsw9c2QQeAIftl+Vegovlnee1c9QX4TctnWMn13TZye+giMm8e2LwA==" crossorigin="anonymous" referrerpolicy="no-referrer" media="print" onload="this.media='all'">
+  <noscript><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" integrity="sha512-DTOQO9RWCH3ppGqcWaEA1BIZOC6xxalwEsw9c2QQeAIftl+Vegovlnee1c9QX4TctnWMn13TZye+giMm8e2LwA==" crossorigin="anonymous" referrerpolicy="no-referrer"></noscript>
   <link rel="stylesheet" href="styles.css">
   <script type="application/ld+json">
   {
@@ -31,6 +40,7 @@
     "applicationCategory": "FinanceApplication",
     "operatingSystem": "Telegram",
     "description": "Assistente de finanças pessoais no Telegram. Registre gastos e receitas com comandos ou linguagem natural.",
+    "url": "https://duducp.github.io/patofinance/",
     "offers": {
       "@type": "Offer",
       "price": "0",
@@ -41,8 +51,8 @@
 </head>
 <body>
   <a href="#conteudo-principal" class="skip-link" aria-label="Pular para o conteúdo principal">Pular para o conteúdo</a>
-  <main id="conteudo-principal">
-  <section class="hero">
+  <main id="conteudo-principal" tabindex="-1">
+  <section class="hero" role="banner">
     <div class="hero-blob hero-blob-1" aria-hidden="true"></div>
     <div class="hero-blob hero-blob-2" aria-hidden="true"></div>
     <div class="hero-blob hero-blob-3" aria-hidden="true"></div>
@@ -50,17 +60,17 @@
     <div class="hero-grid" aria-hidden="true"></div>
     <div class="hero-content fade-in">
       <div class="hero-brand">
-        <img src="logo.png" alt="Pato Finance" class="hero-logo" width="140" height="140">
+        <img src="logo.webp" alt="Pato Finance" class="hero-logo" width="140" height="140">
       </div>
-      <p class="hero-tagline" role="heading" aria-level="1">Finanças pessoais direto no Telegram</p>
+      <h1 class="hero-tagline">Finanças pessoais direto no Telegram</h1>
       <p class="hero-description">Registre gastos com comandos ou linguagem natural. Acompanhe extratos, saldo e resumos em segundos.</p>
       <a href="https://t.me/patofinancebot" class="btn btn-primary" target="_blank" rel="noopener" aria-label="Começar no Telegram">💬 Começar no Telegram →</a>
       <a href="#funcionalidades" class="hero-scroll-link" aria-label="Ver funcionalidades"><span class="scroll-arrow-down">↓</span> Saiba mais</a>
-      <div class="hero-badge">🎯 Grátis · Open Source · 🇧🇷</div>
+      <div class="hero-badge" aria-label="Grátis, Open Source, Brasil">🎯 Grátis · Open Source · 🇧🇷</div>
     </div>
-    <div class="hero-chat-mockup fade-in">
+    <div class="hero-chat-mockup fade-in" aria-hidden="true">
       <div class="chat-header">
-        <div class="chat-header-avatar"><img src="picture.png" alt="Pato Finance bot" loading="lazy"></div>
+        <div class="chat-header-avatar"><img src="picture.webp" alt="Pato Finance bot" loading="lazy"></div>
         <div class="chat-header-info">
           <div class="chat-header-name">Pato Finance</div>
           <div class="chat-header-status">BOT</div>
@@ -78,32 +88,32 @@
     <div class="container">
       <h2 class="section-title fade-in">Tudo que você precisa para controlar suas finanças</h2>
       <div class="features-grid">
-        <div class="feature-card fade-in" style="--card-hue: 1">
+        <div class="feature-card fade-in">
           <div class="feature-icon" aria-hidden="true">💸</div>
           <h3>Despesas e Receitas</h3>
           <p>Registre gastos e ganhos em segundos com comandos rápidos como <code>/despesa 50 mercado</code></p>
         </div>
-        <div class="feature-card fade-in" style="--card-hue: 2">
+        <div class="feature-card fade-in">
           <div class="feature-icon" aria-hidden="true">📊</div>
           <h3>Extrato Interativo</h3>
           <p>Visualize transações com filtros por categoria, grupo, tags, tipo e período</p>
         </div>
-        <div class="feature-card fade-in" style="--card-hue: 3">
+        <div class="feature-card fade-in">
           <div class="feature-icon" aria-hidden="true">🌐</div>
           <h3>Linguagem Natural <span class="feature-badge">IA</span></h3>
           <p>"Gastei 50 no almoço" — o bot entende frases comuns sem precisar de comandos</p>
         </div>
-        <div class="feature-card fade-in" style="--card-hue: 4">
+        <div class="feature-card fade-in">
           <div class="feature-icon" aria-hidden="true">📁</div>
           <h3>Grupos e Categorias</h3>
           <p>Organize por conta bancária, cartão de crédito e tipo de gasto</p>
         </div>
-        <div class="feature-card fade-in" style="--card-hue: 5">
+        <div class="feature-card fade-in">
           <div class="feature-icon" aria-hidden="true">🔖</div>
           <h3>Tags Personalizadas</h3>
           <p>Adicione tags como <code>#trabalho</code> para classificar e filtrar transações</p>
         </div>
-        <div class="feature-card fade-in" style="--card-hue: 6">
+        <div class="feature-card fade-in">
           <div class="feature-icon" aria-hidden="true">🔒</div>
           <h3>Seus Dados Seguros</h3>
           <p>Tudo armazenado com segurança no Supabase PostgreSQL</p>
@@ -117,21 +127,65 @@
       <h2 class="section-title fade-in">Comece a usar em 3 passos</h2>
       <div class="steps">
         <div class="step fade-in">
-          <div class="step-number step-number-1">📲</div>
+          <div class="step-number step-number-1" aria-label="Passo 1"><span aria-hidden="true">📲</span></div>
           <h3>Abra o Telegram</h3>
           <p>Busque por <strong>@patofinancebot</strong> e inicie a conversa</p>
         </div>
         <div class="step-arrow fade-in" aria-hidden="true">→</div>
         <div class="step fade-in">
-          <div class="step-number step-number-2">⌨️</div>
+          <div class="step-number step-number-2" aria-label="Passo 2"><span aria-hidden="true">⌨️</span></div>
           <h3>Envie seu primeiro comando</h3>
           <p>Digite <code>/despesa 50 almoço</code> ou <code>/saldo</code> para ver seu saldo</p>
         </div>
         <div class="step-arrow fade-in" aria-hidden="true">→</div>
         <div class="step fade-in">
-          <div class="step-number step-number-3">🤖</div>
+          <div class="step-number step-number-3" aria-label="Passo 3"><span aria-hidden="true">🤖</span></div>
           <h3>Deixe o resto com o bot</h3>
           <p>Extratos, resumos, categorias — tudo por comando ou clique</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="commands" id="comandos">
+    <div class="container">
+      <h2 class="section-title fade-in">Comandos disponíveis</h2>
+      <div class="commands-grid fade-in">
+        <div class="command-card">
+          <div class="command-example"><code>/despesa 50 almoço</code></div>
+          <p>Registra uma despesa</p>
+        </div>
+        <div class="command-card">
+          <div class="command-example"><code>/receita 3000 salário</code></div>
+          <p>Registra uma receita</p>
+        </div>
+        <div class="command-card">
+          <div class="command-example"><code>/saldo</code></div>
+          <p>Consulta seu saldo atual</p>
+        </div>
+        <div class="command-card">
+          <div class="command-example"><code>/extrato</code></div>
+          <p>Extrato interativo com filtros</p>
+        </div>
+        <div class="command-card">
+          <div class="command-example"><code>/resumo</code></div>
+          <p>Resumo por categoria</p>
+        </div>
+        <div class="command-card">
+          <div class="command-example"><code>/editar</code></div>
+          <p>Edita a última transação</p>
+        </div>
+        <div class="command-card">
+          <div class="command-example"><code>/excluir</code></div>
+          <p>Exclui a última transação</p>
+        </div>
+        <div class="command-card">
+          <div class="command-example"><code>/ajuda</code></div>
+          <p>Lista todos os comandos</p>
+        </div>
+        <div class="command-card command-card-highlight">
+          <div class="command-example"><span aria-hidden="true">💬</span> Linguagem natural</div>
+          <p>"Gastei 50 no almoço" · "Recebi 3000 de salário" · "Quanto gastei este mês?"</p>
         </div>
       </div>
     </div>
@@ -167,7 +221,7 @@
     <div class="container fade-in">
       <h2 class="cta-title">Pronto para organizar suas finanças?</h2>
       <p class="cta-subtitle">Em menos de 1 minuto você já está controlando seu dinheiro</p>
-      <a href="https://t.me/patofinancebot" class="btn btn-primary btn-large" target="_blank" rel="noopener" aria-label="Falar com Pato Finance no Telegram">🦆 Falar com Pato Finance</a>
+      <a href="https://t.me/patofinancebot" class="btn btn-primary btn-large" target="_blank" rel="noopener" aria-label="Falar com Pato Finance no Telegram">Falar com Pato Finance</a>
       <p class="cta-footnote">Grátis · Open Source · Seus dados seguros</p>
     </div>
   </section>
@@ -179,13 +233,32 @@
         <p>Pato Finance © 2026</p>
       </div>
       <div class="footer-col footer-col-right">
-        <a href="https://github.com/duducp/patofinance" target="_blank" rel="noopener">GitHub</a>
+        <a href="https://github.com/duducp/patofinance" target="_blank" rel="noopener" aria-label="GitHub">
+          <i class="fa-brands fa-github" aria-hidden="true"></i>
+          GitHub
+        </a>
         <span class="footer-sep">·</span>
-        <a href="https://t.me/patofinancebot" target="_blank" rel="noopener">Telegram</a>
+        <a href="https://t.me/patofinancebot" target="_blank" rel="noopener" aria-label="Telegram">
+          <i class="fa-brands fa-telegram" aria-hidden="true"></i>
+          Telegram
+        </a>
       </div>
     </div>
   </footer>
 
+  <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      twemoji.parse(document.body, {
+        folder: 'svg',
+        ext: '.svg',
+        base: 'https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/'
+      });
+      document.querySelectorAll('img.emoji').forEach(function(img) {
+        img.loading = 'lazy';
+      });
+    });
+  </script>
   <script src="main.js"></script>
 </body>
 </html>
