@@ -79,6 +79,7 @@ Se o usuário mencionar um dia da semana (ex: "segunda", "terça"), calcule a da
     prompt += `- Se NENHUMA palavra individual corresponder a nenhuma categoria → category = null\n`;
     prompt += `- NUNCA use a frase inteira nem múltiplas palavras como category\n`;
     prompt += `- NUNCA invente categorias. Use APENAS os nomes EXATOS da lista acima.\n`;
+    prompt += `- NUNCA deduza a categoria a partir de verbos/palavras-chave de intenção. Ex: "recebi" NÃO significa Salário, "gastei" NÃO significa nenhuma categoria.\n`;
     prompt += `\nEXEMPLOS CORRETOS (uma palavra → categoria):\n`;
     prompt += `- "comprei remedio na farmacia" → palavra "remedio" → categoria "Saúde" (se existir)\n`;
     prompt += `- "pedi ifood" → palavra "ifood" → categoria "Alimentação" (se existir)\n`;
