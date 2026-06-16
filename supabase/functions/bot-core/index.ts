@@ -19,7 +19,6 @@ import { sendTelegramMessage, sendTelegramMessageWithKeyboard } from "./services
 import { getCategories, sendSimilarityWarning, normalizeString, getAllUserTags } from "./services/database.ts";
 import { handleCreateCategory } from "./handlers/management.ts";
 import { handleCallbackQuery } from "./handlers/callbacks.ts";
-import { handleFilterPanel } from "./handlers/filters.ts";
 import { handleNaturalLanguageWithFollowUp, executeNaturalLanguageAction, buildNLCategoryKeyboard } from "./handlers/nl-processing.ts";
 import {
   getWizardState,
@@ -474,7 +473,7 @@ serve(async (req: Request): Promise<Response> => {
 
         case "/extrato":
           if (args.length === 0) {
-            await handleFilterPanel(supabase, existingUser.id, message.chat.id);
+            await handleStatement(supabase, message.from.id, message.chat.id);
           } else {
             // Parse direct args: --periodo, --grupo, --mes
             let period: string | null = null;
@@ -500,6 +499,7 @@ serve(async (req: Request): Promise<Response> => {
               tags: [],
               type: typeFilter,
               period: (period as PeriodPreset) || "this_month",
+              status: "all",
             };
             if (groupName) {
               const { data: group } = await supabase
