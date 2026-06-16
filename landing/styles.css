@@ -137,22 +137,14 @@ code {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 16px;
-  margin-bottom: 20px;
+  margin-bottom: 24px;
 }
 
 .hero-logo {
-  width: 64px;
+  width: 140px;
   height: auto;
-  filter: drop-shadow(0 0 20px rgba(79, 107, 237, 0.25));
+  filter: drop-shadow(0 0 24px rgba(79, 107, 237, 0.3));
   flex-shrink: 0;
-}
-
-.hero-title {
-  font-size: clamp(2rem, 5vw, 3.5rem);
-  font-weight: 800;
-  color: var(--text-light);
-  letter-spacing: -0.02em;
 }
 
 .hero-tagline {
