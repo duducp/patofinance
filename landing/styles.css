@@ -15,12 +15,31 @@
   --text-light: #f8f9fa;
   --text-muted: #94a3b8;
   --text-dark: #1a1a2e;
+  --text-secondary: #64748b;
   --surface: #ffffff;
   --surface-alt: #f1f5f9;
+  --footer-bg: #091420;
+  --code-bg: rgba(79, 107, 237, 0.1);
 
   --max-width: 1100px;
   --border-radius: 12px;
   --transition: 0.3s ease;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --primary-light: #141f33;
+    --primary-glow: #1a2a45;
+    --text-muted: #64748b;
+    --text-dark: #f1f5f9;
+    --text-secondary: #8896a6;
+    --surface: #0f172a;
+    --surface-alt: #1e293b;
+    --footer-bg: #080f1e;
+    --code-bg: rgba(79, 107, 237, 0.15);
+    color-scheme: dark;
+  }
 }
 
 html {
@@ -45,7 +64,7 @@ img {
 }
 
 code {
-  background: rgba(79, 107, 237, 0.1);
+  background: var(--code-bg);
   padding: 2px 6px;
   border-radius: 4px;
   font-size: 0.9em;
@@ -230,7 +249,7 @@ code {
 
 .feature-card p {
   font-size: 0.95rem;
-  color: #64748b;
+  color: var(--text-secondary);
   line-height: 1.6;
 }
 
@@ -275,7 +294,7 @@ code {
 
 .step p {
   font-size: 0.95rem;
-  color: #64748b;
+  color: var(--text-secondary);
   line-height: 1.6;
 }
 
@@ -311,7 +330,7 @@ code {
 }
 
 .footer {
-  background: #091420;
+  background: var(--footer-bg);
   padding: 32px 24px;
   color: var(--text-muted);
   font-size: 0.9rem;
