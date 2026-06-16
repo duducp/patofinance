@@ -454,7 +454,7 @@ export async function handleStatement(
     const catName = t.categories?.name;
     const grpName = t.groups?.name || "Pessoal";
     const catPart = catName ? ` - ${catName}` : "";
-    const line = `• \`#${t.id}\`  ${shortDate}  ${formatCurrencyBR(Number(t.amount))}  - ${grpName}${catPart}`;
+    const line = `   • #${t.id}  ${shortDate}  ${formatCurrencyBR(Number(t.amount))}  - ${grpName}${catPart}`;
     return isFuture ? `_${line}_\n` : `${line}\n`;
   }
 
