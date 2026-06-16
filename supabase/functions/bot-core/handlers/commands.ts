@@ -280,9 +280,7 @@ export async function handleTransaction(
     `📁 Grupo: ${parsed.group || "Pessoal"}\n` +
     `📅 Data: ${formatDateBR(parsed.date || getTodayISOBR())}` +
     (parsed.tags.length > 0 ? `\n🔖 Tags: ${parsed.tags.join(" ")}` : "") +
-    `\n\n🆔 \`#${id}\`` +
-    `\n✏️ Para editar, use \`/editar ${id}\`` +
-    ` ou \`/excluir ${id}\` para excluir.`
+    `\n\n✏️ Para editar, use */editar ${id}* ou */excluir ${id}* para excluir.`
   );
 }
 

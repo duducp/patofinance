@@ -237,9 +237,7 @@ export async function completeWizard(
     `📁 Grupo: ${data.group || "Pessoal"}\n` +
     `📅 Data: ${formatDateBR(date)}` +
     (tags.length > 0 ? `\n🔖 Tags: ${tags.join(" ")}` : "") +
-    `\n\n🆔 \`#${txId}\`` +
-    `\n✏️ Para editar, use \`/editar ${txId}\`` +
-    ` ou \`/excluir ${txId}\` para excluir.`
+    `\n\n✏️ Para editar, use */editar ${txId}* ou */excluir ${txId}* para excluir.`
   );
 }
 
