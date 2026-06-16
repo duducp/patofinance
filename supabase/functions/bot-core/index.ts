@@ -151,6 +151,7 @@ serve(async (req: Request): Promise<Response> => {
       await supabase.from("groups").insert({
         user_id: newUser.id,
         name: "Pessoal",
+        normalized_name: normalizeString("Pessoal"),
         is_default: true,
       });
 
@@ -162,6 +163,7 @@ serve(async (req: Request): Promise<Response> => {
         const categories = predefined.map((pc: any) => ({
           user_id: newUser.id,
           name: pc.name,
+          normalized_name: normalizeString(pc.name),
           is_predefined: true,
           transaction_type: pc.transaction_type || null,
         }));
