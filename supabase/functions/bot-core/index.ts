@@ -254,10 +254,10 @@ serve(async (req: Request): Promise<Response> => {
         }
       } else if (wizardState.step.startsWith("nl_creating_category_")) {
         const intent = wizardState.step.includes("expense") ? "expense" : "income";
-        const user = existingUser;
-        await handleCreateCategory(supabase, user.id, message.chat.id, text);
-        const categories = await getCategories(supabase, user.id, intent);
-        const seq = await getSessionSeq(supabase, user.id);
+        const internalUserId = existingUser.id;
+        await handleCreateCategory(supabase, message.from.id, message.chat.id, text);
+        const categories = await getCategories(supabase, internalUserId, intent);
+        const seq = await getSessionSeq(supabase, internalUserId);
         const keyboard: InlineKeyboard = categories.map((c) => [
           { text: c.name, callback_data: truncateCallbackData(`nl_cat_${c.name}`, seq) }
         ]);
@@ -266,7 +266,7 @@ serve(async (req: Request): Promise<Response> => {
         await supabase
           .from("wizard_states")
           .update({ step: `nl_${intent}_category`, data: wizardState.data })
-          .eq("user_id", user.id);
+          .eq("user_id", internalUserId);
         await sendTelegramMessageWithKeyboard(message.chat.id, "Em que categoria?", keyboard);
       } else if (wizardState.step === "nl_expense_category" || wizardState.step === "nl_income_category") {
         const intent = wizardState.step === "nl_expense_category" ? "expense" : "income";
