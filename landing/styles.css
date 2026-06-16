@@ -40,6 +40,14 @@
     --code-bg: rgba(79, 107, 237, 0.15);
     color-scheme: dark;
   }
+
+  .feature-card {
+    border-color: rgba(255, 255, 255, 0.04);
+  }
+
+  .feature-card:hover {
+    border-color: rgba(79, 107, 237, 0.25);
+  }
 }
 
 html {
@@ -81,11 +89,26 @@ code {
   text-align: center;
   margin-bottom: 48px;
   color: var(--text-dark);
+  position: relative;
+  padding-bottom: 16px;
+}
+
+.section-title::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 56px;
+  height: 3px;
+  background: linear-gradient(90deg, var(--accent), #7c8ff0);
+  border-radius: 2px;
 }
 
 .hero {
   min-height: 100vh;
-  background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 50%, var(--primary-glow) 100%);
+  background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 40%, var(--primary-glow) 70%, var(--primary-light) 100%);
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -93,6 +116,15 @@ code {
   text-align: center;
   gap: 60px;
   flex-wrap: wrap;
+  overflow: hidden;
+}
+
+.hero::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse 80% 50% at 50% 0%, rgba(79, 107, 237, 0.08) 0%, transparent 70%);
+  pointer-events: none;
 }
 
 .hero-content {
@@ -117,7 +149,10 @@ code {
 
 .hero-tagline {
   font-size: clamp(1.1rem, 2.5vw, 1.5rem);
-  color: var(--accent);
+  background: linear-gradient(135deg, var(--accent), #7c8ff0);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
   font-weight: 600;
   margin-bottom: 16px;
 }
@@ -148,15 +183,31 @@ code {
 }
 
 .btn-primary {
-  background: var(--accent);
+  background: linear-gradient(135deg, var(--accent), #5a7bf0);
   color: var(--text-light);
   box-shadow: 0 4px 15px rgba(79, 107, 237, 0.3);
+  position: relative;
+  z-index: 1;
+}
+
+.btn-primary::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, var(--accent-hover), var(--accent));
+  border-radius: inherit;
+  opacity: 0;
+  z-index: -1;
+  transition: opacity var(--transition);
 }
 
 .btn-primary:hover {
-  background: var(--accent-hover);
   transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(79, 107, 237, 0.4);
+  box-shadow: 0 8px 25px rgba(79, 107, 237, 0.4);
+}
+
+.btn-primary:hover::before {
+  opacity: 1;
 }
 
 .btn-large {
@@ -193,10 +244,11 @@ code {
 }
 
 .chat-bubble-bot {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.07);
   color: var(--text-light);
   border-bottom-left-radius: 4px;
-  backdrop-filter: blur(10px);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 @keyframes chatFadeIn {
@@ -218,7 +270,7 @@ code {
 .features-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 24px;
+  gap: 20px;
 }
 
 .feature-card {
@@ -226,13 +278,35 @@ code {
   padding: 32px 24px;
   border-radius: 16px;
   text-align: center;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04), 0 4px 12px rgba(0, 0, 0, 0.04);
+  position: relative;
   transition: transform var(--transition), box-shadow var(--transition);
+  border: 1px solid rgba(0, 0, 0, 0.04);
+}
+
+.feature-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 48px;
+  height: 3px;
+  background: linear-gradient(90deg, var(--accent), #7c8ff0);
+  border-radius: 0 0 4px 4px;
+  opacity: 0;
+  transition: opacity var(--transition), width var(--transition);
 }
 
 .feature-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+  transform: translateY(-6px);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08), 0 2px 8px rgba(0, 0, 0, 0.04);
+  border-color: rgba(79, 107, 237, 0.15);
+}
+
+.feature-card:hover::before {
+  opacity: 1;
+  width: 64px;
 }
 
 .feature-icon {
@@ -274,16 +348,17 @@ code {
 }
 
 .step-number {
-  width: 36px;
-  height: 36px;
-  line-height: 36px;
+  width: 40px;
+  height: 40px;
+  line-height: 40px;
   text-align: center;
-  background: var(--accent);
+  background: linear-gradient(135deg, var(--accent), #7c8ff0);
   color: var(--text-light);
   border-radius: 50%;
   font-weight: 700;
-  font-size: 1.1rem;
+  font-size: 1.15rem;
   margin: 0 auto 16px;
+  box-shadow: 0 4px 12px rgba(79, 107, 237, 0.25);
 }
 
 .step h3 {
@@ -300,15 +375,28 @@ code {
 
 .step-arrow {
   font-size: 2rem;
-  color: var(--accent);
+  background: linear-gradient(135deg, var(--accent), transparent);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
   padding-top: 40px;
   font-weight: 300;
 }
 
 .cta-section {
   padding: 96px 24px;
-  background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%);
+  background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 50%, var(--primary-glow) 100%);
   text-align: center;
+  position: relative;
+  overflow: hidden;
+}
+
+.cta-section::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse 60% 60% at 50% 50%, rgba(79, 107, 237, 0.06) 0%, transparent 70%);
+  pointer-events: none;
 }
 
 .cta-title {
@@ -334,6 +422,7 @@ code {
   padding: 32px 24px;
   color: var(--text-muted);
   font-size: 0.9rem;
+  border-top: 1px solid rgba(79, 107, 237, 0.08);
 }
 
 .footer-grid {
