@@ -442,11 +442,27 @@ serve(async (req: Request): Promise<Response> => {
 
         case "/despesa":
         case "/gasto":
-          await handleTransaction("expense", supabase, message.from.id, message.chat.id, args);
+          if (args.length > 0) {
+            const context = await fetchUserContext(supabase, existingUser.id);
+            const text = args.join(" ");
+            const natural = await parseNaturalLanguage(text, { userId: existingUser.id, context, forceIntent: "expense" });
+            const sessionSeq = await getSessionSeq(supabase, existingUser.id);
+            await handleNaturalLanguageWithFollowUp(supabase, message.from.id, message.chat.id, natural, sessionSeq);
+          } else {
+            await handleTransaction("expense", supabase, message.from.id, message.chat.id, args);
+          }
           break;
 
         case "/receita":
-          await handleTransaction("income", supabase, message.from.id, message.chat.id, args);
+          if (args.length > 0) {
+            const context = await fetchUserContext(supabase, existingUser.id);
+            const text = args.join(" ");
+            const natural = await parseNaturalLanguage(text, { userId: existingUser.id, context, forceIntent: "income" });
+            const sessionSeq = await getSessionSeq(supabase, existingUser.id);
+            await handleNaturalLanguageWithFollowUp(supabase, message.from.id, message.chat.id, natural, sessionSeq);
+          } else {
+            await handleTransaction("income", supabase, message.from.id, message.chat.id, args);
+          }
           break;
 
         case "/extrato":

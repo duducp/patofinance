@@ -8,14 +8,18 @@ interface UserContext {
   tags: string[];
 }
 
-function buildSystemPrompt(context?: UserContext): string {
+function buildSystemPrompt(context?: UserContext, forceIntent?: "expense" | "income"): string {
   const today = getTodayISOBR();
   const todayDate = new Date(today + "T12:00:00");
   const yesterdayDate = new Date(todayDate.getTime() - 86400000);
   const tomorrowDate = new Date(todayDate.getTime() + 86400000);
   const yesterday = yesterdayDate.toISOString().split("T")[0];
   const tomorrow = tomorrowDate.toISOString().split("T")[0];
-  let prompt = `Você é um assistente que analisa mensagens em português para extrair informações financeiras.
+  const typeName = forceIntent === "expense" ? "DESPESA" : forceIntent === "income" ? "RECEITA" : null;
+  const forceLine = typeName
+    ? `IMPORTANTE: Esta transação é do tipo ${typeName}. Use APENAS intent = "${forceIntent}". NÃO tente identificar o tipo — ele já é conhecido. Ignore qualquer palavra-chave que sugira o tipo contrário.\n\n`
+    : "";
+  let prompt = forceLine + `Você é um assistente que analisa mensagens em português para extrair informações financeiras.
 Responda APENAS com JSON válido, sem texto adicional.
 
 Formato esperado:
@@ -66,7 +70,10 @@ Se o usuário mencionar um dia da semana (ex: "segunda", "terça"), calcule a da
 
   if (context?.categories?.length) {
     prompt += `\n\nSUAS CATEGORIAS (use o nome EXATO):\n`;
-    for (const c of context.categories) {
+    const filteredCategories = forceIntent
+      ? context.categories.filter(c => c.transaction_type === null || c.transaction_type === forceIntent)
+      : context.categories;
+    for (const c of filteredCategories) {
       const tipo = c.transaction_type === "expense" ? " [despesa]"
         : c.transaction_type === "income" ? " [receita]"
         : " [despesa e receita]";
@@ -160,6 +167,7 @@ async function callDeepSeek(
     context?: UserContext;
     history?: { role: "user" | "assistant"; content: string }[];
     maxTokens?: number;
+    forceIntent?: "expense" | "income";
   }
 ): Promise<string | null> {
   if (!DEEPSEEK_API_KEY) {
@@ -169,7 +177,7 @@ async function callDeepSeek(
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 5000);
-    const systemPrompt = buildSystemPrompt(options?.context);
+    const systemPrompt = buildSystemPrompt(options?.context, options?.forceIntent);
     const messages: { role: string; content: string }[] = [
       { role: "system", content: systemPrompt },
     ];
@@ -257,6 +265,7 @@ export async function parseNaturalLanguage(
   options?: {
     userId?: number;
     context?: UserContext;
+    forceIntent?: "expense" | "income";
   }
 ): Promise<DeepSeekResponse> {
   const defaultResponse: DeepSeekResponse = {
@@ -264,19 +273,30 @@ export async function parseNaturalLanguage(
     name: null, tag: null, group: null, description: null, limit: null, missingFields: [],
   };
 
-  const commonResponse = checkCommonPhrase(text);
-  if (commonResponse) return commonResponse;
+  // When forceIntent is set, skip common phrase and cache —
+  // the intent is already known so we must hit the API for accurate extraction.
+  if (!options?.forceIntent) {
+    const commonResponse = checkCommonPhrase(text);
+    if (commonResponse) return commonResponse;
 
-  const cachedResponse = options?.userId ? getCachedResponse(options.userId, text) : null;
-  if (cachedResponse) return cachedResponse;
+    const cachedResponse = options?.userId ? getCachedResponse(options.userId, text) : null;
+    if (cachedResponse) return cachedResponse;
+  }
 
-  const raw = await callDeepSeek(text, { context: options?.context });
+  const raw = await callDeepSeek(text, { context: options?.context, forceIntent: options?.forceIntent });
   if (!raw) return defaultResponse;
 
   const parsed = parseDeepSeekResponse(raw);
   const result = buildDeepSeekResponse(parsed);
 
-  if (options?.userId) setCachedResponse(options.userId, text, result);
+  if (options?.forceIntent) {
+    result.intent = options.forceIntent;
+  }
+
+  // Don't cache forced-intent results — they'd poison the NL cache
+  if (options?.userId && !options?.forceIntent) {
+    setCachedResponse(options.userId, text, result);
+  }
 
   return result;
 }
