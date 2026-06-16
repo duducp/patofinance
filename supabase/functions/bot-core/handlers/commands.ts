@@ -1,10 +1,11 @@
 import type { InlineKeyboard, ExtratoFilters } from "../types/index.ts";
 import { sendTelegramMessage, sendTelegramMessageWithKeyboard } from "../services/telegram.ts";
-import { requireUser, getOrCreateUser, getOrCreateCategory, getOrCreateGroup, normalizeString, suggestSimilarCategories, suggestSimilarGroups, sendSimilarityWarning, getAllUserTags, createTransaction, applyFiltersToQuery } from "../services/database.ts";
+import { requireUser, getOrCreateUser, getOrCreateCategory, getOrCreateGroup, normalizeString, suggestSimilarCategories, suggestSimilarGroups, sendSimilarityWarning, getAllUserTags, createTransaction, applyFiltersToQuery, getTransactionById, findGroupByName } from "../services/database.ts";
 import { formatCurrencyBR, formatDateBR, getTodayISOBR, getMonthName } from "../utils/formatting.ts";
 import { getDateRange } from "../utils/date-helpers.ts";
-import { parseCommand } from "../utils/command-parsing.ts";
+import { parseCommand, parsePeriodFromArgs } from "../utils/command-parsing.ts";
 import { addSession, getSessionSeq } from "../utils/session.ts";
+import { buildKeyboardGrid, buildEditKeyboard } from "../utils/keyboard.ts";
 
 import { getSummaryData, formatSummaryMessage } from "./queries.ts";
 import { getWizardState, setWizardState, handleTransactionWizard } from "./wizard.ts";
@@ -109,16 +110,7 @@ export async function handleBalance(supabase: any, userId: number, chatId: numbe
   }
 
   // Parse period and group from args
-  let period: string | null = null;
-  const cleanArgs: string[] = [];
-  for (let i = 0; i < args.length; i++) {
-    if (args[i] === "--periodo" || args[i] === "--mes") {
-      period = args[i + 1] || null;
-      i++;
-    } else {
-      cleanArgs.push(args[i]);
-    }
-  }
+  const { period, cleanArgs } = parsePeriodFromArgs(args);
 
   const resolvedPeriod = period === "last_month" ? "last_month" as const : "this_month" as const;
   const { start: startOfMonth, end: endOfMonth, label: monthName } = getDateRange(resolvedPeriod, null);
@@ -128,12 +120,7 @@ export async function handleBalance(supabase: any, userId: number, chatId: numbe
   let groupName: string | null = null;
   if (cleanArgs.length > 0) {
     const searchName = cleanArgs.join(" ");
-    const { data: group } = await supabase
-      .from("groups")
-      .select("id, name")
-      .eq("user_id", user.id)
-      .ilike("name", searchName)
-      .maybeSingle();
+    const group = await findGroupByName(supabase, user.id, searchName);
     if (group) {
       groupId = group.id;
       groupName = group.name;
@@ -524,7 +511,7 @@ export async function handleStatement(
   const sessionSeq = await getSessionSeq(supabase, user.id);
   const keyboard: InlineKeyboard = [];
 
-  // 🔍 Nova busca (filtro completo)
+  // 🔍 Filtrar (filtro completo)
   keyboard.push([{ text: "🔍 Nova busca", callback_data: addSession("stmt_filter", sessionSeq) }]);
 
   // ❌ Limpar filtros — only when there are active filters
@@ -565,16 +552,7 @@ export async function handleSummary(supabase: any, userId: number, chatId: numbe
   }
 
   // Parse period and group from args
-  let period: string | null = null;
-  const cleanArgs: string[] = [];
-  for (let i = 0; i < args.length; i++) {
-    if (args[i] === "--periodo" || args[i] === "--mes") {
-      period = args[i + 1] || null;
-      i++;
-    } else {
-      cleanArgs.push(args[i]);
-    }
-  }
+  const { period, cleanArgs } = parsePeriodFromArgs(args);
 
   const resolvedPeriod = period === "last_month" ? "last_month" as const : null;
 
@@ -583,12 +561,7 @@ export async function handleSummary(supabase: any, userId: number, chatId: numbe
   let groupName: string | null = null;
   if (cleanArgs.length > 0) {
     const searchName = cleanArgs.join(" ");
-    const { data: group } = await supabase
-      .from("groups")
-      .select("id, name")
-      .eq("user_id", user.id)
-      .ilike("name", searchName)
-      .maybeSingle();
+    const group = await findGroupByName(supabase, user.id, searchName);
     if (group) {
       groupId = group.id;
       groupName = group.name;
@@ -667,21 +640,7 @@ export async function handleDetails(
 
   const transactionId = args[0];
 
-  const { data: transaction } = await supabase
-    .from("transactions")
-    .select(`
-      id,
-      type,
-      amount,
-      description,
-      tags,
-      transaction_date,
-      categories (name),
-      groups (name)
-    `)
-    .eq("id", transactionId)
-    .eq("user_id", user.id)
-    .single();
+  const transaction = await getTransactionById(supabase, user.id, transactionId);
 
   if (!transaction) {
     await sendTelegramMessage(
@@ -702,18 +661,7 @@ export async function handleDetails(
 
   const sessionSeq = await getSessionSeq(supabase, user.id);
   const keyboard: InlineKeyboard = [
-    [
-      { text: "✏️ Editar valor", callback_data: addSession(`edit_amount_${transaction.id}`, sessionSeq) },
-      { text: "🏷️ Editar categoria", callback_data: addSession(`edit_category_${transaction.id}`, sessionSeq) },
-    ],
-    [
-      { text: "📁 Editar grupo", callback_data: addSession(`edit_group_${transaction.id}`, sessionSeq) },
-      { text: "🔖 Editar tags", callback_data: addSession(`edit_tags_${transaction.id}`, sessionSeq) },
-    ],
-    [
-      { text: "📝 Editar descrição", callback_data: addSession(`edit_desc_${transaction.id}`, sessionSeq) },
-      { text: "📅 Editar data", callback_data: addSession(`edit_date_${transaction.id}`, sessionSeq) },
-    ],
+    ...buildEditKeyboard(transaction.id, sessionSeq),
     [
       { text: "❌ Excluir", callback_data: addSession(`confirm_delete_${transaction.id}`, sessionSeq) },
     ],
@@ -753,21 +701,7 @@ export async function handleEdit(supabase: any, userId: number, chatId: number, 
 
   const transactionId = args[0];
 
-  const { data: transaction } = await supabase
-    .from("transactions")
-    .select(`
-      id,
-      type,
-      amount,
-      description,
-      tags,
-      transaction_date,
-      categories (name),
-      groups (name)
-    `)
-    .eq("id", transactionId)
-    .eq("user_id", user.id)
-    .single();
+  const transaction = await getTransactionById(supabase, user.id, transactionId);
 
   if (!transaction) {
     await sendTelegramMessage(
@@ -786,20 +720,7 @@ export async function handleEdit(supabase: any, userId: number, chatId: number, 
   const desc = transaction.description || "—";
 
   const sessionSeq = await getSessionSeq(supabase, user.id);
-  const keyboard: InlineKeyboard = [
-    [
-      { text: "✏️ Editar valor", callback_data: addSession(`edit_amount_${transaction.id}`, sessionSeq) },
-      { text: "🏷️ Editar categoria", callback_data: addSession(`edit_category_${transaction.id}`, sessionSeq) },
-    ],
-    [
-      { text: "📁 Editar grupo", callback_data: addSession(`edit_group_${transaction.id}`, sessionSeq) },
-      { text: "🔖 Editar tags", callback_data: addSession(`edit_tags_${transaction.id}`, sessionSeq) },
-    ],
-    [
-      { text: "📝 Editar descrição", callback_data: addSession(`edit_desc_${transaction.id}`, sessionSeq) },
-      { text: "📅 Editar data", callback_data: addSession(`edit_date_${transaction.id}`, sessionSeq) },
-    ],
-  ];
+  const keyboard: InlineKeyboard = buildEditKeyboard(transaction.id, sessionSeq);
 
   await sendTelegramMessageWithKeyboard(
     chatId,
@@ -956,17 +877,10 @@ export async function handleEntity(
     message += `\n💡 Para adicionar: \`${cmdRef}\``;
 
     const sessionSeq = await getSessionSeq(supabase, user.id);
-    // Build keyboard with 3 items per row
-    const keyboard: InlineKeyboard = [];
-    let row: { text: string; callback_data: string }[] = [];
-    for (const item of items) {
-      row.push({ text: item.name, callback_data: addSession(`${cbPrefix}${item.name}`, sessionSeq) });
-      if (row.length === 3) {
-        keyboard.push(row);
-        row = [];
-      }
-    }
-    if (row.length > 0) keyboard.push(row);
+    const keyboard = buildKeyboardGrid(items, (item) => ({
+      text: item.name,
+      callback_data: addSession(`${cbPrefix}${item.name}`, sessionSeq),
+    }), 3);
 
     await sendTelegramMessageWithKeyboard(chatId, message, keyboard);
     return;
@@ -1083,18 +997,10 @@ export async function handleTag(supabase: any, userId: number, chatId: number, _
   message += "\n💡 Clique em uma tag para ver as transações.";
 
   const sessionSeq = await getSessionSeq(supabase, user.id);
-  // Build keyboard with 3 tags per row
-  const keyboard: InlineKeyboard = [];
-  let row: { text: string; callback_data: string }[] = [];
-  for (const tag of allTags) {
-    const displayTag = tag.startsWith("#") ? tag : `#${tag}`;
-    row.push({ text: displayTag, callback_data: addSession(`tag_sel_${tag}`, sessionSeq) });
-    if (row.length === 3) {
-      keyboard.push(row);
-      row = [];
-    }
-  }
-  if (row.length > 0) keyboard.push(row);
+  const keyboard = buildKeyboardGrid(allTags, (tag) => ({
+    text: tag.startsWith("#") ? tag : `#${tag}`,
+    callback_data: addSession(`tag_sel_${tag}`, sessionSeq),
+  }), 3);
 
   await sendTelegramMessageWithKeyboard(chatId, message, keyboard);
 }

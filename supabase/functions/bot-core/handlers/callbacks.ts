@@ -9,6 +9,7 @@ import { handleStatement, handleBalance, handleSummary, handleEdit, handleGroup,
 import { handleListTransactions, handleListByTag } from "./management.ts";
 import { handleFilterCallback } from "./filters.ts";
 import { addSession, removeSession, validateCallbackSession, getSessionSeq } from "../utils/session.ts";
+import { buildKeyboardGrid } from "../utils/keyboard.ts";
 
 async function handleGroupFilterCallback(
   supabase: any,
@@ -23,16 +24,10 @@ async function handleGroupFilterCallback(
     const { data: groups } = await supabase.from("groups").select("name").eq("user_id", user.id).order("name");
     const sessionSeq = await getSessionSeq(supabase, user.id);
     if (groups && groups.length > 0) {
-      const keyboard: InlineKeyboard = [];
-      let row: { text: string; callback_data: string }[] = [];
-      for (const g of groups) {
-        row.push({ text: g.name, callback_data: addSession(`${prefix}_grp_${g.name}`, sessionSeq) });
-        if (row.length === 3) {
-          keyboard.push(row);
-          row = [];
-        }
-      }
-      if (row.length > 0) keyboard.push(row);
+      const keyboard = buildKeyboardGrid(groups, (g) => ({
+        text: g.name,
+        callback_data: addSession(`${prefix}_grp_${g.name}`, sessionSeq),
+      }), 3);
       keyboard.push([{ text: "📋 Todas as contas", callback_data: addSession(`${prefix}_grp_all`, sessionSeq) }]);
       const title = prefix === "balance" ? "saldo" : "resumo";
       await sendTelegramMessageWithKeyboard(chatId, `📁 *Filtrar ${title} por grupo:*`, keyboard);
@@ -376,16 +371,10 @@ export async function handleCallbackQuery(
       if (!user) return;
       const { data: groups } = await supabase.from("groups").select("name").eq("user_id", user.id).order("name");
       if (groups && groups.length > 0) {
-        const keyboard: InlineKeyboard = [];
-        let row: { text: string; callback_data: string }[] = [];
-        for (const g of groups) {
-          row.push({ text: g.name, callback_data: truncateCallbackData(`edit_group_sel_${transactionId}_${g.name}`, sessionSeq) });
-          if (row.length === 3) {
-            keyboard.push(row);
-            row = [];
-          }
-        }
-        if (row.length > 0) keyboard.push(row);
+        const keyboard = buildKeyboardGrid(groups, (g) => ({
+          text: g.name,
+          callback_data: truncateCallbackData(`edit_group_sel_${transactionId}_${g.name}`, sessionSeq),
+        }), 3);
         await sendTelegramMessageWithKeyboard(chatId, "📁 Selecione o novo grupo:", keyboard);
       } else {
         await sendTelegramMessage(chatId, "📁 Nenhum grupo disponível. Crie um com /grupo");
@@ -441,16 +430,15 @@ export async function handleCallbackQuery(
 
       const keyboard: InlineKeyboard = [];
       if (tagSet.size > 0) {
-        let row: { text: string; callback_data: string }[] = [];
-        for (const tag of tagSet) {
-          const isSelected = currentTags.includes(tag);
-          row.push({ text: isSelected ? `✅ ${tag}` : tag, callback_data: addSession(`edit_tag_tog_${transactionId}_${tag}`, sessionSeq) });
-          if (row.length === 2) {
-            keyboard.push(row);
-            row = [];
-          }
-        }
-        if (row.length > 0) keyboard.push(row);
+        const grid = buildKeyboardGrid(
+          [...tagSet],
+          (tag) => ({
+            text: currentTags.includes(tag) ? `✅ ${tag}` : tag,
+            callback_data: addSession(`edit_tag_tog_${transactionId}_${tag}`, sessionSeq),
+          }),
+          2,
+        );
+        keyboard.push(...grid);
       }
       keyboard.push([
         { text: "✅ Concluir", callback_data: truncateCallbackData(`edit_tags_done_${transactionId}`, sessionSeq) },
@@ -501,16 +489,15 @@ export async function handleCallbackQuery(
 
         const keyboard: InlineKeyboard = [];
         if (tagSet.size > 0) {
-          let row: { text: string; callback_data: string }[] = [];
-          for (const t of tagSet) {
-            const isSelected = newTags.includes(t);
-            row.push({ text: isSelected ? `✅ ${t}` : t, callback_data: addSession(`edit_tag_tog_${transactionId}_${t}`, sessionSeq) });
-            if (row.length === 2) {
-              keyboard.push(row);
-              row = [];
-            }
-          }
-          if (row.length > 0) keyboard.push(row);
+          const grid = buildKeyboardGrid(
+            [...tagSet],
+            (t) => ({
+              text: newTags.includes(t) ? `✅ ${t}` : t,
+              callback_data: addSession(`edit_tag_tog_${transactionId}_${t}`, sessionSeq),
+            }),
+            2,
+          );
+          keyboard.push(...grid);
         }
         keyboard.push([
           { text: "✅ Concluir", callback_data: truncateCallbackData(`edit_tags_done_${transactionId}`, sessionSeq) },
@@ -543,16 +530,10 @@ export async function handleCallbackQuery(
           return true;
         });
         if (unique.length > 0) {
-          const keyboard: InlineKeyboard = [];
-          let row: { text: string; callback_data: string }[] = [];
-          for (const c of unique) {
-            row.push({ text: c.name, callback_data: truncateCallbackData(`edit_cat_select_${transactionId}_${c.name}`, sessionSeq) });
-            if (row.length === 3) {
-              keyboard.push(row);
-              row = [];
-            }
-          }
-          if (row.length > 0) keyboard.push(row);
+          const keyboard = buildKeyboardGrid(unique, (c) => ({
+            text: c.name,
+            callback_data: truncateCallbackData(`edit_cat_select_${transactionId}_${c.name}`, sessionSeq),
+          }), 3);
           await sendTelegramMessageWithKeyboard(chatId, "Escolha a nova categoria:", keyboard);
         } else {
           await sendTelegramMessage(chatId, "Nenhuma categoria disponível. Crie uma com /categoria");

@@ -5,6 +5,7 @@ import { parseDateBR } from "../utils/formatting.ts";
 import { setWizardState } from "./wizard.ts";
 import { truncateCallbackData } from "../utils/rate-limiter.ts";
 import { addSession, getSessionSeq } from "../utils/session.ts";
+import { buildKeyboardGrid } from "../utils/keyboard.ts";
 import {
   handleTransaction,
   handleBalance,
@@ -151,15 +152,11 @@ async function handleNLWithGroupCheck(
       .order("name");
     const keyboard: InlineKeyboard = [];
     if (groups) {
-      let row: { text: string; callback_data: string }[] = [];
-      for (const g of groups) {
-        row.push({ text: g.name, callback_data: truncateCallbackData(`nl_grp_${g.name}`, sessionSeq) });
-        if (row.length === 2) {
-          keyboard.push(row);
-          row = [];
-        }
-      }
-      if (row.length > 0) keyboard.push(row);
+      const grid = buildKeyboardGrid(groups, (g) => ({
+        text: g.name,
+        callback_data: truncateCallbackData(`nl_grp_${g.name}`, sessionSeq),
+      }), 2);
+      keyboard.push(...grid);
     }
     keyboard.push([{ text: "⏭️ Pular", callback_data: truncateCallbackData("nl_grp_skip", sessionSeq) }]);
     await setWizardState(supabase, userId, `nl_${type}_group`, {

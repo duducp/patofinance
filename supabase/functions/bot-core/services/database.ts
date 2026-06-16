@@ -245,6 +245,57 @@ export async function createTransaction(
 }
 
 /**
+ * Standard transaction select fields for detail/edit views.
+ */
+export const TRANSACTION_DETAIL_FIELDS = `
+      id,
+      type,
+      amount,
+      description,
+      tags,
+      transaction_date,
+      categories (name),
+      groups (name)
+    `;
+
+/**
+ * Fetch a single transaction by ID with category and group joins.
+ * Returns null if not found or not owned by the user.
+ */
+export async function getTransactionById(
+  supabase: any,
+  userId: number,
+  transactionId: string | number,
+  selectFields: string = TRANSACTION_DETAIL_FIELDS
+): Promise<any | null> {
+  const { data } = await supabase
+    .from("transactions")
+    .select(selectFields)
+    .eq("id", transactionId)
+    .eq("user_id", userId)
+    .single();
+  return data || null;
+}
+
+/**
+ * Find a group by name for a user.
+ * Returns { id, name } or null.
+ */
+export async function findGroupByName(
+  supabase: any,
+  userId: number,
+  name: string
+): Promise<{ id: number; name: string } | null> {
+  const { data } = await supabase
+    .from("groups")
+    .select("id, name")
+    .eq("user_id", userId)
+    .ilike("name", name)
+    .maybeSingle();
+  return data || null;
+}
+
+/**
  * Apply common ExtratoFilters to a Supabase query builder.
  * Returns the query with all filters applied.
  */

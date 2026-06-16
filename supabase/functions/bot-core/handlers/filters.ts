@@ -2,6 +2,7 @@ import { InlineKeyboard, ExtratoFilters, PeriodPreset } from "../types/index.ts"
 import { sendTelegramMessage, sendTelegramMessageWithKeyboard, editTelegramMessageWithKeyboard } from "../services/telegram.ts";
 import { getOrCreateUser, getAllUserTags } from "../services/database.ts";
 import { addSession, getSessionSeq } from "../utils/session.ts";
+import { buildKeyboardGrid } from "../utils/keyboard.ts";
 import { setWizardState, getWizardState, clearWizardState } from "./wizard.ts";
 import { handleStatement } from "./commands.ts";
 
@@ -121,16 +122,11 @@ export async function showCategorySelector(
 
   const keyboard: InlineKeyboard = [];
   if (unique.length > 0) {
-    let row: { text: string; callback_data: string }[] = [];
-    for (const c of unique) {
-      const isSelected = filters.category_id === c.id;
-      row.push({ text: isSelected ? `✅ ${c.name}` : c.name, callback_data: addSession(`stmt_f_cat_${c.id}`, sessionSeq) });
-      if (row.length === 3) {
-        keyboard.push(row);
-        row = [];
-      }
-    }
-    if (row.length > 0) keyboard.push(row);
+    const grid = buildKeyboardGrid(unique, (c) => ({
+      text: filters.category_id === c.id ? `✅ ${c.name}` : c.name,
+      callback_data: addSession(`stmt_f_cat_${c.id}`, sessionSeq),
+    }), 3);
+    keyboard.push(...grid);
   }
   keyboard.push([{ text: "❌ Limpar", callback_data: addSession("stmt_f_cat_0", sessionSeq) }]);
   keyboard.push([{ text: "◀️ Voltar", callback_data: addSession("stmt_filter", sessionSeq) }]);
@@ -156,16 +152,11 @@ export async function showGroupSelector(
 
   const keyboard: InlineKeyboard = [];
   if (groups) {
-    let row: { text: string; callback_data: string }[] = [];
-    for (const g of groups) {
-      const isSelected = filters.group_id === g.id;
-      row.push({ text: isSelected ? `✅ ${g.name}` : g.name, callback_data: addSession(`stmt_f_grp_${g.id}`, sessionSeq) });
-      if (row.length === 3) {
-        keyboard.push(row);
-        row = [];
-      }
-    }
-    if (row.length > 0) keyboard.push(row);
+    const grid = buildKeyboardGrid(groups, (g) => ({
+      text: filters.group_id === g.id ? `✅ ${g.name}` : g.name,
+      callback_data: addSession(`stmt_f_grp_${g.id}`, sessionSeq),
+    }), 3);
+    keyboard.push(...grid);
   }
   keyboard.push([{ text: "❌ Limpar", callback_data: addSession("stmt_f_grp_0", sessionSeq) }]);
   keyboard.push([{ text: "◀️ Voltar", callback_data: addSession("stmt_filter", sessionSeq) }]);
@@ -189,17 +180,18 @@ export async function showTagSelector(
 
   const keyboard: InlineKeyboard = [];
   if (tagSet.length > 0) {
-    let row: { text: string; callback_data: string }[] = [];
-    for (const tag of tagSet) {
-      const isSelected = selectedTags.includes(tag);
-      const displayTag = tag.startsWith("#") ? tag : `#${tag}`;
-      row.push({ text: isSelected ? `✅ ${displayTag}` : displayTag, callback_data: addSession(`stmt_f_tag_${tag}`, sessionSeq) });
-      if (row.length === 2) {
-        keyboard.push(row);
-        row = [];
-      }
-    }
-    if (row.length > 0) keyboard.push(row);
+    const grid = buildKeyboardGrid(
+      tagSet,
+      (tag) => {
+        const displayTag = tag.startsWith("#") ? tag : `#${tag}`;
+        return {
+          text: selectedTags.includes(tag) ? `✅ ${displayTag}` : displayTag,
+          callback_data: addSession(`stmt_f_tag_${tag}`, sessionSeq),
+        };
+      },
+      2,
+    );
+    keyboard.push(...grid);
   }
   keyboard.push([
     { text: "✅ Concluir", callback_data: addSession("stmt_f_tag_done", sessionSeq) },
@@ -285,16 +277,11 @@ export async function showPeriodSelector(
   ];
 
   const keyboard: InlineKeyboard = [];
-  let row: { text: string; callback_data: string }[] = [];
-  for (const p of presets) {
-    const isActive = filters.period === p.key;
-    row.push({ text: isActive ? `✅ ${p.label}` : p.label, callback_data: addSession(`stmt_f_period_${p.key}`, sessionSeq) });
-    if (row.length === 2) {
-      keyboard.push(row);
-      row = [];
-    }
-  }
-  if (row.length > 0) keyboard.push(row);
+  const grid = buildKeyboardGrid(presets, (p) => ({
+    text: filters.period === p.key ? `✅ ${p.label}` : p.label,
+    callback_data: addSession(`stmt_f_period_${p.key}`, sessionSeq),
+  }), 2);
+  keyboard.push(...grid);
   keyboard.push([{ text: "📆 Outro período", callback_data: addSession("stmt_f_period_custom", sessionSeq) }]);
   keyboard.push([{ text: "◀️ Voltar", callback_data: addSession("stmt_filter", sessionSeq) }]);
 

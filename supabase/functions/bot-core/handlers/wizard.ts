@@ -1,8 +1,10 @@
 import { WizardState } from "../types/index.ts";
+import { InlineKeyboard } from "../types/index.ts";
 import { sendTelegramMessage, sendTelegramMessageWithKeyboard, editTelegramMessageWithKeyboard } from "../services/telegram.ts";
 import { getOrCreateCategory, getOrCreateGroup, sendSimilarityWarning, getAllUserTags } from "../services/database.ts";
 import { formatCurrencyBR, formatDateBR, parseDateBR, getTodayISOBR } from "../utils/formatting.ts";
 import { addSession, getSessionSeq } from "../utils/session.ts";
+import { buildKeyboardGrid } from "../utils/keyboard.ts";
 
 export async function getWizardState(supabase: any, userId: number): Promise<WizardState | null> {
   const { data } = await supabase
@@ -74,17 +76,13 @@ export async function sendWizardStepMessage(
       seen.add(c.normalized_name);
       return true;
     });
-    const keyboard: { text: string; callback_data: string }[][] = [];
+    const keyboard: InlineKeyboard = [];
     if (unique.length > 0) {
-      let row: { text: string; callback_data: string }[] = [];
-      for (const c of unique) {
-        row.push({ text: c.name, callback_data: addSession(c.name, sessionSeq) });
-        if (row.length === 3) {
-          keyboard.push(row);
-          row = [];
-        }
-      }
-      if (row.length > 0) keyboard.push(row);
+      const grid = buildKeyboardGrid(unique, (c) => ({
+        text: c.name,
+        callback_data: addSession(c.name, sessionSeq),
+      }), 3);
+      keyboard.push(...grid);
     }
     keyboard.push([{ text: "✏️ Nova categoria", callback_data: addSession("wizard_new_category", sessionSeq) }]);
     await sendTelegramMessageWithKeyboard(chatId, step.prompt, keyboard);
@@ -94,17 +92,13 @@ export async function sendWizardStepMessage(
       .select("name")
       .eq("user_id", userId)
       .order("name");
-    const keyboard: { text: string; callback_data: string }[][] = [];
+    const keyboard: InlineKeyboard = [];
     if (groups && groups.length > 0) {
-      let row: { text: string; callback_data: string }[] = [];
-      for (const g of groups) {
-        row.push({ text: g.name, callback_data: addSession(g.name, sessionSeq) });
-        if (row.length === 3) {
-          keyboard.push(row);
-          row = [];
-        }
-      }
-      if (row.length > 0) keyboard.push(row);
+      const grid = buildKeyboardGrid(groups, (g) => ({
+        text: g.name,
+        callback_data: addSession(g.name, sessionSeq),
+      }), 3);
+      keyboard.push(...grid);
     }
     keyboard.push([{ text: "✏️ Novo grupo", callback_data: addSession("wizard_new_group", sessionSeq) }]);
     await sendTelegramMessageWithKeyboard(chatId, step.prompt, keyboard);
@@ -129,18 +123,17 @@ export async function sendWizardStepMessage(
       prompt += "\n\n💡 Clique nas tags para selecionar ou digite uma nova.";
     }
 
-    const keyboard: { text: string; callback_data: string }[][] = [];
+    const keyboard: InlineKeyboard = [];
     if (tagSet.size > 0) {
-      let row: { text: string; callback_data: string }[] = [];
-      for (const tag of tagSet) {
-        const isSelected = currentTags.includes(tag);
-        row.push({ text: isSelected ? `✅ ${tag}` : tag, callback_data: addSession(`wiz_tag_${tag}`, sessionSeq) });
-        if (row.length === 2) {
-          keyboard.push(row);
-          row = [];
-        }
-      }
-      if (row.length > 0) keyboard.push(row);
+      const grid = buildKeyboardGrid(
+        [...tagSet],
+        (tag) => ({
+          text: currentTags.includes(tag) ? `✅ ${tag}` : tag,
+          callback_data: addSession(`wiz_tag_${tag}`, sessionSeq),
+        }),
+        2,
+      );
+      keyboard.push(...grid);
     }
     keyboard.push([
       { text: "✅ Concluir", callback_data: addSession("wiz_done_tags", sessionSeq) },

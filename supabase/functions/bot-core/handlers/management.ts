@@ -2,7 +2,7 @@ import { InlineKeyboard } from "../types/index.ts";
 import { sendTelegramMessage, sendTelegramMessageWithKeyboard, editTelegramMessageWithKeyboard } from "../services/telegram.ts";
 import { truncateCallbackData } from "../utils/rate-limiter.ts";
 import { addSession, getSessionSeq } from "../utils/session.ts";
-import { getOrCreateUser, normalizeString, suggestSimilarCategories, suggestSimilarGroups, listTransactionsPaginated } from "../services/database.ts";
+import { getOrCreateUser, normalizeString, suggestSimilarCategories, suggestSimilarGroups, listTransactionsPaginated, TRANSACTION_DETAIL_FIELDS } from "../services/database.ts";
 import { formatCurrencyBR, formatDateBR } from "../utils/formatting.ts";
 
 export async function handleCreateCategory(supabase: any, userId: number, chatId: number, name: string): Promise<void> {
@@ -235,16 +235,7 @@ export async function handleShowLastTransaction(supabase: any, userId: number, c
 
   const { data: transaction } = await supabase
     .from("transactions")
-    .select(`
-      id,
-      type,
-      amount,
-      description,
-      tags,
-      transaction_date,
-      categories (name),
-      groups (name)
-    `)
+    .select(TRANSACTION_DETAIL_FIELDS)
     .eq("user_id", user.id)
     .order("created_at", { ascending: false })
     .limit(1)
