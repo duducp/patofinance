@@ -1,4 +1,4 @@
-.PHONY: help install install-login install-link dev dev-stop dev-logs dev-deploy dev-db-push dev-db-reset dev-test-start dev-test-gasto check lint test test-boot prod-deploy prod-db-push prod-webhook-set prod-webhook-info prod-webhook-delete prod-logs secrets status open
+.PHONY: help install install-login install-link dev dev-stop dev-logs dev-deploy dev-db-push dev-db-reset dev-test-start dev-test-gasto check lint test test-boot prod-deploy prod-db-push prod-webhook-set prod-webhook-info prod-webhook-delete prod-logs secrets status open landing-open
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-25s\033[0m %s\n", $$1, $$2}'
@@ -99,6 +99,16 @@ status: ## Show Supabase project status
 
 open: ## Open Supabase Dashboard
 	open "https://supabase.com/dashboard/project/zjcfjqtlijktrikgvwrv"
+
+# ============================================
+# LANDING PAGE
+# ============================================
+
+landing-open: ## [LANDING] Open landing page locally
+	@echo "🌐 Opening landing page at http://127.0.0.1:8080"
+	@open "http://127.0.0.1:8080"
+	@echo "   (Press Ctrl+C to stop)"
+	@python3 -m http.server 8080 -d landing/
 
 # ============================================
 # QUALITY
