@@ -102,9 +102,9 @@ code {
 }
 
 .hero-logo {
-  font-size: 80px;
-  line-height: 1;
-  margin-bottom: 16px;
+  width: 120px;
+  height: auto;
+  margin: 0 auto 16px;
 }
 
 .hero-title {
