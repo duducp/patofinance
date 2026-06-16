@@ -700,6 +700,7 @@ In the wizard:
 | `handleStatement(supabase, userId, chatId, page?, filter?, filters?)` | `/extrato` | Pagination + optional `ExtratoFilters` object (category_id, group_id, tags, type, period) |
 | `resolvePeriod(period)` | (utility) | `PeriodPreset` or `{start,end}` → `{start, end, label}` |
 | `handleSummary(supabase, userId, chatId, args?)` | `/resumo` | Delegates to `getSummaryData` + `formatSummaryMessage` |
+| `handleDetails(supabase, userId, chatId, args)` | `/detalhes` | Shows all transaction details with edit keyboard |
 | `handleEdit(supabase, userId, chatId, args)` | `/editar` | |
 | `handleDelete(supabase, userId, chatId, args)` | `/excluir` | |
 | `handleEntity(type, supabase, userId, chatId, args)` | (shared) | `type: "category"|"group"` -- list, create, suggest |
@@ -835,7 +836,7 @@ supabase/
     │   ├── database.ts       # 11 functions: CRUD + suggestSimilar* + getAllUserTags
     │   └── deepseek.ts       # callDeepSeek, parseNaturalLanguage, chat history
     └── handlers/
-        ├── commands.ts       # 13 slash command handlers + shared handleEntity
+        ├── commands.ts       # 14 slash command handlers + shared handleEntity
         ├── management.ts     # 8 entity management functions with pagination
         ├── queries.ts        # getSummaryData, formatSummaryMessage, query handlers
         ├── nl-processing.ts  # NL routing + wizard initiation

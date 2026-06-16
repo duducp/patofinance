@@ -252,6 +252,7 @@ receita - Registrar receita (ex: /receita 3000 salario)
 saldo - Ver saldo do mes
 extrato - Ver extrato do mes com filtros
 resumo - Resumo por categoria
+detalhes - Detalhes completos da transacao
 editar - Editar transacao pelo ID
 excluir - Excluir transacao pelo ID
 categoria - Gerenciar categorias
@@ -281,6 +282,7 @@ ajuda - Ajuda completa
 | `/saldo` | Saldo do m\u00EAs | `/saldo` |
 | `/extrato` | Extrato interativo — painel de filtros + paginação | `/extrato` |
 | `/resumo` | Resumo por categoria | `/resumo` |
+| `/detalhes` | Detalhes completos da transação | `/detalhes 42` |
 | `/editar` | Editar transação pelo ID | `/editar 42` |
 | `/excluir` | Excluir transação pelo ID | `/excluir 42` |
 

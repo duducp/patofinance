@@ -38,6 +38,10 @@ Lists all slash commands + NL example phrases.
 - Optional group filter
 - Shows "Filter by group" keyboard
 
+### `handleDetails(supabase, userId, chatId, args)`
+- Shows all transaction details: ID, type, amount, category, group, tags, date, description
+- Same edit/delete keyboard as `handleEdit`
+
 ### `handleEdit(supabase, userId, chatId, args)`
 - Shows transaction detail + 6 edit action buttons:
   - Edit amount, category, group, tags, description, date
