@@ -1,5 +1,6 @@
 import { DeepSeekResponse } from "../types/index.ts";
 import { DEEPSEEK_API_KEY, nlCache, NL_CACHE_TTL, commonPhrases } from "../config.ts";
+import { getTodayISOBR } from "../utils/formatting.ts";
 
 interface UserContext {
   categories: { name: string; transaction_type: string | null }[];
@@ -8,6 +9,12 @@ interface UserContext {
 }
 
 function buildSystemPrompt(context?: UserContext): string {
+  const today = getTodayISOBR();
+  const todayDate = new Date(today + "T12:00:00");
+  const yesterdayDate = new Date(todayDate.getTime() - 86400000);
+  const tomorrowDate = new Date(todayDate.getTime() + 86400000);
+  const yesterday = yesterdayDate.toISOString().split("T")[0];
+  const tomorrow = tomorrowDate.toISOString().split("T")[0];
   let prompt = `Você é um assistente que analisa mensagens em português para extrair informações financeiras.
 Responda APENAS com JSON válido, sem texto adicional.
 
@@ -41,7 +48,14 @@ REGRAS IMPORTANTES:
 - Se não houver palavra-chave clara indicando despesa ou receita, retorne intent como null
 - category: palavras de moeda (reais, real, R$, dinheiro, conto, pila, grana), data (ontem, hoje, amanhã), preposições (de, em, no, na, do, da) e verbos de ação não são categorias. Ignore-as.
 - amount numérico, date YYYY-MM-DD, period this_month/last_month, name para criar entidade, tag sem #
-- limit padrão 10`;
+- limit padrão 10
+
+DATA ATUAL: ${today} (fuso horário: America/Sao_Paulo)
+"hoje" = ${today}
+"ontem" = ${yesterday}
+"amanhã" = ${tomorrow}
+Sempre converta "hoje", "ontem" e "amanhã" para a data real no campo "date" em YYYY-MM-DD.
+Se o usuário mencionar um dia da semana (ex: "segunda", "terça"), calcule a data relativa a partir de hoje.`;
 
   if (context?.categories?.length) {
     prompt += `\n\nSUAS CATEGORIAS (use o nome EXATO):\n`;
