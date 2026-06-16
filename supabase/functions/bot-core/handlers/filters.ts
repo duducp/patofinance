@@ -471,6 +471,13 @@ export async function handleFilterCallback(
     return true;
   }
 
+  // Clear filters and reload extrato (called from extrato keyboard)
+  if (selectedValue === "stmt_clear") {
+    await clearWizardState(supabase, user.id);
+    await handleStatement(supabase, telegramId, chatId);
+    return true;
+  }
+
   // Apply filters
   if (selectedValue === "stmt_f_apply") {
     const state = await (await import("./wizard.ts")).getWizardState(supabase, user.id);

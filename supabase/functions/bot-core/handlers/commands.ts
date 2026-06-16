@@ -522,31 +522,26 @@ export async function handleStatement(
 
   const currentSuffix = statementFilterSuffix(typeFilter);
 
-  // Build keyboard
   const sessionSeq = await getSessionSeq(supabase, user.id);
-
-  // Build keyboard
   const keyboard: InlineKeyboard = [];
 
-  // Filter row
-  const filterRow: InlineKeyboard[0] = [];
-  const filterOptions: { label: string; filter: StatementFilter }[] = [
-    { label: "📈 Receitas", filter: "income" },
-    { label: "📉 Despesas", filter: "expense" },
-    { label: "📋 Todas", filter: "all" },
-    { label: "⏳ Agendadas", filter: "future" },
-  ];
-  for (const opt of filterOptions) {
-    const isActive = typeFilter === opt.filter;
-    filterRow.push({
-      text: isActive ? `✅ ${opt.label}` : opt.label,
-      callback_data: addSession(`statement_${statementFilterSuffix(opt.filter)}_0`, sessionSeq),
-    });
-  }
-  keyboard.push(filterRow);
+  // 🔍 Nova busca (filtro completo)
+  keyboard.push([{ text: "🔍 Nova busca", callback_data: addSession("stmt_filter", sessionSeq) }]);
 
-  // 🔍 Novo filtro button (only when not using quick-filter from results)
-  keyboard.push([{ text: "🔍 Novo filtro", callback_data: addSession("stmt_filter", sessionSeq) }]);
+  // ❌ Limpar filtros — only when there are active filters
+  const hasActiveFilters = typeFilter !== "all" || (
+    filters && (
+      filters.category_id != null ||
+      filters.group_id != null ||
+      (filters.tags && filters.tags.length > 0) ||
+      filters.type !== "all" ||
+      filters.status !== "all" ||
+      (typeof filters.period === "object" || filters.period !== "this_month")
+    )
+  );
+  if (hasActiveFilters) {
+    keyboard.push([{ text: "❌ Limpar filtros", callback_data: addSession("stmt_clear", sessionSeq) }]);
+  }
 
   // Pagination row
   const navButtons: InlineKeyboard[0] = [];
