@@ -8,11 +8,10 @@ import {
 import type {
   DeepSeekResponse,
   TelegramUpdate,
-  InlineKeyboard,
   PeriodPreset,
   ExtratoFilters,
 } from "./types/index.ts";
-import { isRateLimited, truncateCallbackData } from "./utils/rate-limiter.ts";
+import { isRateLimited } from "./utils/rate-limiter.ts";
 import { incrementSessionSeq, addSession, getSessionSeq } from "./utils/session.ts";
 import { formatCurrencyBR, formatDateBR, parseDateBR } from "./utils/formatting.ts";
 import { parseNaturalLanguage } from "./services/deepseek.ts";
@@ -20,7 +19,7 @@ import { sendTelegramMessage, sendTelegramMessageWithKeyboard } from "./services
 import { getCategories, sendSimilarityWarning, normalizeString, getAllUserTags } from "./services/database.ts";
 import { handleCreateCategory } from "./handlers/management.ts";
 import { handleCallbackQuery, handleFilterPanel } from "./handlers/callbacks.ts";
-import { handleNaturalLanguageWithFollowUp, executeNaturalLanguageAction } from "./handlers/nl-processing.ts";
+import { handleNaturalLanguageWithFollowUp, executeNaturalLanguageAction, buildNLCategoryKeyboard } from "./handlers/nl-processing.ts";
 import {
   getWizardState,
   setWizardState,
@@ -236,11 +235,7 @@ serve(async (req: Request): Promise<Response> => {
         } else {
           const categories = await getCategories(supabase, existingUser.id, intent);
           const seq = await getSessionSeq(supabase, existingUser.id);
-          const keyboard: InlineKeyboard = categories.map((c) => [
-            { text: c.name, callback_data: truncateCallbackData(`nl_cat_${c.name}`, seq) }
-          ]);
-          keyboard.push([{ text: "⏭️ Sem categoria", callback_data: truncateCallbackData("nl_cat_none", seq) }]);
-          keyboard.push([{ text: "✏️ Nova categoria", callback_data: addSession("nl_cat_new", seq) }]);
+          const keyboard = buildNLCategoryKeyboard(categories, seq);
 
           await setWizardState(supabase, existingUser.id, `nl_${intent}_category`, {
             intent,
@@ -258,11 +253,7 @@ serve(async (req: Request): Promise<Response> => {
         await handleCreateCategory(supabase, message.from.id, message.chat.id, text);
         const categories = await getCategories(supabase, internalUserId, intent);
         const seq = await getSessionSeq(supabase, internalUserId);
-        const keyboard: InlineKeyboard = categories.map((c) => [
-          { text: c.name, callback_data: truncateCallbackData(`nl_cat_${c.name}`, seq) }
-        ]);
-        keyboard.push([{ text: "⏭️ Sem categoria", callback_data: truncateCallbackData("nl_cat_none", seq) }]);
-        keyboard.push([{ text: "✏️ Nova categoria", callback_data: addSession("nl_cat_new", seq) }]);
+        const keyboard = buildNLCategoryKeyboard(categories, seq);
         await supabase
           .from("wizard_states")
           .update({ step: `nl_${intent}_category`, data: wizardState.data })

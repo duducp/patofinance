@@ -27,6 +27,22 @@ import {
   handleQuerySummary,
 } from "./queries.ts";
 
+export function buildNLCategoryKeyboard(categories: { name: string }[], seq: number): InlineKeyboard {
+  const keyboard: InlineKeyboard = [];
+  let row: { text: string; callback_data: string }[] = [];
+  for (const c of categories) {
+    row.push({ text: c.name, callback_data: truncateCallbackData(`nl_cat_${c.name}`, seq) });
+    if (row.length === 3) {
+      keyboard.push(row);
+      row = [];
+    }
+  }
+  if (row.length > 0) keyboard.push(row);
+  keyboard.push([{ text: "⏭️ Sem categoria", callback_data: truncateCallbackData("nl_cat_none", seq) }]);
+  keyboard.push([{ text: "✏️ Nova categoria", callback_data: addSession("nl_create_cat", seq) }]);
+  return keyboard;
+}
+
 export async function handleNaturalLanguageWithFollowUp(
   supabase: any,
   userId: number,
@@ -57,18 +73,7 @@ export async function handleNaturalLanguageWithFollowUp(
 
     if (!natural.category && !natural.description) {
       const categories = await getCategories(supabase, user.id, natural.intent);
-      const keyboard: InlineKeyboard = [];
-      let row: { text: string; callback_data: string }[] = [];
-      for (const c of categories) {
-        row.push({ text: c.name, callback_data: truncateCallbackData(`nl_cat_${c.name}`, sessionSeq) });
-        if (row.length === 3) {
-          keyboard.push(row);
-          row = [];
-        }
-      }
-      if (row.length > 0) keyboard.push(row);
-      keyboard.push([{ text: "⏭️ Sem categoria", callback_data: truncateCallbackData("nl_cat_none", sessionSeq) }]);
-      keyboard.push([{ text: "✏️ Nova categoria", callback_data: addSession("nl_cat_new", sessionSeq) }]);
+      const keyboard = buildNLCategoryKeyboard(categories, sessionSeq);
 
       await setWizardState(supabase, user.id, `nl_${natural.intent}_category`, {
         intent: natural.intent,
@@ -208,19 +213,8 @@ export async function executeNaturalLanguageAction(
 
     if (category === null && natural.category && natural.category.includes(" ")) {
       const categories = await getCategories(supabase, user.id, natural.intent);
-      const keyboard: InlineKeyboard = [];
-      let row: { text: string; callback_data: string }[] = [];
       const seq = sessionSeq || await getSessionSeq(supabase, user.id);
-      for (const c of categories) {
-        row.push({ text: c.name, callback_data: truncateCallbackData(`nl_cat_${c.name}`, seq) });
-        if (row.length === 3) {
-          keyboard.push(row);
-          row = [];
-        }
-      }
-      if (row.length > 0) keyboard.push(row);
-      keyboard.push([{ text: "⏭️ Sem categoria", callback_data: truncateCallbackData("nl_cat_none", seq) }]);
-      keyboard.push([{ text: "✏️ Nova categoria", callback_data: addSession("nl_cat_new", seq) }]);
+      const keyboard = buildNLCategoryKeyboard(categories, seq);
 
       await setWizardState(supabase, user.id, `nl_${natural.intent}_category`, {
         intent: natural.intent,

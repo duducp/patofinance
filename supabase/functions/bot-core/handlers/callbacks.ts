@@ -290,7 +290,7 @@ async function handleGroupFilterCallback(
       }
       if (row.length > 0) keyboard.push(row);
       keyboard.push([{ text: "📋 Todas as contas", callback_data: addSession(`${prefix}_grp_all`, sessionSeq) }]);
-      const title = prefix === "balance" ? "balance" : "summary";
+      const title = prefix === "balance" ? "saldo" : "resumo";
       await sendTelegramMessageWithKeyboard(chatId, `📁 *Filtrar ${title} por grupo:*`, keyboard);
     }
     return;
@@ -662,7 +662,7 @@ export async function handleCallbackQuery(
     }
 
     // Handle NL new category creation (must be before generic nl_cat_)
-    if (selectedValue === "nl_cat_new") {
+    if (selectedValue === "nl_create_cat") {
       const user = await getOrCreateUser(supabase, telegramId);
       if (!user) return;
       const state = await getWizardState(supabase, user.id);
@@ -889,7 +889,7 @@ export async function handleCallbackQuery(
         let row: { text: string; callback_data: string }[] = [];
         for (const tag of tagSet) {
           const isSelected = currentTags.includes(tag);
-          row.push({ text: isSelected ? `✅ ${tag}` : tag, callback_data: `edit_tag_tog_${transactionId}_${tag}` });
+          row.push({ text: isSelected ? `✅ ${tag}` : tag, callback_data: addSession(`edit_tag_tog_${transactionId}_${tag}`, sessionSeq) });
           if (row.length === 2) {
             keyboard.push(row);
             row = [];

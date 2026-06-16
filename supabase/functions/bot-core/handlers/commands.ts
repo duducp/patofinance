@@ -585,7 +585,8 @@ export async function handleSummary(supabase: any, userId: number, chatId: numbe
   const data = await getSummaryData(supabase, user.id, resolvedPeriod, groupId);
   if (!data) {
     if (groupName) {
-      const keyboard: InlineKeyboard = [[{ text: "📋 Todas as contas", callback_data: "summary_grp_all" }]];
+      const sessionSeq = await getSessionSeq(supabase, user.id);
+      const keyboard: InlineKeyboard = [[{ text: "📋 Todas as contas", callback_data: addSession("summary_grp_all", sessionSeq) }]];
       await sendTelegramMessageWithKeyboard(chatId, `📊 Nenhuma transação no grupo *${groupName}* este mês.`, keyboard);
     } else {
       await sendTelegramMessage(chatId, "📊 Nenhuma transação encontrada este mês. Que tal começar registrando um gasto ou receita?");
