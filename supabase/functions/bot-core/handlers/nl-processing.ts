@@ -191,33 +191,34 @@ export async function executeNaturalLanguageAction(
           await sendTelegramMessage(chatId, `💡 Usei a categoria *${resolved.name}* para "${category}"`);
         }
         category = resolved.name;
-      } else {
-        const categories = await getCategories(supabase, user.id, natural.intent);
-        const keyboard: InlineKeyboard = [];
-        let row: { text: string; callback_data: string }[] = [];
-        const seq = sessionSeq || await getSessionSeq(supabase, user.id);
-        for (const c of categories) {
-          row.push({ text: c.name, callback_data: truncateCallbackData(`nl_cat_${c.name}`, seq) });
-          if (row.length === 3) {
-            keyboard.push(row);
-            row = [];
-          }
-        }
-        if (row.length > 0) keyboard.push(row);
-        keyboard.push([{ text: "⏭️ Sem categoria", callback_data: truncateCallbackData("nl_cat_none", seq) }]);
-
-        await setWizardState(supabase, user.id, `nl_${natural.intent}_category`, {
-          intent: natural.intent,
-          amount: natural.amount,
-          date: natural.date,
-        });
-        await sendTelegramMessageWithKeyboard(
-          chatId,
-          `Não encontrei a categoria "${natural.category}". Escolha uma existente:`,
-          keyboard
-        );
-        return;
+      } else if (category.includes(" ")) {
+        // Multi-word means DeepSeek hallucinated — show category picker
+        category = null;
       }
+    }
+
+    if (category === null && natural.category && natural.category.includes(" ")) {
+      const categories = await getCategories(supabase, user.id, natural.intent);
+      const keyboard: InlineKeyboard = [];
+      let row: { text: string; callback_data: string }[] = [];
+      const seq = sessionSeq || await getSessionSeq(supabase, user.id);
+      for (const c of categories) {
+        row.push({ text: c.name, callback_data: truncateCallbackData(`nl_cat_${c.name}`, seq) });
+        if (row.length === 3) {
+          keyboard.push(row);
+          row = [];
+        }
+      }
+      if (row.length > 0) keyboard.push(row);
+      keyboard.push([{ text: "⏭️ Sem categoria", callback_data: truncateCallbackData("nl_cat_none", seq) }]);
+
+      await setWizardState(supabase, user.id, `nl_${natural.intent}_category`, {
+        intent: natural.intent,
+        amount: natural.amount,
+        date: natural.date,
+      });
+      await sendTelegramMessageWithKeyboard(chatId, "Em que categoria?", keyboard);
+      return;
     }
 
     await handleNLWithGroupCheck(supabase, userId, user.id, chatId, natural.intent, natural, category);

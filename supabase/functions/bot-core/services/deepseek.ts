@@ -46,10 +46,12 @@ Intents:
 REGRAS IMPORTANTES:
 - Identifique a intenção mesmo com erros de digitação (ex: "ganhei" quer dizer "ganhei")
 - Palavras que indicam RECEBIMENTO de dinheiro → intent "income": recebi, recebo, ganhei, ganho, salário, renda, bônus, freela, deposito, caiu, creditou, lucro, vendi, faturei, embolsei
-- Palavras que indicam GASTO de dinheiro → intent "expense": gastei, paguei, comprei, custou, gasolina, ifood, aluguel, conta, fatura, boleto, assinatura, desembolsei, saiu, pedi, comi, abasteci
+- Palavras que indicam GASTO de dinheiro → intent "expense": gastei, paguei, comprei, custou, gasolina, ifood, aluguel, conta, fatura, boleto, assinatura, desembolsei, saiu, pedi, comi, abasteci, transferi, transferir, transferiu, enviei, mandei, puxei, tirei
 - Se não houver palavra-chave clara indicando despesa ou receita, retorne intent como null
-- category DEVE ser extraída APENAS da lista "SUAS CATEGORIAS" fornecida abaixo
-- palavras de moeda (reais, real, R$, dinheiro, conto, pila, grana), data (ontem, hoje, amanhã), preposições (de, em, no, na, do, da) e verbos de ação NÃO são categorias. Ignore-as.
+- category DEVE ser uma palavra (ou no máximo duas) que corresponde EXATAMENTE a uma categoria da lista abaixo
+- Analise CADA palavra da frase individualmente. Se uma palavra isolada corresponder a uma categoria, use essa
+- NUNCA use a frase inteira como valor de category. Apenas palavras individuais da frase
+- palavras de moeda (reais, real, R$, dinheiro, conto, pila, grana), data (ontem, hoje, amanhã), preposições (de, em, no, na, do, da), verbos de ação e nomes próprios NÃO são categorias. Ignore-os.
 - amount numérico, date YYYY-MM-DD, period this_month/last_month, name para criar entidade, tag sem #
 - limit padrão 10
 
@@ -71,17 +73,18 @@ Se o usuário mencionar um dia da semana (ex: "segunda", "terça"), calcule a da
     prompt += `\nREGRAS DE CATEGORIA POR TIPO:\n`;
     prompt += `- Se intent = "income" → category DEVE ser uma das listadas como [receita] ou [despesa e receita]\n`;
     prompt += `- Se intent = "expense" → category DEVE ser uma das listadas como [despesa] ou [despesa e receita]\n`;
-    prompt += `- Mapeie a palavra do usuário para a categoria mais próxima na lista\n`;
-    prompt += `- Se a palavra do usuário não corresponder a nenhuma da lista → category = null\n`;
-    prompt += `- NUNCA use a palavra do usuário como nome de categoria se ela não estiver na lista\n`;
+    prompt += `- Analise CADA palavra individualmente. Se UMA palavra da frase corresponder a uma categoria, use essa\n`;
+    prompt += `- Se NENHUMA palavra individual corresponder a nenhuma categoria → category = null\n`;
+    prompt += `- NUNCA use a frase inteira nem múltiplas palavras como category\n`;
     prompt += `- NUNCA invente categorias. Use APENAS os nomes EXATOS da lista acima.\n`;
-    prompt += `\nEXEMPLOS DE MAPEAMENTO SEMÂNTICO:\n`;
-    prompt += `- "remedio" → qual categoria da lista é relacionada a saúde? Se existir, use ela. Se não → null\n`;
-    prompt += `- "uber" → qual categoria da lista é relacionada a transporte? Se existir, use ela. Se não → null\n`;
-    prompt += `- "ifood" → qual categoria da lista é relacionada a alimentação? Se existir, use ela. Se não → null\n`;
-    prompt += `- "aluguel" → qual categoria da lista é relacionada a moradia? Se existir, use ela. Se não → null\n`;
-    prompt += `- "gasolina" → qual categoria da lista é relacionada a transporte ou combustível? Se existir, use ela. Se não → null\n`;
-    prompt += `- Só use o nome EXATO da categoria que está na lista. Se a palavra não se encaixar semanticamente em nenhuma → null\n`;
+    prompt += `\nEXEMPLOS CORRETOS (uma palavra → categoria):\n`;
+    prompt += `- "comprei remedio na farmacia" → palavra "remedio" → categoria "Saúde" (se existir)\n`;
+    prompt += `- "pedi ifood" → palavra "ifood" → categoria "Alimentação" (se existir)\n`;
+    prompt += `- "paguei gasolina" → palavra "gasolina" → categoria "Transporte" (se existir)\n`;
+    prompt += `\nEXEMPLOS QUE DEVEM RETORNAR null (nenhuma palavra corresponde):\n`;
+    prompt += `- "Transferi 10 pra Angela" → "transferi" é verbo, "Angela" é nome próprio, nenhuma palavra é categoria → category = null\n`;
+    prompt += `- "comprei um presente" → "presente" não corresponde a nenhuma categoria → category = null\n`;
+    prompt += `- "paguei 10" → nenhuma categoria mencionada → category = null\n`;
   }
 
   if (context?.groups?.length) {
