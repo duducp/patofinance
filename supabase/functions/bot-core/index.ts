@@ -34,6 +34,7 @@ import {
   handleStatement,
   handleSummary,
   handleEdit,
+  handleDetails,
   handleDelete,
   handleGroup,
   handleCategory,
@@ -516,6 +517,10 @@ serve(async (req: Request): Promise<Response> => {
 
         case "/resumo":
           await handleSummary(supabase, message.from.id, message.chat.id, args);
+          break;
+
+        case "/detalhes":
+          await handleDetails(supabase, message.from.id, message.chat.id, args);
           break;
 
         case "/editar":

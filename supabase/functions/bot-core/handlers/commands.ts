@@ -64,8 +64,8 @@ export async function handleHelp(chatId: number): Promise<void> {
     `📁 *Organização:*\n` +
     `/grupo - Gerenciar grupos\n` +
     `/categoria - Gerenciar categorias\n` +
-    `/tag - Gerenciar tags\n\n` +
-    `⚙️ *Utilidades:*\n` +
+    `/tag - Gerenciar tags\n\n` + `⚙️ *Utilidades:*\n` +
+    `/detalhes - Ver detalhes da transação (ex: \`/detalhes 42\`)\n` +
     `/editar - Editar transação (ex: \`/editar 42\`)\n` +
     `/excluir - Excluir transação (ex: \`/excluir 42\`)\n` +
     `/limpar - Remover categorias/grupos sem transações\n` +
@@ -639,6 +639,96 @@ export async function handleSummary(supabase: any, userId: number, chatId: numbe
   keyboard.push([{ text: "📁 Filtrar por grupo", callback_data: addSession("summary_shwgrp", sessionSeq) }]);
 
   await sendTelegramMessageWithKeyboard(chatId, message, keyboard);
+}
+
+export async function handleDetails(
+  supabase: any,
+  userId: number,
+  chatId: number,
+  args: string[] = []
+): Promise<void> {
+  const user = await getOrCreateUser(supabase, userId);
+  if (!user) {
+    await sendTelegramMessage(chatId, "Ops! Você ainda não está cadastrado. Use /start para começar.");
+    return;
+  }
+
+  if (args.length === 0) {
+    await sendTelegramMessage(
+      chatId,
+      `📋 *Como ver detalhes de uma transação:*\n\n` +
+      `1️⃣ Use \`/extrato\` para ver o extrato do mês\n` +
+      `2️⃣ Identifique o \`#ID\` da transação\n` +
+      `3️⃣ Digite \`/detalhes ID\` (ex: \`/detalhes 42\`)`
+    );
+    return;
+  }
+
+  const transactionId = args[0];
+
+  const { data: transaction } = await supabase
+    .from("transactions")
+    .select(`
+      id,
+      type,
+      amount,
+      description,
+      tags,
+      transaction_date,
+      categories (name),
+      groups (name)
+    `)
+    .eq("id", transactionId)
+    .eq("user_id", user.id)
+    .single();
+
+  if (!transaction) {
+    await sendTelegramMessage(
+      chatId,
+      `❌ Transação \`#${transactionId}\` não encontrada.\n\n` +
+      `Use \`/extrato\` para ver as transações disponíveis.`
+    );
+    return;
+  }
+
+  const emoji = transaction.type === "income" ? "📈" : "📉";
+  const typeName = transaction.type === "income" ? "Receita" : "Despesa";
+  const catName = transaction.categories?.name || "—";
+  const grpName = transaction.groups?.name || "Pessoal";
+  const tags = transaction.tags?.length ? transaction.tags.join(" ") : "—";
+  const desc = transaction.description || "—";
+  const date = formatDateBR(transaction.transaction_date);
+
+  const sessionSeq = await getSessionSeq(supabase, user.id);
+  const keyboard: InlineKeyboard = [
+    [
+      { text: "✏️ Editar valor", callback_data: addSession(`edit_amount_${transaction.id}`, sessionSeq) },
+      { text: "🏷️ Editar categoria", callback_data: addSession(`edit_category_${transaction.id}`, sessionSeq) },
+    ],
+    [
+      { text: "📁 Editar grupo", callback_data: addSession(`edit_group_${transaction.id}`, sessionSeq) },
+      { text: "🔖 Editar tags", callback_data: addSession(`edit_tags_${transaction.id}`, sessionSeq) },
+    ],
+    [
+      { text: "📝 Editar descrição", callback_data: addSession(`edit_desc_${transaction.id}`, sessionSeq) },
+      { text: "📅 Editar data", callback_data: addSession(`edit_date_${transaction.id}`, sessionSeq) },
+    ],
+    [
+      { text: "❌ Excluir", callback_data: addSession(`confirm_delete_${transaction.id}`, sessionSeq) },
+    ],
+  ];
+
+  await sendTelegramMessageWithKeyboard(
+    chatId,
+    `${emoji} *${typeName} \`#${transaction.id}\`*\n\n` +
+    `💰 *Valor:* ${formatCurrencyBR(Number(transaction.amount))}\n` +
+    `🏷️ *Categoria:* ${catName}\n` +
+    `📁 *Grupo:* ${grpName}\n` +
+    `🔖 *Tags:* ${tags}\n` +
+    `📅 *Data:* ${date}\n` +
+    `📝 *Descrição:* ${desc}`,
+    keyboard
+  );
 }
 
 export async function handleEdit(supabase: any, userId: number, chatId: number, args: string[] = []): Promise<void> {
