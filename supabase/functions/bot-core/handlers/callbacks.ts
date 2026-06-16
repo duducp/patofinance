@@ -49,6 +49,218 @@ async function handleGroupFilterCallback(
   }
 }
 
+// ========== Shared entity (category/group) callback handlers ==========
+
+async function handleEntityDeletePrompt(
+  type: "category" | "group",
+  supabase: any,
+  userId: number,
+  chatId: number,
+  entityName: string,
+  sessionSeq: number
+): Promise<void> {
+  const isCategory = type === "category";
+  const table = isCategory ? "categories" : "groups";
+  const icon = isCategory ? "🏷️" : "📁";
+  const flagColumn = isCategory ? "is_predefined" : "is_default";
+  const cbYesPrefix = isCategory ? "cat_del_yes_" : "grp_del_yes_";
+  const cbBack = isCategory ? "cat_back" : "grp_back";
+  const label = isCategory ? "categoria" : "grupo";
+  const fallbackName = isCategory ? "Sem categoria" : "Pessoal";
+
+  const { data: entity } = await supabase
+    .from(table)
+    .select("id")
+    .eq("user_id", userId)
+    .ilike("name", entityName)
+    .single();
+  if (!entity) return;
+
+  const fkColumn = isCategory ? "category_id" : "group_id";
+  const { count: txCount } = await supabase
+    .from("transactions")
+    .select("*", { count: "exact", head: true })
+    .eq("user_id", userId)
+    .eq(fkColumn, entity.id);
+
+  const keyboard: InlineKeyboard = [
+    [{ text: "✅ Sim, excluir", callback_data: addSession(`${cbYesPrefix}${entityName}`, sessionSeq) }],
+    [{ text: "❌ Não, manter", callback_data: addSession(cbBack, sessionSeq) }],
+  ];
+  await sendTelegramMessageWithKeyboard(
+    chatId,
+    `🗑️ Tem certeza de que deseja excluir ${isCategory ? "a categoria" : "o grupo"} *${entityName}*?\n\n${txCount || 0} ${(txCount || 0) !== 1 ? "transações" : "transação"} ${(txCount || 0) !== 1 ? "serão reatribuídas" : "será reatribuída"} para "${fallbackName}".`,
+    keyboard
+  );
+}
+
+async function handleEntityDeleteExecute(
+  type: "category" | "group",
+  supabase: any,
+  userId: number,
+  chatId: number,
+  entityName: string
+): Promise<void> {
+  const isCategory = type === "category";
+  const table = isCategory ? "categories" : "groups";
+  const flagColumn = isCategory ? "is_predefined" : "is_default";
+  const icon = isCategory ? "🏷️" : "📁";
+  const label = isCategory ? "categoria" : "grupo";
+  const fallbackName = isCategory ? "Sem categoria" : "Pessoal";
+
+  const { data: entity } = await supabase
+    .from(table)
+    .select("id, " + flagColumn)
+    .eq("user_id", userId)
+    .ilike("name", entityName)
+    .single();
+
+  if (!entity || entity[flagColumn]) {
+    const labelCapitalized = label.charAt(0).toUpperCase() + label.slice(1);
+    await sendTelegramMessage(chatId, `⭐ ${labelCapitalized}s padrão não podem ser excluíd${isCategory ? "as" : "os"}.`);
+    return;
+  }
+
+  const fkColumn = isCategory ? "category_id" : "group_id";
+  const { count: txCount } = await supabase
+    .from("transactions")
+    .select("*", { count: "exact", head: true })
+    .eq("user_id", userId)
+    .eq(fkColumn, entity.id);
+
+  // Reassign affected transactions
+  let fallbackId: string | null = null;
+  if (isCategory) {
+    fallbackId = await getOrCreateUncategorizedCategory(supabase, userId);
+  } else {
+    const { data: defaultGrp } = await supabase.from("groups").select("id").eq("user_id", userId).eq("is_default", true).single();
+    fallbackId = defaultGrp?.id || null;
+  }
+  const updateField = isCategory ? { category_id: fallbackId } : { group_id: fallbackId };
+  await supabase.from("transactions").update(updateField).eq(fkColumn, entity.id).eq("user_id", userId);
+  await supabase.from(table).delete().eq("id", entity.id).eq("user_id", userId);
+
+  await sendTelegramMessage(
+    chatId,
+    `✅ ${icon} ${label.charAt(0).toUpperCase() + label.slice(1)} "${entityName}" excluíd${isCategory ? "a" : "o"}! ${txCount || 0} ${(txCount || 0) !== 1 ? "transações" : "transação"} ${(txCount || 0) !== 1 ? "reatribuídas" : "reatribuída"} para "${fallbackName}".`
+  );
+}
+
+async function handleEntitySuggestion(
+  type: "category" | "group",
+  supabase: any,
+  userId: number,
+  chatId: number,
+  action: "use" | "new"
+): Promise<void> {
+  const isCategory = type === "category";
+  const table = isCategory ? "categories" : "groups";
+  const stepName = isCategory ? "suggest_cat" : "suggest_grp";
+  const flagColumn = isCategory ? "is_predefined" : "is_default";
+  const icon = isCategory ? "🏷️" : "📁";
+  const label = isCategory ? "categoria" : "grupo";
+
+  const state = await getWizardState(supabase, userId);
+  if (!state || state.step !== stepName) return;
+
+  if (action === "use") {
+    await clearWizardState(supabase, userId);
+    await sendTelegramMessage(chatId, `✅ Usando ${label} "${state.data.suggested_name}" — ${isCategory ? "ela" : "ele"} já existe.`);
+    return;
+  }
+
+  // action === "new" — create anyway
+  const entityName = state.data.original_name;
+  const { error } = await supabase.from(table).insert({
+    user_id: userId,
+    name: entityName,
+    normalized_name: normalizeString(entityName),
+    [flagColumn]: false,
+  });
+  await clearWizardState(supabase, userId);
+  if (error) {
+    await sendTelegramMessage(chatId, `❌ Ops! Algo deu errado ao criar ${isCategory ? "a" : "o"} ${label}.`);
+  } else {
+    await sendTelegramMessage(chatId, `✅ ${icon} ${label.charAt(0).toUpperCase() + label.slice(1)} "${entityName}" criad${isCategory ? "a" : "o"} com sucesso!`);
+  }
+}
+
+async function handleEntitySelect(
+  type: "category" | "group",
+  supabase: any,
+  userId: number,
+  chatId: number,
+  entityName: string,
+  sessionSeq: number
+): Promise<void> {
+  const isCategory = type === "category";
+  const table = isCategory ? "categories" : "groups";
+  const flagColumn = isCategory ? "is_predefined" : "is_default";
+  const icon = isCategory ? "🏷️" : "📁";
+  const cbRename = isCategory ? "cat_ren_" : "grp_ren_";
+  const cbDelete = isCategory ? "cat_del_" : "grp_del_";
+  const cbBack = isCategory ? "cat_back" : "grp_back";
+
+  let query = supabase.from(table).select("id, " + flagColumn);
+  if (isCategory) {
+    query = query.or(`user_id.eq.${userId},user_id.is.null`);
+  } else {
+    query = query.eq("user_id", userId);
+  }
+  const { data: entity } = await query.ilike("name", entityName).maybeSingle();
+  if (!entity) return;
+
+  const keyboard: InlineKeyboard = [];
+  if (entity[flagColumn]) {
+    keyboard.push([{ text: `⭐ ${isCategory ? "Categoria" : "Grupo"} padrão`, callback_data: "none" }]);
+  } else {
+    keyboard.push([{ text: "✏️ Renomear", callback_data: addSession(`${cbRename}${entityName}`, sessionSeq) }]);
+    keyboard.push([{ text: "❌ Excluir", callback_data: addSession(`${cbDelete}${entityName}`, sessionSeq) }]);
+  }
+  keyboard.push([{ text: "◀️ Voltar", callback_data: addSession(cbBack, sessionSeq) }]);
+  await sendTelegramMessageWithKeyboard(chatId, `${icon} *${entityName}*\n\nO que deseja fazer?`, keyboard);
+}
+
+async function handleEntityRename(
+  type: "category" | "group",
+  supabase: any,
+  userId: number,
+  chatId: number,
+  entityName: string
+): Promise<void> {
+  const isCategory = type === "category";
+  const table = isCategory ? "categories" : "groups";
+  const flagColumn = isCategory ? "is_predefined" : "is_default";
+  const label = isCategory ? "categoria" : "grupo";
+
+  const { data: entity } = await supabase
+    .from(table)
+    .select(flagColumn)
+    .eq("user_id", userId)
+    .ilike("name", entityName)
+    .single();
+
+  if (!entity || entity[flagColumn]) {
+    const labelCapitalized = label.charAt(0).toUpperCase() + label.slice(1);
+    await sendTelegramMessage(chatId, `⭐ ${labelCapitalized}s padrão não podem ser renomead${isCategory ? "as" : "os"}.`);
+    return;
+  }
+
+  const wizardStep = isCategory ? "rename_cat" : "rename_grp";
+  await sendTelegramMessage(chatId, `✏️ Digite o novo nome para *${entityName}*:`);
+  await setWizardState(supabase, userId, wizardStep, { name: entityName });
+}
+
+async function handleEntityBack(
+  type: "category" | "group",
+  supabase: any,
+  userId: number,
+  chatId: number
+): Promise<void> {
+  const handler = type === "category" ? handleCategory : handleGroup;
+  await handler(supabase, userId, chatId, []);
+}
+
 export async function handleCallbackQuery(
   supabase: any,
   callbackQuery: TelegramCallbackQuery
@@ -639,241 +851,71 @@ export async function handleCallbackQuery(
       return;
     }
 
-    // Handle category select - show rename/delete options
+    // Handle category/group: select
     if (selectedValue.startsWith("cat_sel_")) {
-      const catName = selectedValue.replace("cat_sel_", "");
-      const user = await getOrCreateUser(supabase, telegramId);
-      if (!user) return;
-      const { data: cat } = await supabase.from("categories").select("id, is_predefined").or(`user_id.eq.${user.id},user_id.is.null`).ilike("name", catName).maybeSingle();
-      if (!cat) return;
-      const keyboard: InlineKeyboard = [];
-      if (cat.is_predefined) {
-        keyboard.push([{ text: "⭐ Categoria padrão", callback_data: "none" }]);
-      } else {
-        keyboard.push([{ text: "✏️ Renomear", callback_data: addSession(`cat_ren_${catName}`, sessionSeq) }]);
-        keyboard.push([{ text: "❌ Excluir", callback_data: addSession(`cat_del_${catName}`, sessionSeq) }]);
-      }
-      keyboard.push([{ text: "◀️ Voltar", callback_data: addSession("cat_back", sessionSeq) }]);
-      await sendTelegramMessageWithKeyboard(chatId, `🏷️ *${catName}*\n\nO que deseja fazer?`, keyboard);
+      await handleEntitySelect("category", supabase, user.id, chatId, selectedValue.replace("cat_sel_", ""), sessionSeq);
       return;
     }
-
-    // Handle category rename
-    if (selectedValue.startsWith("cat_ren_")) {
-      const catName = selectedValue.replace("cat_ren_", "");
-      const user = await getOrCreateUser(supabase, telegramId);
-      if (!user) return;
-      const { data: cat } = await supabase.from("categories").select("is_predefined").eq("user_id", user.id).ilike("name", catName).single();
-      if (!cat || cat.is_predefined) {
-        await sendTelegramMessage(chatId, "⭐ Categorias padrão não podem ser renomeadas.");
-        return;
-      }
-      await sendTelegramMessage(chatId, `✏️ Digite o novo nome para *${catName}*:`);
-      await setWizardState(supabase, user.id, "rename_cat", { name: catName });
-      return;
-    }
-
-    // Handle category delete confirmed (MUST come before cat_del_)
-    if (selectedValue.startsWith("cat_del_yes_")) {
-      const catName = selectedValue.replace("cat_del_yes_", "");
-      const user = await getOrCreateUser(supabase, telegramId);
-      if (!user) return;
-      const { data: cat } = await supabase.from("categories").select("id, is_predefined").eq("user_id", user.id).ilike("name", catName).single();
-      if (!cat || cat.is_predefined) {
-        await sendTelegramMessage(chatId, "⭐ Categorias padrão não podem ser excluídas.");
-        return;
-      }
-      // Count affected transactions before reassignment
-      const { count: txCount } = await supabase
-        .from("transactions")
-        .select("*", { count: "exact", head: true })
-        .eq("user_id", user.id)
-        .eq("category_id", cat.id);
-      // Reassign affected transactions to "Sem categoria" fallback
-      const fallbackCatId = await getOrCreateUncategorizedCategory(supabase, user.id);
-      await supabase.from("transactions").update({ category_id: fallbackCatId }).eq("category_id", cat.id).eq("user_id", user.id);
-      await supabase.from("categories").delete().eq("id", cat.id).eq("user_id", user.id);
-      await sendTelegramMessage(chatId, `✅ Categoria "${catName}" excluída! ${txCount || 0} ${(txCount || 0) !== 1 ? "transações" : "transação"} ${(txCount || 0) !== 1 ? "reatribuídas" : "reatribuída"} para "Sem categoria".`);
-      return;
-    }
-
-    // Handle category delete confirm
-    if (selectedValue.startsWith("cat_del_")) {
-      const catName = selectedValue.replace("cat_del_", "");
-      const user = await getOrCreateUser(supabase, telegramId);
-      if (!user) return;
-      const { data: cat } = await supabase.from("categories").select("id").eq("user_id", user.id).ilike("name", catName).single();
-      if (!cat) return;
-      const { count: txCount } = await supabase
-        .from("transactions")
-        .select("*", { count: "exact", head: true })
-        .eq("user_id", user.id)
-        .eq("category_id", cat.id);
-      const keyboard: InlineKeyboard = [
-        [{ text: "✅ Sim, excluir", callback_data: addSession(`cat_del_yes_${catName}`, sessionSeq) }],
-        [{ text: "❌ Não, manter", callback_data: addSession("cat_back", sessionSeq) }],
-      ];
-      await sendTelegramMessageWithKeyboard(chatId, `🗑️ Tem certeza de que deseja excluir a categoria *${catName}*?\n\n${txCount || 0} ${(txCount || 0) !== 1 ? "transações" : "transação"} ${(txCount || 0) !== 1 ? "serão reatribuídas" : "será reatribuída"} para "Sem categoria".`, keyboard);
-      return;
-    }
-
-    // Handle category back
-    if (selectedValue === "cat_back") {
-      const user = await getOrCreateUser(supabase, telegramId);
-      if (!user) return;
-      await handleCategory(supabase, telegramId, chatId, []);
-      return;
-    }
-
-    // Handle group select - show rename/delete options
     if (selectedValue.startsWith("grp_sel_")) {
-      const grpName = selectedValue.replace("grp_sel_", "");
-      const user = await getOrCreateUser(supabase, telegramId);
-      if (!user) return;
-      const { data: grp } = await supabase.from("groups").select("id, is_default").eq("user_id", user.id).ilike("name", grpName).single();
-      if (!grp) return;
-      const keyboard: InlineKeyboard = [];
-      if (grp.is_default) {
-        keyboard.push([{ text: "⭐ Grupo padrão", callback_data: "none" }]);
-      } else {
-        keyboard.push([{ text: "✏️ Renomear", callback_data: addSession(`grp_ren_${grpName}`, sessionSeq) }]);
-        keyboard.push([{ text: "❌ Excluir", callback_data: addSession(`grp_del_${grpName}`, sessionSeq) }]);
-      }
-      keyboard.push([{ text: "◀️ Voltar", callback_data: addSession("grp_back", sessionSeq) }]);
-      await sendTelegramMessageWithKeyboard(chatId, `📁 *${grpName}*\n\nO que deseja fazer?`, keyboard);
+      await handleEntitySelect("group", supabase, user.id, chatId, selectedValue.replace("grp_sel_", ""), sessionSeq);
       return;
     }
 
-    // Handle group rename
+    // Handle category/group: rename
+    if (selectedValue.startsWith("cat_ren_")) {
+      await handleEntityRename("category", supabase, user.id, chatId, selectedValue.replace("cat_ren_", ""));
+      return;
+    }
     if (selectedValue.startsWith("grp_ren_")) {
-      const grpName = selectedValue.replace("grp_ren_", "");
-      const user = await getOrCreateUser(supabase, telegramId);
-      if (!user) return;
-      const { data: grp } = await supabase.from("groups").select("is_default").eq("user_id", user.id).ilike("name", grpName).single();
-      if (!grp || grp.is_default) {
-        await sendTelegramMessage(chatId, "⭐ Grupos padrão não podem ser renomeados.");
-        return;
-      }
-      await sendTelegramMessage(chatId, `✏️ Digite o novo nome para *${grpName}*:`);
-      await setWizardState(supabase, user.id, "rename_grp", { name: grpName });
+      await handleEntityRename("group", supabase, user.id, chatId, selectedValue.replace("grp_ren_", ""));
       return;
     }
 
-    // Handle group delete confirmed (MUST come before grp_del_)
+    // Handle category/group: delete confirmed (MUST come before generic _del_)
+    if (selectedValue.startsWith("cat_del_yes_")) {
+      await handleEntityDeleteExecute("category", supabase, user.id, chatId, selectedValue.replace("cat_del_yes_", ""));
+      return;
+    }
     if (selectedValue.startsWith("grp_del_yes_")) {
-      const grpName = selectedValue.replace("grp_del_yes_", "");
-      const user = await getOrCreateUser(supabase, telegramId);
-      if (!user) return;
-      const { data: grp } = await supabase.from("groups").select("id, is_default").eq("user_id", user.id).ilike("name", grpName).single();
-      if (!grp || grp.is_default) {
-        await sendTelegramMessage(chatId, "⭐ Grupos padrão não podem ser excluídos.");
-        return;
-      }
-      // Count affected transactions before reassignment
-      const { count: txCount } = await supabase
-        .from("transactions")
-        .select("*", { count: "exact", head: true })
-        .eq("user_id", user.id)
-        .eq("group_id", grp.id);
-      // Set group_id to default on affected transactions
-      const { data: defaultGrp } = await supabase.from("groups").select("id").eq("user_id", user.id).eq("is_default", true).single();
-      await supabase.from("transactions").update({ group_id: defaultGrp?.id || null }).eq("group_id", grp.id).eq("user_id", user.id);
-      await supabase.from("groups").delete().eq("id", grp.id).eq("user_id", user.id);
-      await sendTelegramMessage(chatId, `✅ Grupo "${grpName}" excluído! ${txCount || 0} ${(txCount || 0) !== 1 ? "transações" : "transação"} ${(txCount || 0) !== 1 ? "reatribuídas" : "reatribuída"} para "Pessoal".`);
+      await handleEntityDeleteExecute("group", supabase, user.id, chatId, selectedValue.replace("grp_del_yes_", ""));
       return;
     }
 
-    // Handle group delete confirm
+    // Handle category/group: delete confirm prompt (generic, keep last)
+    if (selectedValue.startsWith("cat_del_")) {
+      await handleEntityDeletePrompt("category", supabase, user.id, chatId, selectedValue.replace("cat_del_", ""), sessionSeq);
+      return;
+    }
     if (selectedValue.startsWith("grp_del_")) {
-      const grpName = selectedValue.replace("grp_del_", "");
-      const user = await getOrCreateUser(supabase, telegramId);
-      if (!user) return;
-      const { data: grp } = await supabase.from("groups").select("id").eq("user_id", user.id).ilike("name", grpName).single();
-      if (!grp) return;
-      const { count: txCount } = await supabase
-        .from("transactions")
-        .select("*", { count: "exact", head: true })
-        .eq("user_id", user.id)
-        .eq("group_id", grp.id);
-      const keyboard: InlineKeyboard = [
-        [{ text: "✅ Sim, excluir", callback_data: addSession(`grp_del_yes_${grpName}`, sessionSeq) }],
-        [{ text: "❌ Não, manter", callback_data: addSession("grp_back", sessionSeq) }],
-      ];
-      await sendTelegramMessageWithKeyboard(chatId, `🗑️ Tem certeza de que deseja excluir o grupo *${grpName}*?\n\n${txCount || 0} ${(txCount || 0) !== 1 ? "transações" : "transação"} ${(txCount || 0) !== 1 ? "serão reatribuídas" : "será reatribuída"} para "Pessoal".`, keyboard);
+      await handleEntityDeletePrompt("group", supabase, user.id, chatId, selectedValue.replace("grp_del_", ""), sessionSeq);
       return;
     }
 
-    // Handle group back
+    // Handle category/group: back
+    if (selectedValue === "cat_back") {
+      await handleEntityBack("category", supabase, user.id, chatId);
+      return;
+    }
     if (selectedValue === "grp_back") {
-      const user = await getOrCreateUser(supabase, telegramId);
-      if (!user) return;
-      await handleGroup(supabase, telegramId, chatId, []);
+      await handleEntityBack("group", supabase, user.id, chatId);
       return;
     }
 
-    // Handle category suggestion - use existing
+    // Handle category/group: suggestion use/create
     if (selectedValue === "cat_sug_use") {
-      const user = await getOrCreateUser(supabase, telegramId);
-      if (!user) return;
-      const state = await getWizardState(supabase, user.id);
-      if (!state || state.step !== "suggest_cat") return;
-      await clearWizardState(supabase, user.id);
-      await sendTelegramMessage(chatId, `✅ Usando categoria "${state.data.suggested_name}" — ela já existe.`);
+      await handleEntitySuggestion("category", supabase, user.id, chatId, "use");
       return;
     }
-
-    // Handle category suggestion - create anyway
     if (selectedValue === "cat_sug_new") {
-      const user = await getOrCreateUser(supabase, telegramId);
-      if (!user) return;
-      const state = await getWizardState(supabase, user.id);
-      if (!state || state.step !== "suggest_cat") return;
-      const catName = state.data.original_name;
-      const { error } = await supabase.from("categories").insert({
-        user_id: user.id,
-        name: catName,
-        normalized_name: normalizeString(catName),
-        is_predefined: false,
-      });
-      await clearWizardState(supabase, user.id);
-      if (error) {
-        await sendTelegramMessage(chatId, "❌ Ops! Algo deu errado ao criar a categoria.");
-      } else {
-        await sendTelegramMessage(chatId, `✅ Categoria "${catName}" criada com sucesso!`);
-      }
+      await handleEntitySuggestion("category", supabase, user.id, chatId, "new");
       return;
     }
-
-    // Handle group suggestion - use existing
     if (selectedValue === "grp_sug_use") {
-      const user = await getOrCreateUser(supabase, telegramId);
-      if (!user) return;
-      const state = await getWizardState(supabase, user.id);
-      if (!state || state.step !== "suggest_grp") return;
-      await clearWizardState(supabase, user.id);
-      await sendTelegramMessage(chatId, `✅ Usando grupo "${state.data.suggested_name}" — ele já existe.`);
+      await handleEntitySuggestion("group", supabase, user.id, chatId, "use");
       return;
     }
-
-    // Handle group suggestion - create anyway
     if (selectedValue === "grp_sug_new") {
-      const user = await getOrCreateUser(supabase, telegramId);
-      if (!user) return;
-      const state = await getWizardState(supabase, user.id);
-      if (!state || state.step !== "suggest_grp") return;
-      const grpName = state.data.original_name;
-      const { error } = await supabase.from("groups").insert({
-        user_id: user.id,
-        name: grpName,
-        normalized_name: normalizeString(grpName),
-        is_default: false,
-      });
-      await clearWizardState(supabase, user.id);
-      if (error) {
-        await sendTelegramMessage(chatId, "❌ Ops! Algo deu errado ao criar o grupo.");
-      } else {
-        await sendTelegramMessage(chatId, `✅ Grupo "${grpName}" criado com sucesso!`);
-      }
+      await handleEntitySuggestion("group", supabase, user.id, chatId, "new");
       return;
     }
 
