@@ -1,6 +1,6 @@
 import { sendTelegramMessage } from "../services/telegram.ts";
 import { requireUser } from "../services/database.ts";
-import { formatCurrencyBR, formatDateBR } from "../utils/formatting.ts";
+import { formatCurrencyBR, formatDateBR, getTodayISOBR } from "../utils/formatting.ts";
 import { getDateRange } from "../utils/date-helpers.ts";
 
 export interface SummaryData {
@@ -11,11 +11,16 @@ export interface SummaryData {
   incomeByCategory: Record<string, number>;
 }
 
+/**
+ * Fetch and aggregate transactions for summary.
+ * @param includeFuture - if true, only future transactions; if false (default), only past+today.
+ */
 export async function getSummaryData(
   supabase: any,
   userId: number,
   period: "this_month" | "last_month" | null,
-  groupId?: number | null
+  groupId?: number | null,
+  includeFuture?: boolean
 ): Promise<SummaryData | null> {
   const { start, end, label } = getDateRange(period, null);
   let query = supabase
@@ -24,6 +29,11 @@ export async function getSummaryData(
     .eq("user_id", userId)
     .gte("transaction_date", start)
     .lte("transaction_date", end);
+  if (includeFuture) {
+    query = query.gt("transaction_date", getTodayISOBR());
+  } else {
+    query = query.lte("transaction_date", getTodayISOBR());
+  }
   if (groupId) query = query.eq("group_id", groupId);
   const { data: transactions } = await query;
   if (!transactions || transactions.length === 0) return null;
@@ -143,11 +153,37 @@ export async function handleQuerySummary(
 ): Promise<void> {
   const user = await requireUser(supabase, userId, chatId);
   if (!user) return;
-  const data = await getSummaryData(supabase, user.id, period);
-  if (!data) {
+  const [data, futureData] = await Promise.all([
+    getSummaryData(supabase, user.id, period),
+    getSummaryData(supabase, user.id, period, undefined, true),
+  ]);
+
+  // If no transactions at all (past nor future)
+  if (!data && !futureData) {
     const { label } = getDateRange(period, null);
     await sendTelegramMessage(chatId, `📊 Nenhuma transação em ${label}.`);
     return;
   }
-  await sendTelegramMessage(chatId, formatSummaryMessage(data));
+
+  // Build message: past summary (if any) + scheduled block (if any)
+  let message = "";
+  if (data) {
+    message = formatSummaryMessage(data);
+  }
+
+  if (futureData) {
+    const futureTotal = futureData.totalIncomes - futureData.totalExpenses;
+    if (message) message += `\n\n`;
+    message += `⏳ *Agendados:*\n`;
+    if (futureData.totalIncomes > 0) {
+      message += `   📈 ${formatCurrencyBR(futureData.totalIncomes)}\n`;
+    }
+    if (futureData.totalExpenses > 0) {
+      message += `   📉 ${formatCurrencyBR(futureData.totalExpenses)}\n`;
+    }
+    const currentBalance = data ? data.totalIncomes - data.totalExpenses : 0;
+    message += `\n📊 *Saldo projetado: ${formatCurrencyBR(currentBalance + futureTotal)}*`;
+  }
+
+  await sendTelegramMessage(chatId, message);
 }

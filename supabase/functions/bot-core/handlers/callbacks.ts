@@ -163,6 +163,7 @@ export async function handleCallbackQuery(
         if (!isNaN(page)) {
           const filter = filterSuffix === "inc" ? "income" as const
             : filterSuffix === "exp" ? "expense" as const
+            : filterSuffix === "fut" ? "future" as const
             : "all" as const;
           await handleStatement(supabase, telegramId, chatId, page, filter);
         }

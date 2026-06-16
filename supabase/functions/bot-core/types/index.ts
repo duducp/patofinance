@@ -68,4 +68,5 @@ export interface ExtratoFilters {
   tags: string[];
   type: "all" | "income" | "expense";
   period: PeriodPreset | { start: string; end: string };
+  status: "all" | "past" | "future";
 }

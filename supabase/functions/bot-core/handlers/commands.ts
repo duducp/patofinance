@@ -140,24 +140,28 @@ export async function handleBalance(supabase: any, userId: number, chatId: numbe
     }
   }
 
-  // Build income query
+  const today = getTodayISOBR();
+
+  // Build income query (only past + today, not future)
   let incomeQuery = supabase
     .from("transactions")
     .select("amount")
     .eq("user_id", user.id)
     .eq("type", "income")
     .gte("transaction_date", startOfMonth)
-    .lte("transaction_date", endOfMonth);
+    .lte("transaction_date", endOfMonth)
+    .lte("transaction_date", today);
   if (groupId) incomeQuery = incomeQuery.eq("group_id", groupId);
 
-  // Build expenses query
+  // Build expenses query (only past + today, not future)
   let expensesQuery = supabase
     .from("transactions")
     .select("amount")
     .eq("user_id", user.id)
     .eq("type", "expense")
     .gte("transaction_date", startOfMonth)
-    .lte("transaction_date", endOfMonth);
+    .lte("transaction_date", endOfMonth)
+    .lte("transaction_date", today);
   if (groupId) expensesQuery = expensesQuery.eq("group_id", groupId);
 
   const { data: income } = await incomeQuery;
@@ -173,7 +177,34 @@ export async function handleBalance(supabase: any, userId: number, chatId: numbe
     return;
   }
 
+  // Second pair of queries for future (scheduled) transactions
+  let futureIncomeQuery = supabase
+    .from("transactions")
+    .select("amount, categories(name)")
+    .eq("user_id", user.id)
+    .eq("type", "income")
+    .gt("transaction_date", today);
+  if (groupId) futureIncomeQuery = futureIncomeQuery.eq("group_id", groupId);
+
+  let futureExpenseQuery = supabase
+    .from("transactions")
+    .select("amount, categories(name)")
+    .eq("user_id", user.id)
+    .eq("type", "expense")
+    .gt("transaction_date", today);
+  if (groupId) futureExpenseQuery = futureExpenseQuery.eq("group_id", groupId);
+
+  const [futureIncome, futureExpenses] = await Promise.all([
+    futureIncomeQuery,
+    futureExpenseQuery,
+  ]);
+
+  const totalFutureIncome = futureIncome.data?.reduce((sum: number, t: any) => sum + Number(t.amount), 0) || 0;
+  const totalFutureExpenses = futureExpenses.data?.reduce((sum: number, t: any) => sum + Number(t.amount), 0) || 0;
+  const hasFuture = totalFutureIncome > 0 || totalFutureExpenses > 0;
+
   const balance = totalIncome - totalExpenses;
+  const projectedBalance = balance + totalFutureIncome - totalFutureExpenses;
 
   const emoji = balance >= 0 ? "✅" : "⚠️";
 
@@ -183,7 +214,18 @@ export async function handleBalance(supabase: any, userId: number, chatId: numbe
   }
   message += `\n📈 Entradas: *${formatCurrencyBR(totalIncome)}*\n` +
     `📉 Saídas: *${formatCurrencyBR(totalExpenses)}*\n\n` +
-    `💰 *Saldo: ${formatCurrencyBR(balance)}*`;
+    `💰 *Saldo atual: ${formatCurrencyBR(balance)}*`;
+
+  if (hasFuture) {
+    message += `\n\n⏳ *Agendados:*\n`;
+    if (totalFutureIncome > 0) {
+      message += `   📈 ${formatCurrencyBR(totalFutureIncome)}\n`;
+    }
+    if (totalFutureExpenses > 0) {
+      message += `   📉 ${formatCurrencyBR(totalFutureExpenses)}\n`;
+    }
+    message += `\n📊 *Saldo projetado: ${formatCurrencyBR(projectedBalance)}*`;
+  }
 
   const sessionSeq = await getSessionSeq(supabase, user.id);
   const keyboard: InlineKeyboard = [];
@@ -286,12 +328,13 @@ export async function handleTransaction(
 
 const STATEMENT_PAGE_SIZE = 10;
 
-type StatementFilter = "all" | "income" | "expense";
+type StatementFilter = "all" | "income" | "expense" | "future";
 
 function statementFilterSuffix(filter: StatementFilter): string {
   switch (filter) {
     case "income": return "inc";
     case "expense": return "exp";
+    case "future": return "fut";
     default: return "all";
   }
 }
@@ -314,20 +357,26 @@ export async function handleStatement(
   const period = filters?.period || "this_month";
   const { start: periodStart, end: periodEnd, label: periodLabel } = resolvePeriod(period);
 
+  // Handle future quick-filter: keep type as "all", add status: "future"
+  const effectiveTypeFilter = typeFilter === "future" ? "all" : typeFilter;
+  const effectiveFilters = typeFilter === "future"
+    ? { ...filters, status: "future" as const }
+    : filters;
+
   // Build base query for count
   const countQuery = applyFiltersToQuery(
     supabase.from("transactions").select("id", { count: "exact", head: true }),
     user.id,
     periodStart,
     periodEnd,
-    typeFilter,
-    filters,
+    effectiveTypeFilter,
+    effectiveFilters,
   );
 
   const { count: totalCount } = await countQuery;
 
   if (!totalCount || totalCount === 0) {
-    const filterName = typeFilter === "income" ? "receitas" : typeFilter === "expense" ? "despesas" : "transações";
+    const filterName = typeFilter === "income" ? "receitas" : typeFilter === "expense" ? "despesas" : typeFilter === "future" ? "agendadas" : "transações";
     await sendTelegramMessage(chatId, `📋 Nenhuma ${filterName} encontrada${period !== "this_month" ? ` em ${periodLabel}` : " este mês"}.`);
     return;
   }
@@ -349,8 +398,8 @@ export async function handleStatement(
     user.id,
     periodStart,
     periodEnd,
-    typeFilter,
-    filters,
+    effectiveTypeFilter,
+    effectiveFilters,
   );
 
   const { data: transactions } = await dataQuery
@@ -369,8 +418,8 @@ export async function handleStatement(
     user.id,
     periodStart,
     periodEnd,
-    typeFilter,
-    filters,
+    effectiveTypeFilter,
+    effectiveFilters,
   );
 
   const { data: periodData } = await totalsQuery;
@@ -385,7 +434,7 @@ export async function handleStatement(
   const totalPages = Math.ceil(totalCount / STATEMENT_PAGE_SIZE);
   const startItem = offset + 1;
   const endItem = offset + transactions.length;
-  const showAllTypes = typeFilter === "all";
+  const showAllTypes = effectiveTypeFilter === "all";
 
   // Separate transactions by type for grouped display
   const incomeTx = transactions.filter((t: any) => t.type === "income");
@@ -411,21 +460,28 @@ export async function handleStatement(
     filterParts.push(periodLabel);
   }
   if (!showAllTypes) {
-    filterParts.push(typeFilter === "income" ? "📈 Receitas" : "📉 Despesas");
+    filterParts.push(typeFilter === "income" ? "📈 Receitas" : typeFilter === "expense" ? "📉 Despesas" : "📉 Despesas");
+  }
+  if (typeFilter === "future") {
+    filterParts.push("⏳ Agendadas");
   }
   if (filterParts.length > 0) {
     message += `🔽 ${filterParts.join(" · ")}\n`;
   }
   message += "\n";
 
+  const today = getTodayISOBR();
+
   // Helper to format a single transaction line
   function appendTxLine(t: any): string {
     const shortDate = formatDateBR(t.transaction_date).slice(0, 5);
+    const isFuture = t.transaction_date > today;
+    const prefix = isFuture ? "⏳ " : "• ";
     const catName = t.categories?.name || "—";
     const grpName = t.groups?.name || "Pessoal";
     const tags = t.tags?.length ? ` ${t.tags.join(" ")}` : "";
     const desc = t.description ? ` (${t.description})` : "";
-    return `• \`#${t.id}\`  ${shortDate}  *${formatCurrencyBR(Number(t.amount))}*   ${catName} · ${grpName}${desc}${tags}\n`;
+    return `${prefix}\`#${t.id}\`  ${shortDate}  *${formatCurrencyBR(Number(t.amount))}*   ${catName} · ${grpName}${desc}${tags}\n`;
   }
 
   // Income section
@@ -478,6 +534,7 @@ export async function handleStatement(
     { label: "📈 Receitas", filter: "income" },
     { label: "📉 Despesas", filter: "expense" },
     { label: "📋 Todas", filter: "all" },
+    { label: "⏳ Agendadas", filter: "future" },
   ];
   for (const opt of filterOptions) {
     const isActive = typeFilter === opt.filter;
@@ -544,8 +601,13 @@ export async function handleSummary(supabase: any, userId: number, chatId: numbe
     }
   }
 
-  const data = await getSummaryData(supabase, user.id, resolvedPeriod, groupId);
-  if (!data) {
+  const [data, futureData] = await Promise.all([
+    getSummaryData(supabase, user.id, resolvedPeriod, groupId),
+    getSummaryData(supabase, user.id, resolvedPeriod, groupId, true),
+  ]);
+
+  // If no transactions at all (past nor future)
+  if (!data && !futureData) {
     if (groupName) {
       const sessionSeq = await getSessionSeq(supabase, user.id);
       const keyboard: InlineKeyboard = [[{ text: "📋 Todas as contas", callback_data: addSession("summary_grp_all", sessionSeq) }]];
@@ -556,7 +618,26 @@ export async function handleSummary(supabase: any, userId: number, chatId: numbe
     return;
   }
 
-  const message = formatSummaryMessage(data, groupName || undefined);
+  // Build message: past summary (if any) + scheduled block (if any)
+  let message = "";
+  if (data) {
+    message = formatSummaryMessage(data, groupName || undefined);
+  }
+
+  if (futureData) {
+    const futureTotal = futureData.totalIncomes - futureData.totalExpenses;
+    if (message) message += `\n\n`;
+    message += `⏳ *Agendados:*\n`;
+    if (futureData.totalIncomes > 0) {
+      message += `   📈 ${formatCurrencyBR(futureData.totalIncomes)}\n`;
+    }
+    if (futureData.totalExpenses > 0) {
+      message += `   📉 ${formatCurrencyBR(futureData.totalExpenses)}\n`;
+    }
+    const currentBalance = data ? data.totalIncomes - data.totalExpenses : 0;
+    message += `\n📊 *Saldo projetado: ${formatCurrencyBR(currentBalance + futureTotal)}*`;
+  }
+
   const sessionSeq = await getSessionSeq(supabase, user.id);
   const keyboard: InlineKeyboard = [];
   if (groupId) {

@@ -254,7 +254,7 @@ export function applyFiltersToQuery(
   periodStart: string,
   periodEnd: string,
   typeFilter?: "all" | "income" | "expense",
-  filters?: { category_id?: number | null; group_id?: number | null; tags?: string[] }
+  filters?: { category_id?: number | null; group_id?: number | null; tags?: string[]; status?: "all" | "past" | "future" }
 ): any {
   let q = query
     .eq("user_id", userId)
@@ -274,6 +274,11 @@ export function applyFiltersToQuery(
     for (const tag of filters.tags) {
       q = q.contains("tags", [tag]);
     }
+  }
+  if (filters?.status === "past") {
+    q = q.lte("transaction_date", getTodayISOBR());
+  } else if (filters?.status === "future") {
+    q = q.gt("transaction_date", getTodayISOBR());
   }
   return q;
 }

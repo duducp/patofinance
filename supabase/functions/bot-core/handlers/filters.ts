@@ -11,6 +11,7 @@ export const DEFAULT_FILTERS: ExtratoFilters = {
   tags: [],
   type: "all",
   period: "this_month",
+  status: "all",
 };
 
 async function renderFilterPanelMessage(
@@ -45,13 +46,20 @@ async function renderFilterPanelMessage(
     ? periodLabels[filters.period] || filters.period
     : `${filters.period.start} — ${filters.period.end}`;
 
+  const statusLabels: Record<string, string> = {
+    all: "Todas",
+    past: "Realizadas",
+    future: "⏳ Agendadas",
+  };
+
   const message =
     `📋 *Filtrar Extrato*\n\n` +
     `🏷️ Categoria: ${catName}\n` +
     `📁 Grupo: ${grpName}\n` +
     `🔖 Tags: ${tagStr}\n` +
     `📈 Tipo: ${typeLabels[filters.type]}\n` +
-    `📅 Período: ${periodStr}\n\n` +
+    `📅 Período: ${periodStr}\n` +
+    `📆 Status: ${statusLabels[filters.status]}\n\n` +
     `🔍 [Aplicar Filtros]  ❌ [Limpar]`;
 
   const keyboard: InlineKeyboard = [
@@ -60,6 +68,7 @@ async function renderFilterPanelMessage(
     [{ text: `🔖 Tags: ${tagStr}`, callback_data: addSession("stmt_f_tag", sessionSeq) }],
     [{ text: `📈 Tipo: ${typeLabels[filters.type]}`, callback_data: addSession("stmt_f_type", sessionSeq) }],
     [{ text: `📅 Período: ${periodStr}`, callback_data: addSession("stmt_f_period", sessionSeq) }],
+    [{ text: `📆 Status: ${statusLabels[filters.status]}`, callback_data: addSession("stmt_f_status", sessionSeq) }],
     [
       { text: "🔍 Aplicar", callback_data: addSession("stmt_f_apply", sessionSeq) },
       { text: "❌ Limpar", callback_data: addSession("stmt_f_clear", sessionSeq) },
@@ -231,6 +240,33 @@ export async function showTypeSelector(
   await editTelegramMessageWithKeyboard(chatId, messageId, "📈 *Selecione o tipo:*", keyboard);
 }
 
+export async function showStatusSelector(
+  supabase: any,
+  userId: number,
+  chatId: number,
+  messageId: number,
+  sessionSeq: number
+): Promise<void> {
+  const { data: state } = await supabase.from("wizard_states").select("data").eq("user_id", userId).single();
+  const filters: ExtratoFilters = state?.data || { ...DEFAULT_FILTERS };
+
+  const options: { label: string; value: ExtratoFilters["status"] }[] = [
+    { label: "📋 Todas", value: "all" },
+    { label: "✅ Realizadas", value: "past" },
+    { label: "⏳ Agendadas", value: "future" },
+  ];
+
+  const keyboard: InlineKeyboard = [
+    options.map((o) => ({
+      text: filters.status === o.value ? `✅ ${o.label}` : o.label,
+      callback_data: addSession(`stmt_f_status_${o.value}`, sessionSeq),
+    })),
+  ];
+  keyboard.push([{ text: "◀️ Voltar", callback_data: addSession("stmt_filter", sessionSeq) }]);
+
+  await editTelegramMessageWithKeyboard(chatId, messageId, "📆 *Selecione o status:*", keyboard);
+}
+
 export async function showPeriodSelector(
   supabase: any,
   userId: number,
@@ -380,6 +416,26 @@ export async function handleFilterCallback(
     const { data: state } = await supabase.from("wizard_states").select("data").eq("user_id", user.id).single();
     const filters: ExtratoFilters = state?.data || { ...DEFAULT_FILTERS };
     filters.type = type;
+    await supabase.from("wizard_states").update({
+      data: filters,
+      expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+    }).eq("user_id", user.id);
+    await renderFilterPanelMessage(supabase, user.id, chatId, filters, sessionSeq, messageId);
+    return true;
+  }
+
+  // Open status selector
+  if (selectedValue === "stmt_f_status") {
+    await showStatusSelector(supabase, user.id, chatId, messageId, sessionSeq);
+    return true;
+  }
+
+  // Select status
+  if (selectedValue.startsWith("stmt_f_status_")) {
+    const status = selectedValue.replace("stmt_f_status_", "") as ExtratoFilters["status"];
+    const { data: state } = await supabase.from("wizard_states").select("data").eq("user_id", user.id).single();
+    const filters: ExtratoFilters = state?.data || { ...DEFAULT_FILTERS };
+    filters.status = status;
     await supabase.from("wizard_states").update({
       data: filters,
       expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
