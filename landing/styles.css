@@ -130,20 +130,28 @@ code {
 .hero-content {
   flex: 1;
   min-width: 300px;
-  max-width: 600px;
+  max-width: 580px;
+}
+
+.hero-brand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  margin-bottom: 20px;
 }
 
 .hero-logo {
-  width: 120px;
+  width: 64px;
   height: auto;
-  margin: 0 auto 16px;
+  filter: drop-shadow(0 0 20px rgba(79, 107, 237, 0.25));
+  flex-shrink: 0;
 }
 
 .hero-title {
-  font-size: clamp(2.5rem, 6vw, 4rem);
+  font-size: clamp(2rem, 5vw, 3.5rem);
   font-weight: 800;
   color: var(--text-light);
-  margin-bottom: 12px;
   letter-spacing: -0.02em;
 }
 
@@ -154,21 +162,22 @@ code {
   -webkit-text-fill-color: transparent;
   background-clip: text;
   font-weight: 600;
-  margin-bottom: 16px;
+  margin-bottom: 20px;
 }
 
 .hero-description {
   font-size: 1.1rem;
   color: var(--text-muted);
-  max-width: 500px;
-  margin: 0 auto 32px;
-  line-height: 1.7;
+  max-width: 460px;
+  margin: 0 auto 36px;
+  line-height: 1.65;
 }
 
 .hero-badge {
-  margin-top: 24px;
-  font-size: 0.9rem;
+  margin-top: 28px;
+  font-size: 0.85rem;
   color: var(--text-muted);
+  letter-spacing: 0.02em;
 }
 
 .btn {
@@ -218,15 +227,59 @@ code {
 .hero-chat-mockup {
   flex: 1;
   min-width: 280px;
-  max-width: 400px;
+  max-width: 380px;
   text-align: left;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+  backdrop-filter: blur(12px);
+}
+
+.chat-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  background: rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.chat-header-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: rgba(79, 107, 237, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+}
+
+.chat-header-info {
+  flex: 1;
+}
+
+.chat-header-name {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-light);
+}
+
+.chat-header-status {
+  font-size: 0.7rem;
+  color: #4ade80;
+}
+
+.chat-body {
+  padding: 16px;
 }
 
 .chat-bubble {
-  padding: 12px 18px;
+  padding: 11px 16px;
   border-radius: 18px;
-  margin-bottom: 12px;
-  font-size: 0.95rem;
+  margin-bottom: 10px;
+  font-size: 0.9rem;
   max-width: 85%;
   animation: chatFadeIn 0.5s ease-out backwards;
 }
