@@ -1,4 +1,5 @@
 import { sendTelegramMessage } from "./telegram.ts";
+import { getTodayISOBR } from "../utils/formatting.ts";
 
 export function normalizeString(str: string): string {
   return str
@@ -204,4 +205,136 @@ export async function getOrCreateUncategorizedCategory(supabase: any, _userId: n
     .eq("normalized_name", normalizeString("Outros"))
     .maybeSingle();
   return cat?.id || null;
+}
+
+export interface CreateTransactionData {
+  userId: number;
+  type: "expense" | "income";
+  amount: number;
+  categoryId: string | null;
+  groupId: string | null;
+  description?: string;
+  tags?: string[];
+  transactionDate?: string;
+}
+
+export async function createTransaction(
+  supabase: any,
+  data: CreateTransactionData
+): Promise<{ error: any }> {
+  return await supabase.from("transactions").insert({
+    user_id: data.userId,
+    type: data.type,
+    amount: data.amount,
+    category_id: data.categoryId,
+    group_id: data.groupId,
+    description: data.description || "",
+    tags: data.tags || [],
+    transaction_date: data.transactionDate || getTodayISOBR(),
+  });
+}
+
+/**
+ * Apply common ExtratoFilters to a Supabase query builder.
+ * Returns the query with all filters applied.
+ */
+export function applyFiltersToQuery(
+  query: any,
+  userId: number,
+  periodStart: string,
+  periodEnd: string,
+  typeFilter?: "all" | "income" | "expense",
+  filters?: { category_id?: number | null; group_id?: number | null; tags?: string[] }
+): any {
+  let q = query
+    .eq("user_id", userId)
+    .gte("transaction_date", periodStart)
+    .lte("transaction_date", periodEnd);
+
+  if (typeFilter && typeFilter !== "all") {
+    q = q.eq("type", typeFilter);
+  }
+  if (filters?.category_id) {
+    q = q.eq("category_id", filters.category_id);
+  }
+  if (filters?.group_id) {
+    q = q.eq("group_id", filters.group_id);
+  }
+  if (filters?.tags && filters.tags.length > 0) {
+    for (const tag of filters.tags) {
+      q = q.contains("tags", [tag]);
+    }
+  }
+  return q;
+}
+
+/**
+ * Paginated transaction list with count — used by handleListTransactions and handleListByTag.
+ */
+export interface PaginatedTransaction {
+  id: number;
+  type: string;
+  amount: number;
+  description: string;
+  tags: string[];
+  transaction_date: string;
+  categories?: { name: string } | null;
+  groups?: { name: string } | null;
+}
+
+export async function listTransactionsPaginated(
+  supabase: any,
+  userId: number,
+  limit: number,
+  page: number,
+  tag?: string
+): Promise<{
+  transactions: PaginatedTransaction[];
+  totalCount: number;
+  hasMore: boolean;
+}> {
+  const offset = page * limit;
+  const fetchLimit = limit + 1;
+
+  let countQuery = supabase
+    .from("transactions")
+    .select("*", { count: "exact", head: true })
+    .eq("user_id", userId);
+
+  let dataQuery = supabase
+    .from("transactions")
+    .select(`
+      id,
+      type,
+      amount,
+      description,
+      tags,
+      transaction_date,
+      categories (name),
+      groups (name)
+    `)
+    .eq("user_id", userId)
+    .order("transaction_date", { ascending: false })
+    .order("created_at", { ascending: false })
+    .range(offset, offset + fetchLimit - 1);
+
+  if (tag) {
+    countQuery = countQuery.contains("tags", [tag]);
+    dataQuery = dataQuery.contains("tags", [tag]);
+  }
+
+  const [countResult, { data: transactions }] = await Promise.all([
+    countQuery,
+    dataQuery,
+  ]);
+
+  const totalCount = countResult.count || 0;
+  const txList = (transactions || []) as PaginatedTransaction[];
+  const hasMore = txList.length > limit;
+
+  return {
+    transactions: hasMore ? txList.slice(0, limit) : txList,
+    totalCount,
+    hasMore,
+  };
 }

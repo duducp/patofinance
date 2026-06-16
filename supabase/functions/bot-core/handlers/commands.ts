@@ -1,6 +1,6 @@
 import type { InlineKeyboard, ExtratoFilters } from "../types/index.ts";
 import { sendTelegramMessage, sendTelegramMessageWithKeyboard } from "../services/telegram.ts";
-import { requireUser, getOrCreateUser, getOrCreateCategory, getOrCreateGroup, normalizeString, suggestSimilarCategories, suggestSimilarGroups, sendSimilarityWarning, getAllUserTags } from "../services/database.ts";
+import { requireUser, getOrCreateUser, getOrCreateCategory, getOrCreateGroup, normalizeString, suggestSimilarCategories, suggestSimilarGroups, sendSimilarityWarning, getAllUserTags, createTransaction } from "../services/database.ts";
 import { formatCurrencyBR, formatDateBR, getTodayISOBR, getMonthName } from "../utils/formatting.ts";
 import { getDateRange } from "../utils/date-helpers.ts";
 import { parseCommand } from "../utils/command-parsing.ts";
@@ -252,15 +252,15 @@ export async function handleTransaction(
     await sendSimilarityWarning(supabase, user.id, chatId, "tag", tag);
   }
 
-  const { error } = await supabase.from("transactions").insert({
-    user_id: user.id,
-    group_id: groupId,
-    category_id: categoryId,
+  const { error } = await createTransaction(supabase, {
+    userId: user.id,
     type,
     amount: parsed.amount,
+    categoryId,
+    groupId,
     description: descriptionOverride || parsed.category || "",
     tags: parsed.tags,
-    transaction_date: parsed.date || getTodayISOBR(),
+    transactionDate: parsed.date || getTodayISOBR(),
   });
 
   if (error) {

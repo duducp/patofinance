@@ -1,6 +1,22 @@
 import { DeepSeekResponse } from "../types/index.ts";
-import { DEEPSEEK_API_KEY, nlCache, NL_CACHE_TTL, commonPhrases } from "../config.ts";
+import { DEEPSEEK_API_KEY, nlCache, NL_CACHE_TTL } from "../config.ts";
 import { getTodayISOBR } from "../utils/formatting.ts";
+
+// Common phrases that don't need API calls
+const commonPhrases: Record<string, DeepSeekResponse> = {
+  "quanto tenho": { intent: "query_balance", amount: null, category: null, date: null, period: "this_month", name: null, tag: null, limit: null, missingFields: [] },
+  "saldo": { intent: "query_balance", amount: null, category: null, date: null, period: "this_month", name: null, tag: null, limit: null, missingFields: [] },
+  "extrato": { intent: "query_extract", amount: null, category: null, date: null, period: "this_month", name: null, tag: null, limit: null, missingFields: [] },
+  "resumo": { intent: "query_summary", amount: null, category: null, date: null, period: "this_month", name: null, tag: null, limit: null, missingFields: [] },
+  "quais categorias": { intent: "list_categories", amount: null, category: null, date: null, period: null, name: null, tag: null, limit: null, missingFields: [] },
+  "meus grupos": { intent: "list_groups", amount: null, category: null, date: null, period: null, name: null, tag: null, limit: null, missingFields: [] },
+  "quais tags": { intent: "list_tags", amount: null, category: null, date: null, period: null, name: null, tag: null, limit: null, missingFields: [] },
+  "últimas transações": { intent: "list_transactions", amount: null, category: null, date: null, period: null, name: null, tag: null, limit: 10, missingFields: [] },
+  "último gasto": { intent: "show_last_transaction", amount: null, category: null, date: null, period: null, name: null, tag: null, limit: null, missingFields: [] },
+  "apagar última": { intent: "delete_last_transaction", amount: null, category: null, date: null, period: null, name: null, tag: null, limit: null, missingFields: [] },
+  "limpe": { intent: "cleanup", amount: null, category: null, date: null, period: null, name: null, tag: null, limit: null, missingFields: [] },
+  "limpar": { intent: "cleanup", amount: null, category: null, date: null, period: null, name: null, tag: null, limit: null, missingFields: [] },
+};
 
 interface UserContext {
   categories: { name: string; transaction_type: string | null }[];

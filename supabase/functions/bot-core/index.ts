@@ -18,7 +18,8 @@ import { parseNaturalLanguage } from "./services/deepseek.ts";
 import { sendTelegramMessage, sendTelegramMessageWithKeyboard } from "./services/telegram.ts";
 import { getCategories, sendSimilarityWarning, normalizeString, getAllUserTags } from "./services/database.ts";
 import { handleCreateCategory } from "./handlers/management.ts";
-import { handleCallbackQuery, handleFilterPanel } from "./handlers/callbacks.ts";
+import { handleCallbackQuery } from "./handlers/callbacks.ts";
+import { handleFilterPanel } from "./handlers/filters.ts";
 import { handleNaturalLanguageWithFollowUp, executeNaturalLanguageAction, buildNLCategoryKeyboard } from "./handlers/nl-processing.ts";
 import {
   getWizardState,
@@ -58,6 +59,20 @@ async function fetchUserContext(supabase: any, userId: number): Promise<{
     groups: groupsResult.data || [],
     tags: tags || [],
   };
+}
+
+async function handleCommandWithNL(
+  type: "expense" | "income",
+  supabase: any,
+  message: any,
+  args: string[],
+  existingUser: any
+): Promise<void> {
+  const context = await fetchUserContext(supabase, existingUser.id);
+  const text = args.join(" ");
+  const natural = await parseNaturalLanguage(text, { userId: existingUser.id, context, forceIntent: type });
+  const sessionSeq = await getSessionSeq(supabase, existingUser.id);
+  await handleNaturalLanguageWithFollowUp(supabase, message.from.id, message.chat.id, natural, sessionSeq);
 }
 
 async function handleEntityRename(
@@ -443,11 +458,7 @@ serve(async (req: Request): Promise<Response> => {
         case "/despesa":
         case "/gasto":
           if (args.length > 0) {
-            const context = await fetchUserContext(supabase, existingUser.id);
-            const text = args.join(" ");
-            const natural = await parseNaturalLanguage(text, { userId: existingUser.id, context, forceIntent: "expense" });
-            const sessionSeq = await getSessionSeq(supabase, existingUser.id);
-            await handleNaturalLanguageWithFollowUp(supabase, message.from.id, message.chat.id, natural, sessionSeq);
+            await handleCommandWithNL("expense", supabase, message, args, existingUser);
           } else {
             await handleTransaction("expense", supabase, message.from.id, message.chat.id, args);
           }
@@ -455,11 +466,7 @@ serve(async (req: Request): Promise<Response> => {
 
         case "/receita":
           if (args.length > 0) {
-            const context = await fetchUserContext(supabase, existingUser.id);
-            const text = args.join(" ");
-            const natural = await parseNaturalLanguage(text, { userId: existingUser.id, context, forceIntent: "income" });
-            const sessionSeq = await getSessionSeq(supabase, existingUser.id);
-            await handleNaturalLanguageWithFollowUp(supabase, message.from.id, message.chat.id, natural, sessionSeq);
+            await handleCommandWithNL("income", supabase, message, args, existingUser);
           } else {
             await handleTransaction("income", supabase, message.from.id, message.chat.id, args);
           }

@@ -2,7 +2,7 @@ import { InlineKeyboard } from "../types/index.ts";
 import { sendTelegramMessage, sendTelegramMessageWithKeyboard, editTelegramMessageWithKeyboard } from "../services/telegram.ts";
 import { truncateCallbackData } from "../utils/rate-limiter.ts";
 import { addSession, getSessionSeq } from "../utils/session.ts";
-import { getOrCreateUser, normalizeString, suggestSimilarCategories, suggestSimilarGroups } from "../services/database.ts";
+import { getOrCreateUser, normalizeString, suggestSimilarCategories, suggestSimilarGroups, listTransactionsPaginated } from "../services/database.ts";
 import { formatCurrencyBR, formatDateBR } from "../utils/formatting.ts";
 
 export async function handleCreateCategory(supabase: any, userId: number, chatId: number, name: string): Promise<void> {
@@ -176,50 +176,12 @@ export async function handleListTransactions(supabase: any, userId: number, chat
     return;
   }
 
-  const offset = page * limit;
-  const fetchLimit = limit + 1;
+  const { transactions: items, totalCount, hasMore } = await listTransactionsPaginated(supabase, user.id, limit, page, tag);
 
-  // Get total count for pagination info
-  let countQuery = supabase
-    .from("transactions")
-    .select("*", { count: "exact", head: true })
-    .eq("user_id", user.id);
-
-  let dataQuery = supabase
-    .from("transactions")
-    .select(`
-      id,
-      type,
-      amount,
-      description,
-      tags,
-      transaction_date,
-      categories (name),
-      groups (name)
-    `)
-    .eq("user_id", user.id)
-    .order("transaction_date", { ascending: false })
-    .order("created_at", { ascending: false })
-    .range(offset, offset + fetchLimit - 1);
-
-  if (tag) {
-    countQuery = countQuery.contains("tags", [tag]);
-    dataQuery = dataQuery.contains("tags", [tag]);
-  }
-
-  const [countResult, { data: transactions, error }] = await Promise.all([
-    countQuery,
-    dataQuery,
-  ]);
-  const totalCount = countResult.count;
-
-  if (error || !transactions || transactions.length === 0) {
+  if (items.length === 0) {
     await sendTelegramMessage(chatId, "📝 Nenhuma transação encontrada.");
     return;
   }
-
-  const hasMore = transactions.length > limit;
-  const items = hasMore ? transactions.slice(0, limit) : transactions;
 
   const totalPages = totalCount ? Math.ceil(totalCount / limit) : 1;
   const tagLabel = tag ? ` com ${tag.startsWith("#") ? tag : `#${tag}`}` : "";
@@ -373,88 +335,5 @@ export async function handleDeleteLastTransaction(supabase: any, userId: number,
 }
 
 export async function handleListByTag(supabase: any, userId: number, chatId: number, tag: string, page: number = 0, messageId?: number): Promise<void> {
-  const user = await getOrCreateUser(supabase, userId);
-  if (!user) {
-    await sendTelegramMessage(chatId, "Ops! Você ainda não está cadastrado. Use /start para começar.");
-    return;
-  }
-
-  const limit = 10;
-  const offset = page * limit;
-  const fetchLimit = limit + 1;
-
-  // Get total count for pagination info
-  const countPromise = supabase
-    .from("transactions")
-    .select("*", { count: "exact", head: true })
-    .eq("user_id", user.id)
-    .contains("tags", [tag]);
-
-  const dataPromise = supabase
-    .from("transactions")
-    .select(`
-      id,
-      type,
-      amount,
-      description,
-      tags,
-      transaction_date,
-      categories (name),
-      groups (name)
-    `)
-    .eq("user_id", user.id)
-    .contains("tags", [tag])
-    .order("transaction_date", { ascending: false })
-    .order("created_at", { ascending: false })
-    .range(offset, offset + fetchLimit - 1);
-
-  const [countResult, { data: transactions, error }] = await Promise.all([
-    countPromise,
-    dataPromise,
-  ]);
-  const totalCount = countResult.count;
-
-  if (error || !transactions || transactions.length === 0) {
-    await sendTelegramMessage(chatId, `📝 Nenhuma transação encontrada com a tag #${tag}.`);
-    return;
-  }
-
-  const hasMore = transactions.length > limit;
-  const items = hasMore ? transactions.slice(0, limit) : transactions;
-
-  const totalPages = totalCount ? Math.ceil(totalCount / limit) : 1;
-  const pageInfo = totalPages > 1 ? ` (Página ${page + 1} de ${totalPages})` : "";
-  const tagDisplay = tag.startsWith("#") ? tag : `#${tag}`;
-  let message = `🏷️ *Transações com ${tagDisplay}${pageInfo}:*\n\n`;
-
-  for (const t of items) {
-    const emoji = t.type === "income" ? "📈" : "📉";
-    const catName = t.categories?.name || "Sem categoria";
-    const dateStr = formatDateBR(t.transaction_date);
-    const desc = t.description ? ` — ${t.description}` : "";
-    message += `${emoji} ${dateStr} - *${formatCurrencyBR(Number(t.amount))}* | ${catName}${desc}\n`;
-  }
-
-  // Build navigation keyboard
-  const sessionSeq = await getSessionSeq(supabase, user.id);
-  const keyboard: InlineKeyboard = [];
-  const navRow: { text: string; callback_data: string }[] = [];
-
-  if (page > 0) {
-    navRow.push({ text: "◀️ Anterior", callback_data: truncateCallbackData(`txlist_t${tag}_p${page - 1}`, sessionSeq) });
-  }
-  if (hasMore) {
-    navRow.push({ text: "▶️ Próximo", callback_data: truncateCallbackData(`txlist_t${tag}_p${page + 1}`, sessionSeq) });
-  }
-  if (navRow.length > 0) {
-    keyboard.push(navRow);
-  }
-
-  if (messageId) {
-    await editTelegramMessageWithKeyboard(chatId, messageId, message, keyboard);
-  } else if (keyboard.length > 0) {
-    await sendTelegramMessageWithKeyboard(chatId, message, keyboard);
-  } else {
-    await sendTelegramMessage(chatId, message);
-  }
+  await handleListTransactions(supabase, userId, chatId, 10, tag, page, messageId);
 }
