@@ -209,20 +209,25 @@ export async function completeWizard(
       ? data.tags.split(" ").filter((t: string) => t).map((t: string) => t.startsWith("#") ? t : `#${t}`)
       : [];
   const date = data.date || getTodayISOBR();
-  const { error } = await supabase.from("transactions").insert({
-    user_id: userId,
-    group_id: groupId,
-    category_id: categoryId,
-    type,
-    amount,
-    description: data.category || "",
-    tags,
-    transaction_date: date,
-  });
+  const { data: inserted, error } = await supabase
+    .from("transactions")
+    .insert({
+      user_id: userId,
+      group_id: groupId,
+      category_id: categoryId,
+      type,
+      amount,
+      description: data.category || "",
+      tags,
+      transaction_date: date,
+    })
+    .select("id")
+    .single();
   if (error) {
     await sendTelegramMessage(chatId, "❌ Ops! Algo deu errado ao registrar. Tente novamente.");
     return;
   }
+  const txId = inserted?.id;
   const typeName = type === "expense" ? "Despesa" : "Receita";
   await sendTelegramMessage(
     chatId,
@@ -231,7 +236,10 @@ export async function completeWizard(
     `🏷️ Categoria: ${data.category || "Não definida"}\n` +
     `📁 Grupo: ${data.group || "Pessoal"}\n` +
     `📅 Data: ${formatDateBR(date)}` +
-    (tags.length > 0 ? `\n🔖 Tags: ${tags.join(" ")}` : "")
+    (tags.length > 0 ? `\n🔖 Tags: ${tags.join(" ")}` : "") +
+    `\n\n🆔 \`#${txId}\`` +
+    `\n✏️ Para editar, use \`/editar ${txId}\`` +
+    ` ou \`/excluir ${txId}\` para excluir.`
   );
 }
 

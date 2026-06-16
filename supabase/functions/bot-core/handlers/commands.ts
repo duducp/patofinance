@@ -60,14 +60,14 @@ export async function handleHelp(chatId: number): Promise<void> {
     `/receita - Registrar receita\n` +
     `/saldo - Ver saldo do mês (ex: \`/saldo --mes last_month\`)\n` +
     `/extrato - Ver extrato (ex: \`/extrato --periodo last_month --grupo Pessoal\`)\n` +
-    `/resumo - Resumo por categoria (ex: \`/resumo --mes last_month\`)\n` +
-    `/editar - Editar transação (ex: \`/editar 42\`)\n` +
-    `/excluir - Excluir transação (ex: \`/excluir 42\`)\n\n` +
+    `/resumo - Resumo por categoria (ex: \`/resumo --mes last_month\`)\n\n` +
     `📁 *Organização:*\n` +
     `/grupo - Gerenciar grupos\n` +
     `/categoria - Gerenciar categorias\n` +
     `/tag - Gerenciar tags\n\n` +
     `⚙️ *Utilidades:*\n` +
+    `/editar - Editar transação (ex: \`/editar 42\`)\n` +
+    `/excluir - Excluir transação (ex: \`/excluir 42\`)\n` +
     `/limpar - Remover categorias/grupos sem transações\n` +
     `/cancelar - Cancelar operação em andamento\n` +
     `/ajuda - Esta mensagem\n\n` +
@@ -252,7 +252,7 @@ export async function handleTransaction(
     await sendSimilarityWarning(supabase, user.id, chatId, "tag", tag);
   }
 
-  const { error } = await createTransaction(supabase, {
+  const { error, id } = await createTransaction(supabase, {
     userId: user.id,
     type,
     amount: parsed.amount,
@@ -279,7 +279,10 @@ export async function handleTransaction(
     `🏷️ Categoria: ${parsed.category || "Não definida"}\n` +
     `📁 Grupo: ${parsed.group || "Pessoal"}\n` +
     `📅 Data: ${formatDateBR(parsed.date || getTodayISOBR())}` +
-    (parsed.tags.length > 0 ? `\n🔖 Tags: ${parsed.tags.join(" ")}` : "")
+    (parsed.tags.length > 0 ? `\n🔖 Tags: ${parsed.tags.join(" ")}` : "") +
+    `\n\n🆔 \`#${id}\`` +
+    `\n✏️ Para editar, use \`/editar ${id}\`` +
+    ` ou \`/excluir ${id}\` para excluir.`
   );
 }
 

@@ -218,20 +218,30 @@ export interface CreateTransactionData {
   transactionDate?: string;
 }
 
+export interface CreateTransactionResult {
+  error: any;
+  id?: number;
+}
+
 export async function createTransaction(
   supabase: any,
   data: CreateTransactionData
-): Promise<{ error: any }> {
-  return await supabase.from("transactions").insert({
-    user_id: data.userId,
-    type: data.type,
-    amount: data.amount,
-    category_id: data.categoryId,
-    group_id: data.groupId,
-    description: data.description || "",
-    tags: data.tags || [],
-    transaction_date: data.transactionDate || getTodayISOBR(),
-  });
+): Promise<CreateTransactionResult> {
+  const { data: inserted, error } = await supabase
+    .from("transactions")
+    .insert({
+      user_id: data.userId,
+      type: data.type,
+      amount: data.amount,
+      category_id: data.categoryId,
+      group_id: data.groupId,
+      description: data.description || "",
+      tags: data.tags || [],
+      transaction_date: data.transactionDate || getTodayISOBR(),
+    })
+    .select("id")
+    .single();
+  return { error, id: inserted?.id };
 }
 
 /**
