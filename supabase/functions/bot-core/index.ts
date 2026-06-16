@@ -39,6 +39,7 @@ import {
   handleCategory,
   handleTag,
   handleCleanup,
+  handleReset,
 } from "./handlers/commands.ts";
 
 
@@ -372,6 +373,19 @@ serve(async (req: Request): Promise<Response> => {
         filters.period = { start: data._start, end: parsed };
         await clearWizardState(supabase, existingUser.id);
         await handleStatement(supabase, message.from.id, message.chat.id, 0, filters.type || "all", filters);
+      } else if (wizardState.step === "reset_confirm") {
+        if (text.trim() !== "RESETAR") {
+          await sendTelegramMessage(message.chat.id, "❌ Confirmação incorreta. Digite exatamente `RESETAR` para confirmar, ou use `/cancelar` para cancelar.");
+          return new Response("OK", { status: 200 });
+        }
+        const data = wizardState.data as any;
+        const internalUserId = data.user_id;
+        await supabase.from("wizard_states").delete().eq("user_id", internalUserId);
+        await supabase.from("transactions").delete().eq("user_id", internalUserId);
+        await supabase.from("categories").delete().eq("user_id", internalUserId);
+        await supabase.from("groups").delete().eq("user_id", internalUserId);
+        await supabase.from("users").delete().eq("id", internalUserId);
+        await sendTelegramMessage(message.chat.id, "✅ *Conta resetada com sucesso!* Todos os seus dados foram apagados.\n\nUse /start para começar de novo.");
       }
       return new Response("OK", { status: 200 });
     }
@@ -415,7 +429,7 @@ serve(async (req: Request): Promise<Response> => {
 
       // Check for active wizard on non-wizard commands
       const activeWizard = await getWizardState(supabase, existingUser.id);
-      const wizardCommands = ["/despesa", "/gasto", "/receita", "/cancelar"];
+      const wizardCommands = ["/despesa", "/gasto", "/receita", "/cancelar", "/resetar"];
       if (activeWizard && !wizardCommands.includes(command.toLowerCase())) {
         await clearWizardState(supabase, existingUser.id);
         await sendTelegramMessage(
@@ -511,6 +525,10 @@ serve(async (req: Request): Promise<Response> => {
 
         case "/tag":
           await handleTag(supabase, message.from.id, message.chat.id, args);
+          break;
+
+        case "/resetar":
+          await handleReset(supabase, message.from.id, message.chat.id);
           break;
 
         case "/limpar":

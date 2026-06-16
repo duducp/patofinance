@@ -299,6 +299,7 @@ ajuda - Ajuda completa
 | Comando | Descrição |
 |---------|-----------|
 | `/limpar` | Remover categorias/grupos sem transações |
+| `/resetar` | Resetar conta (apaga todas as transações, categorias, grupos e tags) |
 | `/cancelar` | Cancelar operação em andamento |
 | `/ajuda` | Ajuda completa |
 

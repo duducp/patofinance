@@ -705,6 +705,7 @@ In the wizard:
 | `handleCategory(supabase, userId, chatId, args)` | `/categoria` | Alias for `handleEntity("category", ...)` |
 | `handleTag(supabase, userId, chatId, args)` | `/tag` | Lists all tags with transaction counts + clickable buttons |
 | `handleCleanup(supabase, userId, chatId)` | `/limpar` | Removes unused categories (excluding `is_predefined`) + groups (excluding `is_default`). Tags are NOT shown — they're metadata on transactions, not deletable entities. |
+| `handleReset(supabase, userId, chatId)` | `/resetar` | Shows stats, sets `reset_confirm` wizard state. User types `RESETAR` to confirm → deletes wizard_states → transactions → categories → groups → users (cascade). |
 
 ### `handlers/management.ts` -- Entity management
 

@@ -1028,3 +1028,34 @@ export async function handleCleanup(supabase: any, userId: number, chatId: numbe
 
   await sendTelegramMessageWithKeyboard(chatId, message, keyboard);
 }
+
+export async function handleReset(supabase: any, userId: number, chatId: number): Promise<void> {
+  const user = await getOrCreateUser(supabase, userId);
+  if (!user) {
+    await sendTelegramMessage(chatId, "Ops! Você ainda não está cadastrado. Use /start para começar.");
+    return;
+  }
+
+  // Get stats for warning message
+  const [txCount, catCount, grpCount] = await Promise.all([
+    supabase.from("transactions").select("*", { count: "exact", head: true }).eq("user_id", user.id),
+    supabase.from("categories").select("*", { count: "exact", head: true }).eq("user_id", user.id),
+    supabase.from("groups").select("*", { count: "exact", head: true }).eq("user_id", user.id),
+  ]);
+
+  await setWizardState(supabase, user.id, "reset_confirm", {
+    user_id: user.id,
+    telegram_id: userId,
+  });
+
+  await sendTelegramMessage(
+    chatId,
+    `⚠️ *RESETAR CONTA*\n\n` +
+    `Você está prestes a apagar *todos os seus dados* permanentemente:\n\n` +
+    `• ${txCount.count || 0} transações\n` +
+    `• ${catCount.count || 0} categorias\n` +
+    `• ${grpCount.count || 0} grupos\n\n` +
+    `Para confirmar, digite exatamente:\n\n` +
+    `\`\`\`\nRESETAR\n\`\`\``
+  );
+}
