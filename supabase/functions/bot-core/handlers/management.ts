@@ -226,7 +226,7 @@ export async function handleShowLastTransaction(supabase: any, userId: number, c
   await sendTelegramMessageWithKeyboard(
     chatId,
     `${emoji} *Última ${typeName}:*\n\n` +
-    `🆔 ID: \`${transaction.id}\`\n` +
+    `🆔 ID: #${transaction.id}\n` +
     `💰 Valor: *${formatCurrencyBR(Number(transaction.amount))}*\n` +
     `🏷️ Categoria: ${catName}\n` +
     `📁 Grupo: ${groupName}\n` +
@@ -262,7 +262,7 @@ export async function showDeleteConfirmation(
 
   await sendTelegramMessageWithKeyboard(
     chatId,
-    `${emoji} *${typeName} \`#${transaction.id}\`:*\n\n` +
+    `${emoji} *${typeName} #${transaction.id}:*\n\n` +
     `💰 Valor: *${formatCurrencyBR(Number(transaction.amount))}*\n` +
     `🏷️ Categoria: ${catName}\n` +
     (desc ? `📝 Descrição: ${desc}\n` : "") +

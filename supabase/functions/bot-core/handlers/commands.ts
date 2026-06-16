@@ -606,7 +606,7 @@ export async function handleDetails(
       chatId,
       `📋 *Como ver detalhes de uma transação:*\n\n` +
       `1️⃣ Use \`/extrato\` para ver o extrato do mês\n` +
-      `2️⃣ Identifique o \`#ID\` da transação\n` +
+      `2️⃣ Identifique o #ID da transação\n` +
       `3️⃣ Digite \`/detalhes ID\` (ex: \`/detalhes 42\`)`
     );
     return;
@@ -619,7 +619,7 @@ export async function handleDetails(
   if (!transaction) {
     await sendTelegramMessage(
       chatId,
-      `❌ Transação \`#${transactionId}\` não encontrada.\n\n` +
+      `❌ Transação #${transactionId} não encontrada.\n\n` +
       `Use \`/extrato\` para ver as transações disponíveis.`
     );
     return;
@@ -663,7 +663,7 @@ export async function handleEdit(supabase: any, userId: number, chatId: number, 
       chatId,
       `📝 *Como editar uma transação:*\n\n` +
       `1️⃣ Use \`/extrato\` para ver o extrato do mês\n` +
-      `2️⃣ Identifique o \`#ID\` da transação que deseja editar\n` +
+      `2️⃣ Identifique o #ID da transação que deseja editar\n` +
       `3️⃣ Digite \`/editar ID\` (ex: \`/editar 42\`)\n\n` +
       `💡 Exemplo: \`/editar 42\``
     );
@@ -677,7 +677,7 @@ export async function handleEdit(supabase: any, userId: number, chatId: number, 
   if (!transaction) {
     await sendTelegramMessage(
       chatId,
-      `❌ Transação \`#${transactionId}\` não encontrada.\n\n` +
+      `❌ Transação #${transactionId} não encontrada.\n\n` +
       `Use \`/extrato\` para ver as transações disponíveis.`
     );
     return;
@@ -716,7 +716,7 @@ export async function handleDelete(supabase: any, userId: number, chatId: number
       chatId,
       `🗑️ *Como excluir uma transação:*\n\n` +
       `1️⃣ Use \`/extrato\` para ver o extrato do mês\n` +
-      `2️⃣ Identifique o \`#ID\` da transação que deseja excluir\n` +
+      `2️⃣ Identifique o #ID da transação que deseja excluir\n` +
       `3️⃣ Digite \`/excluir ID\` (ex: \`/excluir 42\`)\n\n` +
       `💡 Exemplo: \`/excluir 42\``
     );
@@ -730,7 +730,7 @@ export async function handleDelete(supabase: any, userId: number, chatId: number
   if (!transaction) {
     await sendTelegramMessage(
       chatId,
-      `❌ Transação \`#${transactionId}\` não encontrada.\n\n` +
+      `❌ Transação #${transactionId} não encontrada.\n\n` +
       `Use \`/extrato\` para ver as transações disponíveis.`
     );
     return;

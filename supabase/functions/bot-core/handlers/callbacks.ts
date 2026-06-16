@@ -601,7 +601,7 @@ export async function handleCallbackQuery(
       const allTags = await getAllUserTags(supabase, user.id);
       const tagSet = new Set(allTags.map((t: string) => t.startsWith("#") ? t : `#${t}`));
 
-      let prompt = `🔖 *Editar tags* (transação \`#${transactionId}\`)\n`;
+      let prompt = `🔖 *Editar tags* (transação #${transactionId})\n`;
       if (currentTags.length > 0) {
         prompt += `\nAtuais: ${currentTags.join(" ")}\n`;
       }
@@ -658,7 +658,7 @@ export async function handleCallbackQuery(
         const allTags = await getAllUserTags(supabase, user.id);
         const tagSet = new Set(allTags.map((t: string) => t.startsWith("#") ? t : `#${t}`));
 
-        let prompt = `🔖 *Editar tags* (transação \`#${transactionId}\`)\n`;
+        let prompt = `🔖 *Editar tags* (transação #${transactionId})\n`;
         if (newTags.length > 0) {
           prompt += `\nSelecionadas: ${newTags.join(" ")}\n`;
         }
