@@ -269,46 +269,77 @@ When building user-facing strings with conditional plurals in Portuguese, **alwa
 
 Natural language via DeepSeek API.
 
+### Architecture
+
+```typescript
+// services/deepseek.ts
+buildSystemPrompt(context?)    → prompt DINÂMICO com categorias/grupos/tags do user
+callDeepSeek(text, {context})  → string raw (sem parsing)
+parseDeepSeekResponse(raw)     → Partial<DeepSeekResponse> (isolado, testável)
+parseNaturalLanguage(text, {userId?, context?})  → orquestrador
+```
+
 ### Flow
 
-1. **Common phrases** (no API call): `quanto tenho`, `saldo`, `extrato`, `resumo`, `quais categorias`, `meus grupos`, `quais tags`, `ultimas transacoes`, `ultimo gasto`, `apagar ultima`, `limpe`, `limpar` -- mapped in `config.ts` `commonPhrases` map
-2. **Cache check**: 5-minute TTL (`nlCache` in `config.ts`)
-3. **DeepSeek API call**: 5s timeout, returns `DeepSeekResponse` with parsed intent + fields. System prompt guides model to map to existing categories (ex: "gasolina" → "Transporte")
-4. **Parse JSON**: Validates fields, fills `missingFields` array
-5. **Cache result**
+1. **Common phrases** (no API call): 12 frases mapeadas em `config.ts` `commonPhrases`
+2. **Cache check** (per-user): `nlCache` é `Map<userId, Map<text, response>>`, TTL 5 min
+3. **Context fetch**: `fetchUserContext()` no `index.ts` busca categorias (com `transaction_type`), grupos, tags em 3 queries paralelas
+4. **BuildSystemPrompt**: injeta dados reais no system prompt:
+   ```
+   SUAS CATEGORIAS (use o nome EXATO):
+   - Alimentação [despesa]
+   - Salário [receita]
+   - Outros [despesa e receita]
+   
+   SEUS GRUPOS:
+   - Pessoal (padrão)
+   
+   SUAS TAGS:
+   - ifood, uber
+   ```
+5. **DeepSeek API call**: 5s timeout, `max_tokens: 200`, retorna JSON cru
+6. **Parsing**: `parseDeepSeekResponse()` extrai campos + validação de tipo
+7. **missingFields**: preenche array para iniciar wizard se necessário
+8. **Cache result**: por usuário + texto, cleanup automático
+
+### Session protection
+
+Todos os keyboards NL usam `addSession()` ou `truncateCallbackData()`:
+- `nl_cat_*` → `truncateCallbackData(sessionSeq)` (nomes longos)
+- `nl_period_*` → `addSession(sessionSeq)` (curtos)
+- `nl_type_*` → `addSession(sessionSeq)` (curtos)
+- `nl_grp_*` → `truncateCallbackData(sessionSeq)` (nomes longos, já funcionava)
 
 ### Category resolution
 
-When NL extracts a category name, `resolveCategoryForNL()` in `database.ts` matches it to existing categories:
-1. **Exact normalized match** (`normalized_name`) — returns immediately
-2. **Trigram similarity** (`suggestSimilarCategories` RPC) — if best match ≥ 50% similarity, uses it
-3. **No match** — creates new category (with `transaction_type` set from the transaction type)
-
-The original NL text is preserved as the transaction description via `descriptionOverride` param in `handleTransaction()`.
+Quando DeepSeek retorna uma categoria (com nomes reais do contexto), `resolveCategoryForNL()` em `database.ts`:
+1. **Exact normalized match** — acerta na maioria dos casos (contexto no prompt)
+2. **Trigram similarity** (≥ 50%) — fallback para typos
+3. **No match** → keyboard com categorias (agora com `truncateCallbackData` + sessionSeq)
 
 ### Missing fields wizard
 
-If DeepSeek response has missing fields (amount, category, period, name, tag), the bot starts a multi-step wizard:
-- `nl_{intent}_amount` -> asks for value
-- `nl_{intent}_category` -> shows keyboard with existing categories
-- `nl_{intent}_group` -> shows keyboard with existing groups (only if user has >1 group)
-- `nl_{intent}_period` -> `this_month` / `last_month` buttons
-- `nl_create_category_name`, `nl_create_group_name` -> asks for name
-- `nl_list_by_tag_name` -> asks for tag
+Se DeepSeek response tiver campos faltantes:
+- `nl_{intent}_amount` → keyboard **com session protection**
+- `nl_{intent}_category` → keyboard **com session protection**
+- `nl_{intent}_group` → keyboard **com session protection** (já funcionava)
+- `nl_{intent}_period` → buttons **com session protection**
+- `nl_create_category_name`, `nl_create_group_name` → input textual
+- `nl_list_by_tag_name` → input textual
 
 ### Type disambiguation
 
-If DeepSeek returns `intent: null` but the text contains a number (e.g., "50 reais"), the bot asks:
-- [💸 Despesa] [💰 Receita]
-- If the user types a keyword ("despesa", "gastei", "receita", "recebi"), it matches via keyword heuristics
-- The amount is extracted from the original text via regex so the user doesn't have to re-enter it
+Se `intent: null` + número detectado, o bot:
+1. Chama `incrementSessionSeq()` (novo — antes não chamava)
+2. Mostra [💸 Despesa] [💰 Receita] com `addSession()` (novo — antes sem proteção)
+3. Keyword heuristics para input textual ("despesa", "gastei", etc.)
+4. Amount extraído do texto original
 
-### Group selection
+### Tag support
 
-When creating an expense/income via NL with no group specified:
-- **1 group** (only default "Pessoal") — auto-assigns, no prompt
-- **>1 groups** — shows keyboard with all groups + [⏭️ Pular] (uses default)
-- Group name uses `truncateCallbackData()` for Telegram's 64-byte limit
+Tag é **opcional** para expense/income. Se DeepSeek retornar `tag`:
+- Passado como `#tagname` no array de args (formato que `parseCommand()` espera)
+- Se não retornar, segue sem — sem wizard de tag para NL
 
 ### Supported intents
 
@@ -316,12 +347,12 @@ When creating an expense/income via NL with no group specified:
 
 ### Pagination via NL
 
-`list_transactions` intent -> `handleListTransactions` with `page` param + navigation keyboard:
-- `txlist_p{page}` callback -- non-tagged pagination
-- `txlist_t{tag}_p{page}` callback -- tag-filtered pagination
-- Shows `Pagina X de Y` with parallel COUNT query
+`list_transactions` intent → `handleListTransactions` com `page` + navigation keyboard:
+- `txlist_p{page}` callback
+- `txlist_t{tag}_p{page}` callback (tag-filtered)
+- `Pagina X de Y` com parallel COUNT query
 
-If `DEEPSEEK_API_KEY` is not set, falls back to commands only.
+Se `DEEPSEEK_API_KEY` não configurada, fallback para comandos apenas.
 
 ## Critical Gotchas
 

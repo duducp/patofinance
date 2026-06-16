@@ -90,7 +90,10 @@ export async function handleQueryExpenses(
   if (!category) query = query.limit(10);
   const { data: transactions } = await query;
   if (!transactions || transactions.length === 0) {
-    await sendTelegramMessage(chatId, `📝 Nenhuma despesa encontrada em ${label}.`);
+    const msg = category
+      ? `📝 Nenhuma transação encontrada em ${label}.`
+      : `📝 Nenhuma despesa encontrada em ${label}.`;
+    await sendTelegramMessage(chatId, msg);
     return;
   }
   // Filter by category in JavaScript (Supabase JS doesn't support ilike on joined tables)
@@ -101,20 +104,29 @@ export async function handleQueryExpenses(
       })
     : transactions;
   if (filtered.length === 0) {
-    await sendTelegramMessage(chatId, `📝 Nenhuma despesa em ${label} com categoria "${category}".`);
+    const msg = category
+      ? `📝 Nenhuma transação em ${label} com categoria "${category}".`
+      : `📝 Nenhuma despesa em ${label} com categoria "${category}".`;
+    await sendTelegramMessage(chatId, msg);
     return;
   }
   // Apply JS limit only when category filter was used (DB limit was deferred)
   const limited = category ? filtered.slice(0, 10) : filtered;
-  let message = `📝 *Despesas em ${label}*\n\n`;
+  const isCategoryQuery = !!category;
+  const title = isCategoryQuery ? "Transações" : "Despesas";
+  let message = `📝 *${title} em ${label}*\n\n`;
   let total = 0;
+  let hasIncome = false;
   for (const t of limited) {
     const catName = t.categories?.name || "Sem categoria";
     const desc = t.description ? ` — ${t.description}` : "";
-    message += `📉 ${formatDateBR(t.transaction_date)} - *${formatCurrencyBR(Number(t.amount))}* | ${catName}${desc}\n`;
-    if (t.type === "expense") total += Number(t.amount);
+    const icon = t.type === "income" ? "📈" : "📉";
+    message += `${icon} ${formatDateBR(t.transaction_date)} - *${formatCurrencyBR(Number(t.amount))}* | ${catName}${desc}\n`;
+    total += Number(t.amount);
+    if (t.type === "income") hasIncome = true;
   }
-  message += `\n💰 Total: *${formatCurrencyBR(total)}*`;
+  const totalLabel = hasIncome && isCategoryQuery ? "Saldo" : "Total";
+  message += `\n💰 ${totalLabel}: *${formatCurrencyBR(total)}*`;
   if (category) message += `\n🔍 Categoria: ${category}`;
   await sendTelegramMessage(chatId, message);
 }

@@ -4,7 +4,7 @@ import { getOrCreateUser, getCategories, resolveCategoryForNL } from "../service
 import { parseDateBR } from "../utils/formatting.ts";
 import { setWizardState } from "./wizard.ts";
 import { truncateCallbackData } from "../utils/rate-limiter.ts";
-import { getSessionSeq } from "../utils/session.ts";
+import { addSession, getSessionSeq } from "../utils/session.ts";
 import {
   handleTransaction,
   handleBalance,
@@ -31,7 +31,8 @@ export async function handleNaturalLanguageWithFollowUp(
   supabase: any,
   userId: number,
   chatId: number,
-  natural: DeepSeekResponse
+  natural: DeepSeekResponse,
+  sessionSeq: number
 ): Promise<void> {
   const user = await getOrCreateUser(supabase, userId);
   if (!user) {
@@ -56,14 +57,14 @@ export async function handleNaturalLanguageWithFollowUp(
       const keyboard: InlineKeyboard = [];
       let row: { text: string; callback_data: string }[] = [];
       for (const c of categories) {
-        row.push({ text: c.name, callback_data: `nl_cat_${c.name}` });
+        row.push({ text: c.name, callback_data: truncateCallbackData(`nl_cat_${c.name}`, sessionSeq) });
         if (row.length === 3) {
           keyboard.push(row);
           row = [];
         }
       }
       if (row.length > 0) keyboard.push(row);
-      keyboard.push([{ text: "⏭️ Sem categoria", callback_data: "nl_cat_none" }]);
+      keyboard.push([{ text: "⏭️ Sem categoria", callback_data: truncateCallbackData("nl_cat_none", sessionSeq) }]);
 
       await setWizardState(supabase, user.id, `nl_${natural.intent}_category`, {
         intent: natural.intent,
@@ -77,8 +78,8 @@ export async function handleNaturalLanguageWithFollowUp(
 
   if (natural.missingFields.includes("period")) {
     const keyboard: InlineKeyboard = [
-      [{ text: "📅 Esse mês", callback_data: "nl_period_this_month" }],
-      [{ text: "📅 Mês passado", callback_data: "nl_period_last_month" }],
+      [{ text: "📅 Esse mês", callback_data: addSession("nl_period_this_month", sessionSeq) }],
+      [{ text: "📅 Mês passado", callback_data: addSession("nl_period_last_month", sessionSeq) }],
     ];
     await setWizardState(supabase, user.id, `nl_${natural.intent}_period`, {
       intent: natural.intent,
@@ -112,7 +113,7 @@ export async function handleNaturalLanguageWithFollowUp(
     return;
   }
 
-  await executeNaturalLanguageAction(supabase, userId, chatId, natural);
+  await executeNaturalLanguageAction(supabase, userId, chatId, natural, sessionSeq);
 }
 
 async function handleNLWithGroupCheck(
@@ -166,6 +167,7 @@ async function handleNLWithGroupCheck(
     args.push("--data", dateBR);
   }
   if (resolvedCategory) args.push(resolvedCategory);
+  if (natural.tag) args.push(natural.tag.startsWith("#") ? natural.tag : `#${natural.tag}`);
   await handleTransaction(type, supabase, telegramId, chatId, args, natural.category || undefined);
 }
 
@@ -173,7 +175,8 @@ export async function executeNaturalLanguageAction(
   supabase: any,
   userId: number,
   chatId: number,
-  natural: DeepSeekResponse
+  natural: DeepSeekResponse,
+  sessionSeq?: number
 ): Promise<void> {
   if ((natural.intent === "expense" || natural.intent === "income") && natural.amount) {
     const user = await getOrCreateUser(supabase, userId);
@@ -192,15 +195,16 @@ export async function executeNaturalLanguageAction(
         const categories = await getCategories(supabase, user.id, natural.intent);
         const keyboard: InlineKeyboard = [];
         let row: { text: string; callback_data: string }[] = [];
+        const seq = sessionSeq || await getSessionSeq(supabase, user.id);
         for (const c of categories) {
-          row.push({ text: c.name, callback_data: `nl_cat_${c.name}` });
+          row.push({ text: c.name, callback_data: truncateCallbackData(`nl_cat_${c.name}`, seq) });
           if (row.length === 3) {
             keyboard.push(row);
             row = [];
           }
         }
         if (row.length > 0) keyboard.push(row);
-        keyboard.push([{ text: "⏭️ Sem categoria", callback_data: "nl_cat_none" }]);
+        keyboard.push([{ text: "⏭️ Sem categoria", callback_data: truncateCallbackData("nl_cat_none", seq) }]);
 
         await setWizardState(supabase, user.id, `nl_${natural.intent}_category`, {
           intent: natural.intent,

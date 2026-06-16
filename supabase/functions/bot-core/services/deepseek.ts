@@ -1,6 +1,77 @@
 import { DeepSeekResponse } from "../types/index.ts";
 import { DEEPSEEK_API_KEY, nlCache, NL_CACHE_TTL, commonPhrases } from "../config.ts";
 
+interface UserContext {
+  categories: { name: string; transaction_type: string | null }[];
+  groups: { name: string; is_default: boolean }[];
+  tags: string[];
+}
+
+function buildSystemPrompt(context?: UserContext): string {
+  let prompt = `Você é um assistente que analisa mensagens em português para extrair informações financeiras.
+Responda APENAS com JSON válido, sem texto adicional.
+
+Formato esperado:
+{"intent":"string|null","amount":number|null,"category":"string|null","date":"string|null","period":"this_month|last_month|null","name":"string|null","tag":"string|null","limit":number|null}
+
+Intents:
+- "expense": despesa (gastei, paguei, comprei, etc.)
+- "income": receita (recebi, ganhei, salário, etc.)
+- "query_balance": ver saldo
+- "query_expenses_month": gastos do mês atual
+- "query_expenses_last_month": gastos do mês passado
+- "query_expenses_date": gastos de data específica
+- "query_expenses_category": gastos por categoria
+- "query_summary": resumo por categoria
+- "query_extract": extrato detalhado
+- "create_category": criar nova categoria
+- "create_group": criar novo grupo
+- "list_categories": listar categorias
+- "list_groups": listar grupos
+- "list_tags": listar tags
+- "list_transactions": listar transações
+- "show_last_transaction": última transação
+- "delete_last_transaction": excluir última
+- "list_by_tag": listar por tag
+- "cleanup": limpar dados não usados
+- null: não entendeu
+
+REGRAS IMPORTANTES:
+- Identifique a intenção mesmo com typos
+- Se não houver palavra-chave clara indicando despesa ou receita, retorne intent como null
+- category: palavras de moeda (reais, real, R$, dinheiro, conto, pila, grana), data (ontem, hoje, amanhã), preposições (de, em, no, na, do, da) e verbos de ação não são categorias. Ignore-as.
+- amount numérico, date YYYY-MM-DD, period this_month/last_month, name para criar entidade, tag sem #
+- limit padrão 10`;
+
+  if (context?.categories?.length) {
+    prompt += `\n\nSUAS CATEGORIAS (use o nome EXATO):\n`;
+    for (const c of context.categories) {
+      const tipo = c.transaction_type === "expense" ? " [despesa]"
+        : c.transaction_type === "income" ? " [receita]"
+        : " [despesa e receita]";
+      prompt += `- ${c.name}${tipo}\n`;
+    }
+    prompt += `\nSe for uma despesa, escolha [despesa] ou [despesa e receita].\n`;
+    prompt += `Se for uma receita, escolha [receita] ou [despesa e receita].\n`;
+  }
+
+  if (context?.groups?.length) {
+    prompt += `\nSEUS GRUPOS:\n`;
+    for (const g of context.groups) {
+      prompt += `- ${g.name}${g.is_default ? " (padrão)" : ""}\n`;
+    }
+  }
+
+  if (context?.tags?.length) {
+    prompt += `\nSUAS TAGS:\n`;
+    for (const t of context.tags) {
+      prompt += `- ${t}\n`;
+    }
+  }
+
+  return prompt;
+}
+
 function checkCommonPhrase(text: string): DeepSeekResponse | null {
   const normalized = text.toLowerCase().trim();
   for (const [phrase, response] of Object.entries(commonPhrases)) {
@@ -11,27 +82,51 @@ function checkCommonPhrase(text: string): DeepSeekResponse | null {
   return null;
 }
 
-function getCachedResponse(text: string): DeepSeekResponse | null {
-  const cached = nlCache.get(text);
+function getCachedResponse(userId: number, text: string): DeepSeekResponse | null {
+  const userCache = nlCache.get(userId);
+  if (!userCache) return null;
+  const cached = userCache.get(text);
   if (cached && Date.now() - cached.timestamp < NL_CACHE_TTL) {
     return { ...cached.response };
   }
-  nlCache.delete(text);
+  userCache.delete(text);
+  if (userCache.size === 0) nlCache.delete(userId);
   return null;
 }
 
-function setCachedResponse(text: string, response: DeepSeekResponse): void {
-  nlCache.set(text, { response: { ...response }, timestamp: Date.now() });
-  if (nlCache.size > 1000) {
-    for (const [key, value] of nlCache.entries()) {
-      if (Date.now() - value.timestamp > NL_CACHE_TTL) {
-        nlCache.delete(key);
+function setCachedResponse(userId: number, text: string, response: DeepSeekResponse): void {
+  let userCache = nlCache.get(userId);
+  if (!userCache) {
+    userCache = new Map();
+    nlCache.set(userId, userCache);
+  }
+  userCache.set(text, { response: { ...response }, timestamp: Date.now() });
+  if (userCache.size > 100) {
+    const entries = [...userCache.entries()];
+    const cutoff = Date.now() - NL_CACHE_TTL;
+    for (const [key, value] of entries) {
+      if (value.timestamp < cutoff) {
+        userCache.delete(key);
+      }
+    }
+    if (userCache.size > 100) {
+      const sorted = [...userCache.entries()].sort((a, b) => a[1].timestamp - b[1].timestamp);
+      const toDelete = Math.ceil(userCache.size / 2);
+      for (let i = 0; i < toDelete; i++) {
+        userCache.delete(sorted[i][0]);
       }
     }
   }
 }
 
-async function callDeepSeek(prompt: string): Promise<string | null> {
+async function callDeepSeek(
+  userMessage: string,
+  options?: {
+    context?: UserContext;
+    history?: { role: "user" | "assistant"; content: string }[];
+    maxTokens?: number;
+  }
+): Promise<string | null> {
   if (!DEEPSEEK_API_KEY) {
     console.error("DEEPSEEK_API_KEY is not set");
     return null;
@@ -39,54 +134,23 @@ async function callDeepSeek(prompt: string): Promise<string | null> {
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 5000);
+    const systemPrompt = buildSystemPrompt(options?.context);
+    const messages: { role: string; content: string }[] = [
+      { role: "system", content: systemPrompt },
+    ];
+    if (options?.history) {
+      messages.push(...options.history);
+    }
+    messages.push({ role: "user", content: userMessage });
+
     const response = await fetch("https://api.deepseek.com/chat/completions", {
       method: "POST",
       headers: { "Content-Type": "application/json", "Authorization": `Bearer ${DEEPSEEK_API_KEY}` },
       body: JSON.stringify({
         model: "deepseek-chat",
-        messages: [
-          {
-            role: "system",
-            content: `Você é um assistente que analisa mensagens em português para extrair informações financeiras.
-Responda APENAS com JSON válido, sem texto adicional.
-
-Formato esperado:
-{"intent":"string|null","amount":number|null,"category":"string|null","date":"string|null","period":"this_month|last_month|null","name":"string|null","tag":"string|null","limit":number|null}
-
-Intents:
-- "expense": despesa (gastei, gasto, paguei, comprei, debitou, custou, gasolina, ifood, aluguel, conta, fatura, boleto, assinatura, desembolsei, tirei do bolso, saiu, sangrou, pesei no bolso, quebrei, ralei, suei)
-- "income": receita (recebi, ganhei, salário, renda, bônus, freela, deposito, caiu, creditou, lucro, vendi, investimento, faturo, faturei, embolsei, tirei, bati, puxei, fiz um bico, quebra-galho)
-- "query_balance": ver saldo (quanto tenho, saldo)
-- "query_expenses_month": gastos do mês atual
-- "query_expenses_last_month": gastos do mês passado
-- "query_expenses_date": gastos de uma data específica
-- "query_expenses_category": gastos por categoria
-- "query_summary": resumo por categoria
-- "query_extract": extrato detalhado
-- "create_category": criar categoria
-- "create_group": criar grupo
-- "list_categories": listar categorias
-- "list_groups": listar grupos
-- "list_tags": listar tags
-- "list_transactions": listar transações
-- "show_last_transaction": última transação
-- "delete_last_transaction": excluir última transação
-- "list_by_tag": listar por tag
-- "cleanup": limpar categorias/grupos sem uso (limpe, limpar)
-- null: não entendeu
-
-REGRAS IMPORTANTES:
-- Identifique a intenção mesmo com typos do usuário (ex: "ganheir" quer dizer "ganhei")
-- Se não houver palavra-chave clara indicando despesa ou receita, retorne intent como null
-- category: palavras de moeda (reais, real, R$, dinheiro, conto, pila, grana, bufunfa, cascalho, mangos, pau, mila, k, din-din, tostão, cobre, vintém, caraminguá), data (ontem, hoje, amanhã), preposições (de, em, no, na, do, da, um, uma, uns) e verbos de ação (gastei, recebi, ganhei, etc.) NÃO são categorias. Ignore-as.
-- category: use nomes de categorias existentes quando possível (ex: "gasolina" → "Transporte", "ifood" → "Alimentação", "aluguel" → "Moradia"). Apenas crie categoria nova se for algo realmente específico que não se encaixa em categorias comuns.
-- amount numérico, date YYYY-MM-DD, period this_month/last_month, name para criar entidade, tag sem #
-- limit padrão 10`,
-          },
-          { role: "user", content: prompt },
-        ],
+        messages,
         temperature: 0.1,
-        max_tokens: 150,
+        max_tokens: options?.maxTokens || 200,
       }),
       signal: controller.signal,
     });
@@ -107,7 +171,33 @@ REGRAS IMPORTANTES:
   }
 }
 
-export async function parseNaturalLanguage(text: string): Promise<DeepSeekResponse> {
+function parseDeepSeekResponse(raw: string): Partial<DeepSeekResponse> {
+  try {
+    const cleaned = raw.replace(/```json\n?|\n?```/g, "").trim();
+    const parsed = JSON.parse(cleaned);
+    return {
+      intent: parsed.intent || null,
+      amount: typeof parsed.amount === "number" ? parsed.amount : null,
+      category: parsed.category || null,
+      date: parsed.date || null,
+      period: parsed.period || null,
+      name: parsed.name || null,
+      tag: parsed.tag || null,
+      limit: typeof parsed.limit === "number" ? parsed.limit : null,
+    };
+  } catch (error) {
+    console.error("Error parsing DeepSeek response:", error);
+    return {};
+  }
+}
+
+export async function parseNaturalLanguage(
+  text: string,
+  options?: {
+    userId?: number;
+    context?: UserContext;
+  }
+): Promise<DeepSeekResponse> {
   const defaultResponse: DeepSeekResponse = {
     intent: null, amount: null, category: null, date: null, period: null,
     name: null, tag: null, limit: null, missingFields: [],
@@ -116,38 +206,34 @@ export async function parseNaturalLanguage(text: string): Promise<DeepSeekRespon
   const commonResponse = checkCommonPhrase(text);
   if (commonResponse) return commonResponse;
 
-  const cachedResponse = getCachedResponse(text);
+  const cachedResponse = options?.userId ? getCachedResponse(options.userId, text) : null;
   if (cachedResponse) return cachedResponse;
 
-  const response = await callDeepSeek(text);
-  if (!response) return defaultResponse;
+  const raw = await callDeepSeek(text, { context: options?.context });
+  if (!raw) return defaultResponse;
 
-  try {
-    const cleaned = response.replace(/```json\n?|\n?```/g, "").trim();
-    const parsed = JSON.parse(cleaned);
-    const intent = parsed.intent || null;
-    const amount = typeof parsed.amount === "number" ? parsed.amount : null;
-    const category = parsed.category || null;
-    const date = parsed.date || null;
-    const period = parsed.period || null;
-    const name = parsed.name || null;
-    const tag = parsed.tag || null;
-    const limit = typeof parsed.limit === "number" ? parsed.limit : null;
+  const parsed = parseDeepSeekResponse(raw);
+  const intent = parsed.intent || null;
+  const amount = typeof parsed.amount === "number" ? parsed.amount : null;
+  const category = parsed.category || null;
+  const date = parsed.date || null;
+  const period = parsed.period || null;
+  const name = parsed.name || null;
+  const tag = parsed.tag || null;
+  const limit = typeof parsed.limit === "number" ? parsed.limit : null;
 
-    const missingFields: string[] = [];
-    if (intent === "expense" || intent === "income") {
-      if (!amount) missingFields.push("amount");
-      if (!category) missingFields.push("category");
-    }
-    if (intent === "query_expenses_date" && !date) missingFields.push("date");
-    if ((intent === "query_expenses_month" || intent === "query_expenses_last_month" || 
-         intent === "query_summary" || intent === "query_extract") && !period) missingFields.push("period");
-
-    const result: DeepSeekResponse = { intent, amount, category, date, period, name, tag, limit, missingFields };
-    setCachedResponse(text, result);
-    return result;
-  } catch (error) {
-    console.error("Error parsing DeepSeek response:", error);
-    return defaultResponse;
+  const missingFields: string[] = [];
+  if (intent === "expense" || intent === "income") {
+    if (!amount) missingFields.push("amount");
+    if (!category) missingFields.push("category");
   }
+  if (intent === "query_expenses_date" && !date) missingFields.push("date");
+  if ((intent === "query_expenses_month" || intent === "query_expenses_last_month" || 
+       intent === "query_expenses_category" || intent === "query_summary" || intent === "query_extract") && !period) missingFields.push("period");
+
+  const result: DeepSeekResponse = { intent, amount, category, date, period, name, tag, limit, missingFields };
+
+  if (options?.userId) setCachedResponse(options.userId, text, result);
+
+  return result;
 }

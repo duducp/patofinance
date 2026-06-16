@@ -12,12 +12,12 @@ import type {
   PeriodPreset,
   ExtratoFilters,
 } from "./types/index.ts";
-import { isRateLimited } from "./utils/rate-limiter.ts";
-import { incrementSessionSeq } from "./utils/session.ts";
+import { isRateLimited, truncateCallbackData } from "./utils/rate-limiter.ts";
+import { incrementSessionSeq, addSession, getSessionSeq } from "./utils/session.ts";
 import { formatCurrencyBR, formatDateBR, parseDateBR } from "./utils/formatting.ts";
 import { parseNaturalLanguage } from "./services/deepseek.ts";
 import { sendTelegramMessage, sendTelegramMessageWithKeyboard } from "./services/telegram.ts";
-import { getCategories, sendSimilarityWarning, normalizeString } from "./services/database.ts";
+import { getCategories, sendSimilarityWarning, normalizeString, getAllUserTags } from "./services/database.ts";
 import { handleCallbackQuery, handleFilterPanel } from "./handlers/callbacks.ts";
 import { handleNaturalLanguageWithFollowUp, executeNaturalLanguageAction } from "./handlers/nl-processing.ts";
 import {
@@ -41,6 +41,23 @@ import {
   handleCleanup,
 } from "./handlers/commands.ts";
 
+
+async function fetchUserContext(supabase: any, userId: number): Promise<{
+  categories: { name: string; transaction_type: string | null }[];
+  groups: { name: string; is_default: boolean }[];
+  tags: string[];
+}> {
+  const [categoriesResult, groupsResult, tags] = await Promise.all([
+    supabase.from("categories").select("name, transaction_type").eq("user_id", userId),
+    supabase.from("groups").select("name, is_default").eq("user_id", userId),
+    getAllUserTags(supabase, userId),
+  ]);
+  return {
+    categories: categoriesResult.data || [],
+    groups: groupsResult.data || [],
+    tags: tags || [],
+  };
+}
 
 async function handleEntityRename(
   supabase: any,
@@ -234,10 +251,11 @@ serve(async (req: Request): Promise<Response> => {
           await executeNaturalLanguageAction(supabase, message.from.id, message.chat.id, natural);
         } else {
           const categories = await getCategories(supabase, existingUser.id, intent);
+          const seq = await getSessionSeq(supabase, existingUser.id);
           const keyboard: InlineKeyboard = categories.map((c) => [
-            { text: c.name, callback_data: `nl_cat_${c.name}` }
+            { text: c.name, callback_data: truncateCallbackData(`nl_cat_${c.name}`, seq) }
           ]);
-          keyboard.push([{ text: "⏭️ Sem categoria", callback_data: "nl_cat_none" }]);
+          keyboard.push([{ text: "⏭️ Sem categoria", callback_data: truncateCallbackData("nl_cat_none", seq) }]);
 
           await setWizardState(supabase, existingUser.id, `nl_${intent}_category`, {
             intent,
@@ -278,9 +296,10 @@ serve(async (req: Request): Promise<Response> => {
           await clearWizardState(supabase, existingUser.id);
           await handleTransaction(type, supabase, message.from.id, message.chat.id, []);
         } else {
+          const sessionSeq = await getSessionSeq(supabase, existingUser.id);
           const keyboard = [
-            [{ text: "💸 Despesa", callback_data: "nl_type_expense" }],
-            [{ text: "💰 Receita", callback_data: "nl_type_income" }],
+            [{ text: "💸 Despesa", callback_data: addSession("nl_type_expense", sessionSeq) }],
+            [{ text: "💰 Receita", callback_data: addSession("nl_type_income", sessionSeq) }],
           ];
           await sendTelegramMessageWithKeyboard(message.chat.id, "Não entendi. É uma despesa ou receita?", keyboard);
         }
@@ -336,14 +355,16 @@ serve(async (req: Request): Promise<Response> => {
     }
 
     if (!text.startsWith("/") && existingUser) {
-      const natural = await parseNaturalLanguage(text);
+      const context = await fetchUserContext(supabase, existingUser.id);
+      const natural = await parseNaturalLanguage(text, { userId: existingUser.id, context });
 
       if (natural.intent === null) {
         if (text.match(/\d+[,\.]?\d*/)) {
+          const sessionSeq = await incrementSessionSeq(supabase, existingUser.id);
           await setWizardState(supabase, existingUser.id, "nl_ask_type", { text, date: natural.date });
           const keyboard = [
-            [{ text: "💸 Despesa", callback_data: "nl_type_expense" }],
-            [{ text: "💰 Receita", callback_data: "nl_type_income" }],
+            [{ text: "💸 Despesa", callback_data: addSession("nl_type_expense", sessionSeq) }],
+            [{ text: "💰 Receita", callback_data: addSession("nl_type_income", sessionSeq) }],
           ];
           await sendTelegramMessageWithKeyboard(
             message.chat.id,
@@ -359,8 +380,8 @@ serve(async (req: Request): Promise<Response> => {
         return new Response("OK", { status: 200 });
       }
 
-      await incrementSessionSeq(supabase, existingUser.id);
-      await handleNaturalLanguageWithFollowUp(supabase, message.from.id, message.chat.id, natural);
+      const sessionSeq = await incrementSessionSeq(supabase, existingUser.id);
+      await handleNaturalLanguageWithFollowUp(supabase, message.from.id, message.chat.id, natural, sessionSeq);
       return new Response("OK", { status: 200 });
     }
 

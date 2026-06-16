@@ -5,7 +5,7 @@ export interface DeepSeekResponse {
           "create_category" | "create_group" | "list_categories" | 
           "list_groups" | "list_tags" | "list_transactions" |
           "show_last_transaction" | "delete_last_transaction" |
-          "list_by_tag" | "cleanup" | "next_page" | "previous_page" | null;
+          "list_by_tag" | "cleanup" | null;
   amount: number | null;
   category: string | null;
   date: string | null;

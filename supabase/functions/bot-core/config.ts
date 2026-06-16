@@ -16,8 +16,8 @@ if (!SUPABASE_SERVICE_ROLE_KEY) {
   console.error("SUPABASE_SERVICE_ROLE_KEY is not set");
 }
 
-// Cache for common DeepSeek responses
-export const nlCache = new Map<string, { response: DeepSeekResponse; timestamp: number }>();
+// Cache for common DeepSeek responses (per-user: userId -> text -> response)
+export const nlCache = new Map<number, Map<string, { response: DeepSeekResponse; timestamp: number }>>();
 export const NL_CACHE_TTL = 300000; // 5 minutes
 
 // Common phrases that don't need API calls
