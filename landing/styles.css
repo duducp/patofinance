@@ -475,8 +475,8 @@ code {
 }
 
 .footer-grid {
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
+  display: flex;
+  justify-content: space-between;
   align-items: center;
   gap: 16px;
 }
@@ -538,7 +538,7 @@ code {
     font-size: 1.1rem;
   }
   .footer-grid {
-    grid-template-columns: 1fr;
+    flex-direction: column;
     text-align: center;
     gap: 8px;
   }
