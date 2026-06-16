@@ -12,6 +12,8 @@ export interface DeepSeekResponse {
   period: "this_month" | "last_month" | null;
   name: string | null;
   tag: string | null;
+  group?: string | null;
+  description?: string | null;
   limit: number | null;
   missingFields: string[];
 }

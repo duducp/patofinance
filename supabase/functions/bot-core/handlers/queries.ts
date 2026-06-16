@@ -79,15 +79,17 @@ export async function handleQueryExpenses(
   const user = await requireUser(supabase, userId, chatId);
   if (!user) return;
   const { start, end, label } = getDateRange(period, date);
+  const queryFilters = buildQueryExpensesFilters(category);
   let query = supabase
     .from("transactions")
     .select(`id, type, amount, description, tags, transaction_date, categories(name), groups(name)`)
     .eq("user_id", user.id)
+    .eq("type", queryFilters.type)
     .gte("transaction_date", start)
     .lte("transaction_date", end)
     .order("transaction_date", { ascending: false });
   // Apply limit after filtering when category filter is active, otherwise at DB level
-  if (!category) query = query.limit(10);
+  if (queryFilters.limit) query = query.limit(queryFilters.limit);
   const { data: transactions } = await query;
   if (!transactions || transactions.length === 0) {
     const msg = category
@@ -112,23 +114,25 @@ export async function handleQueryExpenses(
   }
   // Apply JS limit only when category filter was used (DB limit was deferred)
   const limited = category ? filtered.slice(0, 10) : filtered;
-  const isCategoryQuery = !!category;
-  const title = isCategoryQuery ? "Transações" : "Despesas";
-  let message = `📝 *${title} em ${label}*\n\n`;
+  let message = `📝 *Despesas em ${label}*\n\n`;
   let total = 0;
-  let hasIncome = false;
   for (const t of limited) {
     const catName = t.categories?.name || "Sem categoria";
     const desc = t.description ? ` — ${t.description}` : "";
     const icon = t.type === "income" ? "📈" : "📉";
     message += `${icon} ${formatDateBR(t.transaction_date)} - *${formatCurrencyBR(Number(t.amount))}* | ${catName}${desc}\n`;
     total += Number(t.amount);
-    if (t.type === "income") hasIncome = true;
   }
-  const totalLabel = hasIncome && isCategoryQuery ? "Saldo" : "Total";
-  message += `\n💰 ${totalLabel}: *${formatCurrencyBR(total)}*`;
+  message += `\n💰 Total: *${formatCurrencyBR(total)}*`;
   if (category) message += `\n🔍 Categoria: ${category}`;
   await sendTelegramMessage(chatId, message);
+}
+
+export function buildQueryExpensesFilters(category: string | null): { type: "expense"; limit: number | null } {
+  return {
+    type: "expense",
+    limit: category ? null : 10,
+  };
 }
 
 export async function handleQuerySummary(

@@ -2,10 +2,10 @@ import { ParsedCommand } from "../types/index.ts";
 
 export function parseCommand(args: string[]): ParsedCommand {
   let amount: number | null = null;
-  let category: string | null = null;
   let group: string | null = null;
   let date: string | null = null;
   let period: string | null = null;
+  const categoryParts: string[] = [];
   const tags: string[] = [];
 
   for (let i = 0; i < args.length; i++) {
@@ -23,10 +23,10 @@ export function parseCommand(args: string[]): ParsedCommand {
     } else if (!amount && !isNaN(parseFloat(args[i].replace(",", ".")))) {
       amount = parseFloat(args[i].replace(",", "."));
     } else {
-      category = args.slice(i).join(" ");
-      break;
+      categoryParts.push(args[i]);
     }
   }
 
+  const category = categoryParts.length > 0 ? categoryParts.join(" ") : null;
   return { amount, category, group, date, tags, period };
 }

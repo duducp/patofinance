@@ -19,7 +19,7 @@ function buildSystemPrompt(context?: UserContext): string {
 Responda APENAS com JSON válido, sem texto adicional.
 
 Formato esperado:
-{"intent":"string|null","amount":number|null,"category":"string|null","date":"string|null","period":"this_month|last_month|null","name":"string|null","tag":"string|null","limit":number|null}
+{"intent":"string|null","amount":number|null,"category":"string|null","group":"string|null","description":"string|null","date":"string|null","period":"this_month|last_month|null","name":"string|null","tag":"string|null","limit":number|null}
 
 Intents:
 - "expense": despesa (gastei, gasto, paguei, pago, comprei, compro, debitou, custou, gasolina, ifood, aluguel, conta, fatura, boleto, assinatura, desembolsei, saiu, sangrou, quebrei, ralei, suei, pedi, consumo, comi, almocei, jantei, abasteci, recarreguei)
@@ -53,6 +53,8 @@ REGRAS IMPORTANTES:
 - NUNCA use a frase inteira como valor de category. Apenas palavras individuais da frase
 - palavras de moeda (reais, real, R$, dinheiro, conto, pila, grana), data (ontem, hoje, amanhã), preposições (de, em, no, na, do, da), verbos de ação e nomes próprios NÃO são categorias. Ignore-os.
 - amount numérico, date YYYY-MM-DD, period this_month/last_month, name para criar entidade, tag sem #
+- group deve ser o nome EXATO de um grupo listado abaixo, se mencionado; se não houver grupo mencionado, null
+- description deve guardar o contexto útil da transação quando não for categoria/grupo/tag/data/valor (ex: pessoa, loja, motivo curto)
 - limit padrão 10
 
 DATA ATUAL: ${today} (fuso horário: America/Sao_Paulo)
@@ -105,9 +107,9 @@ Se o usuário mencionar um dia da semana (ex: "segunda", "terça"), calcule a da
 }
 
 function checkCommonPhrase(text: string): DeepSeekResponse | null {
-  const normalized = text.toLowerCase().trim();
+  const normalized = text.toLowerCase().trim().replace(/[?!.,]+$/g, "").replace(/\s+/g, " ");
   for (const [phrase, response] of Object.entries(commonPhrases)) {
-    if (normalized.includes(phrase)) {
+    if (normalized === phrase) {
       return { ...response };
     }
   }
@@ -203,7 +205,7 @@ async function callDeepSeek(
   }
 }
 
-function parseDeepSeekResponse(raw: string): Partial<DeepSeekResponse> {
+export function parseDeepSeekResponse(raw: string): Partial<DeepSeekResponse> {
   try {
     const cleaned = raw.replace(/```json\n?|\n?```/g, "").trim();
     const parsed = JSON.parse(cleaned);
@@ -215,12 +217,38 @@ function parseDeepSeekResponse(raw: string): Partial<DeepSeekResponse> {
       period: parsed.period || null,
       name: parsed.name || null,
       tag: parsed.tag || null,
+      group: parsed.group || null,
+      description: parsed.description || null,
       limit: typeof parsed.limit === "number" ? parsed.limit : null,
     };
   } catch (error) {
     console.error("Error parsing DeepSeek response:", error);
     return {};
   }
+}
+
+export function buildDeepSeekResponse(parsed: Partial<DeepSeekResponse>): DeepSeekResponse {
+  const intent = parsed.intent || null;
+  const amount = typeof parsed.amount === "number" ? parsed.amount : null;
+  const category = parsed.category || null;
+  const date = parsed.date || null;
+  const period = parsed.period || null;
+  const name = parsed.name || null;
+  const tag = parsed.tag || null;
+  const group = parsed.group || null;
+  const description = parsed.description || null;
+  const limit = typeof parsed.limit === "number" ? parsed.limit : null;
+
+  const missingFields: string[] = [];
+  if (intent === "expense" || intent === "income") {
+    if (!amount) missingFields.push("amount");
+    if (!category && !description) missingFields.push("category");
+  }
+  if (intent === "query_expenses_date" && !date) missingFields.push("date");
+  if ((intent === "query_expenses_month" || intent === "query_expenses_last_month" ||
+       intent === "query_expenses_category" || intent === "query_summary" || intent === "query_extract") && !period) missingFields.push("period");
+
+  return { intent, amount, category, date, period, name, tag, group, description, limit, missingFields };
 }
 
 export async function parseNaturalLanguage(
@@ -232,7 +260,7 @@ export async function parseNaturalLanguage(
 ): Promise<DeepSeekResponse> {
   const defaultResponse: DeepSeekResponse = {
     intent: null, amount: null, category: null, date: null, period: null,
-    name: null, tag: null, limit: null, missingFields: [],
+    name: null, tag: null, group: null, description: null, limit: null, missingFields: [],
   };
 
   const commonResponse = checkCommonPhrase(text);
@@ -245,25 +273,7 @@ export async function parseNaturalLanguage(
   if (!raw) return defaultResponse;
 
   const parsed = parseDeepSeekResponse(raw);
-  const intent = parsed.intent || null;
-  const amount = typeof parsed.amount === "number" ? parsed.amount : null;
-  const category = parsed.category || null;
-  const date = parsed.date || null;
-  const period = parsed.period || null;
-  const name = parsed.name || null;
-  const tag = parsed.tag || null;
-  const limit = typeof parsed.limit === "number" ? parsed.limit : null;
-
-  const missingFields: string[] = [];
-  if (intent === "expense" || intent === "income") {
-    if (!amount) missingFields.push("amount");
-    if (!category) missingFields.push("category");
-  }
-  if (intent === "query_expenses_date" && !date) missingFields.push("date");
-  if ((intent === "query_expenses_month" || intent === "query_expenses_last_month" || 
-       intent === "query_expenses_category" || intent === "query_summary" || intent === "query_extract") && !period) missingFields.push("period");
-
-  const result: DeepSeekResponse = { intent, amount, category, date, period, name, tag, limit, missingFields };
+  const result = buildDeepSeekResponse(parsed);
 
   if (options?.userId) setCachedResponse(options.userId, text, result);
 

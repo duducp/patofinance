@@ -60,25 +60,32 @@ export async function resolveCategoryForNL(
   supabase: any,
   userId: number,
   categoryName: string,
-  _transactionType?: "expense" | "income"
+  transactionType?: "expense" | "income"
 ): Promise<{ id: string; name: string } | null> {
   const normalized = normalizeString(categoryName);
-  const { data: exact } = await supabase
+  let exactQuery = supabase
     .from("categories")
     .select("id, name")
     .eq("user_id", userId)
-    .eq("normalized_name", normalized)
-    .maybeSingle();
+    .eq("normalized_name", normalized);
+  if (transactionType) {
+    exactQuery = exactQuery.or(`transaction_type.eq.${transactionType},transaction_type.is.null`);
+  }
+  const { data: exact } = await exactQuery.maybeSingle();
   if (exact) return exact;
 
-  const similar = await suggestSimilarCategories(supabase, userId, categoryName, 1);
-  if (similar && similar.length > 0 && similar[0].similarity >= 0.5) {
-    const { data: match } = await supabase
+  const similar = await suggestSimilarCategories(supabase, userId, categoryName, 5);
+  const candidate = similar?.find((s) => s.similarity >= 0.5);
+  if (candidate) {
+    let matchQuery = supabase
       .from("categories")
       .select("id, name")
       .eq("user_id", userId)
-      .eq("normalized_name", normalizeString(similar[0].name))
-      .single();
+      .eq("normalized_name", normalizeString(candidate.name));
+    if (transactionType) {
+      matchQuery = matchQuery.or(`transaction_type.eq.${transactionType},transaction_type.is.null`);
+    }
+    const { data: match } = await matchQuery.maybeSingle();
     if (match) return match;
   }
   return null;

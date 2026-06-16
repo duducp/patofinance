@@ -661,9 +661,12 @@ export async function handleCallbackQuery(
       if (!state) return;
       const intent = state.step.includes("expense") ? "expense" : "income";
       const amount = state.data.amount;
+      const group = state.data.group;
+      const description = state.data.description;
+      const tag = state.data.tag;
       const date = state.data.date;
       const finalCategory = category === "none" ? null : category;
-      const natural: DeepSeekResponse = { intent, amount, category: finalCategory, date, period: null, name: null, tag: null, limit: null, missingFields: [] };
+      const natural: DeepSeekResponse = { intent, amount, category: finalCategory, group, description, date, period: null, name: null, tag, limit: null, missingFields: [] };
       await clearWizardState(supabase, user.id);
       await executeNaturalLanguageAction(supabase, telegramId, chatId, natural);
       return;
@@ -680,6 +683,7 @@ export async function handleCallbackQuery(
       const amount = state.data.amount;
       const category = state.data.category;
       const description = state.data.description;
+      const tag = state.data.tag;
       const date = state.data.date;
       if (!amount) return;
       const args = [amount.toString()];
@@ -688,6 +692,7 @@ export async function handleCallbackQuery(
         args.push("--data", dateBR);
       }
       if (groupName !== "skip") args.push("--grupo", groupName);
+      if (tag) args.push(tag.startsWith("#") ? tag : `#${tag}`);
       if (category) args.push(category);
       await clearWizardState(supabase, user.id);
       await handleTransaction(type, supabase, telegramId, chatId, args, description || undefined);

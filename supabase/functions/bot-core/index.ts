@@ -243,10 +243,13 @@ serve(async (req: Request): Promise<Response> => {
 
         const intent = wizardState.step === "nl_expense_amount" ? "expense" : "income";
         const category = wizardState.data.category;
+        const group = wizardState.data.group;
+        const description = wizardState.data.description;
+        const tag = wizardState.data.tag;
         const date = wizardState.data.date;
 
-        if (category) {
-          const natural: DeepSeekResponse = { intent, amount, category, date, period: null, name: null, tag: null, limit: null, missingFields: [] };
+        if (category || description) {
+          const natural: DeepSeekResponse = { intent, amount, category, group, description, date, period: null, name: null, tag, limit: null, missingFields: [] };
           await clearWizardState(supabase, existingUser.id);
           await executeNaturalLanguageAction(supabase, message.from.id, message.chat.id, natural);
         } else {
@@ -260,6 +263,9 @@ serve(async (req: Request): Promise<Response> => {
           await setWizardState(supabase, existingUser.id, `nl_${intent}_category`, {
             intent,
             amount,
+            group,
+            description,
+            tag,
             date,
           });
           await sendTelegramMessageWithKeyboard(message.chat.id, "Em que categoria?", keyboard);
@@ -267,9 +273,12 @@ serve(async (req: Request): Promise<Response> => {
       } else if (wizardState.step === "nl_expense_category" || wizardState.step === "nl_income_category") {
         const intent = wizardState.step === "nl_expense_category" ? "expense" : "income";
         const amount = wizardState.data.amount;
+        const group = wizardState.data.group;
+        const description = wizardState.data.description;
+        const tag = wizardState.data.tag;
         const date = wizardState.data.date;
 
-        const natural: DeepSeekResponse = { intent, amount, category: text, date, period: null, name: null, tag: null, limit: null, missingFields: [] };
+        const natural: DeepSeekResponse = { intent, amount, category: text, group, description, date, period: null, name: null, tag, limit: null, missingFields: [] };
         await clearWizardState(supabase, existingUser.id);
         await executeNaturalLanguageAction(supabase, message.from.id, message.chat.id, natural);
       } else if (wizardState.step.startsWith("nl_") && wizardState.step.endsWith("_period")) {
@@ -293,8 +302,19 @@ serve(async (req: Request): Promise<Response> => {
           type = "income";
         }
         if (type) {
+          const args: string[] = [];
+          if (wizardState.data?.text) {
+            const match = wizardState.data.text.match(/(\d+[,.]?\d*)/);
+            if (match) {
+              const amount = parseFloat(match[1].replace(",", "."));
+              if (!isNaN(amount) && amount > 0) args.push(amount.toString());
+            }
+            if (wizardState.data.date) {
+              args.push("--data", wizardState.data.date);
+            }
+          }
           await clearWizardState(supabase, existingUser.id);
-          await handleTransaction(type, supabase, message.from.id, message.chat.id, []);
+          await handleTransaction(type, supabase, message.from.id, message.chat.id, args);
         } else {
           const sessionSeq = await getSessionSeq(supabase, existingUser.id);
           const keyboard = [
@@ -308,6 +328,7 @@ serve(async (req: Request): Promise<Response> => {
         const amount = wizardState.data.amount;
         const category = wizardState.data.category;
         const description = wizardState.data.description;
+        const tag = wizardState.data.tag;
         const date = wizardState.data.date;
         if (!amount) {
           await sendTelegramMessage(message.chat.id, "❌ Erro ao processar. Tente novamente.");
@@ -320,6 +341,7 @@ serve(async (req: Request): Promise<Response> => {
           args.push("--data", dateBR);
         }
         args.push("--grupo", text.trim());
+        if (tag) args.push(tag.startsWith("#") ? tag : `#${tag}`);
         if (category) args.push(category);
         await clearWizardState(supabase, existingUser.id);
         await handleTransaction(type, supabase, message.from.id, message.chat.id, args, description || undefined);

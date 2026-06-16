@@ -46,13 +46,16 @@ export async function handleNaturalLanguageWithFollowUp(
       await setWizardState(supabase, user.id, `nl_${natural.intent}_amount`, {
         intent: natural.intent,
         category: natural.category,
+        group: natural.group,
+        description: natural.description,
+        tag: natural.tag,
         date: natural.date,
       });
       await sendTelegramMessage(chatId, `Quanto você ${verb}? Informe o valor:`);
       return;
     }
 
-    if (!natural.category) {
+    if (!natural.category && !natural.description) {
       const categories = await getCategories(supabase, user.id, natural.intent);
       const keyboard: InlineKeyboard = [];
       let row: { text: string; callback_data: string }[] = [];
@@ -69,6 +72,9 @@ export async function handleNaturalLanguageWithFollowUp(
       await setWizardState(supabase, user.id, `nl_${natural.intent}_category`, {
         intent: natural.intent,
         amount: natural.amount,
+        group: natural.group,
+        description: natural.description,
+        tag: natural.tag,
         date: natural.date,
       });
       await sendTelegramMessageWithKeyboard(chatId, "Em que categoria?", keyboard);
@@ -130,7 +136,7 @@ async function handleNLWithGroupCheck(
     .select("*", { count: "exact", head: true })
     .eq("user_id", userId);
 
-  if (groupCount && groupCount > 1) {
+  if (!natural.group && groupCount && groupCount > 1) {
     const sessionSeq = await getSessionSeq(supabase, userId);
     const { data: groups } = await supabase
       .from("groups")
@@ -153,7 +159,8 @@ async function handleNLWithGroupCheck(
     await setWizardState(supabase, userId, `nl_${type}_group`, {
       amount: natural.amount,
       category: resolvedCategory,
-      description: natural.category,
+      description: natural.description || natural.category,
+      tag: natural.tag,
       date: natural.date,
       type,
     });
@@ -166,9 +173,10 @@ async function handleNLWithGroupCheck(
     const dateBR = parseDateBR(natural.date) || natural.date;
     args.push("--data", dateBR);
   }
-  if (resolvedCategory) args.push(resolvedCategory);
+  if (natural.group) args.push("--grupo", natural.group);
   if (natural.tag) args.push(natural.tag.startsWith("#") ? natural.tag : `#${natural.tag}`);
-  await handleTransaction(type, supabase, telegramId, chatId, args, natural.category || undefined);
+  if (resolvedCategory) args.push(resolvedCategory);
+  await handleTransaction(type, supabase, telegramId, chatId, args, natural.description || natural.category || undefined);
 }
 
 export async function executeNaturalLanguageAction(
@@ -215,6 +223,9 @@ export async function executeNaturalLanguageAction(
       await setWizardState(supabase, user.id, `nl_${natural.intent}_category`, {
         intent: natural.intent,
         amount: natural.amount,
+        group: natural.group,
+        description: natural.description,
+        tag: natural.tag,
         date: natural.date,
       });
       await sendTelegramMessageWithKeyboard(chatId, "Em que categoria?", keyboard);
