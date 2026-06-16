@@ -304,9 +304,6 @@ export async function handleCallbackQuery(
       return;
     }      // Handle cleanup (clean up unused categories/groups)
     if (selectedValue === "confirm_cleanup") {
-      const user = await getOrCreateUser(supabase, telegramId);
-      if (!user) return;
-
       // Find and delete unused categories
       const { data: catCounts } = await supabase
         .from("transactions")
@@ -402,8 +399,6 @@ export async function handleCallbackQuery(
     // Handle NL type selection (when intent was null)
     if (selectedValue === "nl_type_expense" || selectedValue === "nl_type_income") {
       const type = selectedValue === "nl_type_expense" ? "expense" : "income";
-      const user = await getOrCreateUser(supabase, telegramId);
-      if (!user) return;
       const state = await getWizardState(supabase, user.id);
       const args: string[] = [];
       if (state?.data?.text) {
@@ -423,8 +418,6 @@ export async function handleCallbackQuery(
 
     // Handle NL new category creation (must be before generic nl_cat_)
     if (selectedValue === "nl_create_cat") {
-      const user = await getOrCreateUser(supabase, telegramId);
-      if (!user) return;
       const state = await getWizardState(supabase, user.id);
       if (!state) return;
       const intent = state.step.includes("expense") ? "expense" : "income";
@@ -439,8 +432,6 @@ export async function handleCallbackQuery(
     // Handle NL category selection
     if (selectedValue.startsWith("nl_cat_")) {
       const category = selectedValue.replace("nl_cat_", "");
-      const user = await getOrCreateUser(supabase, telegramId);
-      if (!user) return;
       const state = await getWizardState(supabase, user.id);
       if (!state) return;
       const intent = state.step.includes("expense") ? "expense" : "income";
@@ -459,8 +450,6 @@ export async function handleCallbackQuery(
     // Handle NL group selection
     if (selectedValue.startsWith("nl_grp_")) {
       const groupName = selectedValue.replace("nl_grp_", "");
-      const user = await getOrCreateUser(supabase, telegramId);
-      if (!user) return;
       const state = await getWizardState(supabase, user.id);
       if (!state) return;
       const type = state.data.type || "expense";
@@ -486,8 +475,6 @@ export async function handleCallbackQuery(
     // Handle NL period selection
     if (selectedValue.startsWith("nl_period_")) {
       const period = selectedValue.replace("nl_period_", "") as "this_month" | "last_month";
-      const user = await getOrCreateUser(supabase, telegramId);
-      if (!user) return;
       const state = await getWizardState(supabase, user.id);
       if (!state) return;
       const intent = state.data.intent || state.step.replace("nl_", "").replace("_period", "");
@@ -501,8 +488,6 @@ export async function handleCallbackQuery(
     // Handle edit callbacks (specific prefixes MUST come before generic edit_)
     if (selectedValue.startsWith("edit_show_")) {
       const transactionId = selectedValue.replace("edit_show_", "");
-      const user = await getOrCreateUser(supabase, telegramId);
-      if (!user) return;
       await handleEdit(supabase, telegramId, chatId, [transactionId]);
       return;
     }
@@ -512,8 +497,6 @@ export async function handleCallbackQuery(
       const parts = selectedValue.replace("edit_cat_select_", "").split("_");
       const transactionId = parts[0];
       const categoryName = parts.slice(1).join("_");
-      const user = await getOrCreateUser(supabase, telegramId);
-      if (!user) return;
         const { data: category } = await supabase.from("categories").select("id").or(`user_id.eq.${user.id},user_id.is.null`).ilike("name", categoryName).maybeSingle();
       if (category) {
         const { error } = await supabase.from("transactions").update({ category_id: category.id }).eq("id", transactionId).eq("user_id", user.id);
@@ -531,8 +514,6 @@ export async function handleCallbackQuery(
       const parts = selectedValue.replace("edit_date_select_", "").split("_");
       const transactionId = parts[0];
       const dateStr = parts.slice(1).join("_");
-      const user = await getOrCreateUser(supabase, telegramId);
-      if (!user) return;
       const { error } = await supabase.from("transactions").update({ transaction_date: dateStr }).eq("id", transactionId).eq("user_id", user.id);
       if (error) {
         await sendTelegramMessage(chatId, "❌ Ops! Algo deu errado ao atualizar. Tente novamente.");
@@ -545,8 +526,6 @@ export async function handleCallbackQuery(
     // Handle edit date custom (MUST come before edit_)
     if (selectedValue.startsWith("edit_date_custom_")) {
       const transactionId = selectedValue.replace("edit_date_custom_", "");
-      const user = await getOrCreateUser(supabase, telegramId);
-      if (!user) return;
       await sendTelegramMessage(chatId, "Informe a nova data (formato: DD/MM/YYYY):");
       await setWizardState(supabase, user.id, "edit_date", { transaction_id: transactionId });
       return;
@@ -559,8 +538,6 @@ export async function handleCallbackQuery(
       if (underscoreIdx > 0) {
         const transactionId = rest.substring(0, underscoreIdx);
         const groupName = rest.substring(underscoreIdx + 1);
-        const user = await getOrCreateUser(supabase, telegramId);
-        if (!user) return;
         const { data: group } = await supabase.from("groups").select("id").eq("user_id", user.id).ilike("name", groupName).single();
         if (group) {
           const { error } = await supabase.from("transactions").update({ group_id: group.id }).eq("id", transactionId).eq("user_id", user.id);
@@ -577,8 +554,6 @@ export async function handleCallbackQuery(
     // Handle edit group selection
     if (selectedValue.startsWith("edit_group_")) {
       const transactionId = selectedValue.replace("edit_group_", "");
-      const user = await getOrCreateUser(supabase, telegramId);
-      if (!user) return;
       const { data: groups } = await supabase.from("groups").select("name").eq("user_id", user.id).order("name");
       if (groups && groups.length > 0) {
         const keyboard = buildKeyboardGrid(groups, (g) => ({
@@ -595,8 +570,6 @@ export async function handleCallbackQuery(
     // Handle edit tags done (MUST come before edit_tags_)
     if (selectedValue.startsWith("edit_tags_done_")) {
       const transactionId = selectedValue.replace("edit_tags_done_", "");
-      const user = await getOrCreateUser(supabase, telegramId);
-      if (!user) return;
       const { data: state } = await supabase.from("wizard_states").select("data").eq("user_id", user.id).single();
       const tags = state?.data?.tags ? (Array.isArray(state.data.tags) ? state.data.tags : [state.data.tags]) : [];
       const formattedTags = tags.map((t: string) => t.startsWith("#") ? t : `#${t}`);
@@ -610,8 +583,6 @@ export async function handleCallbackQuery(
     // Handle edit tags clear (MUST come before edit_tags_)
     if (selectedValue.startsWith("edit_tags_clr_")) {
       const transactionId = selectedValue.replace("edit_tags_clr_", "");
-      const user = await getOrCreateUser(supabase, telegramId);
-      if (!user) return;
       await supabase.from("transactions").update({ tags: [] }).eq("id", transactionId).eq("user_id", user.id);
       await clearWizardState(supabase, user.id);
       await sendTelegramMessage(chatId, "✅ Tags removidas!");
@@ -621,8 +592,6 @@ export async function handleCallbackQuery(
     // Handle edit tags - show tag selection interface
     if (selectedValue.startsWith("edit_tags_")) {
       const transactionId = selectedValue.replace("edit_tags_", "");
-      const user = await getOrCreateUser(supabase, telegramId);
-      if (!user) return;
 
       // Get current transaction tags
       const { data: transaction } = await supabase.from("transactions").select("tags").eq("id", transactionId).eq("user_id", user.id).single();
@@ -668,8 +637,6 @@ export async function handleCallbackQuery(
       if (underscoreIdx > 0) {
         const transactionId = rest.substring(0, underscoreIdx);
         const tag = rest.substring(underscoreIdx + 1);
-        const user = await getOrCreateUser(supabase, telegramId);
-        if (!user) return;
 
         // Get current working tags from wizard state
         const { data: state } = await supabase.from("wizard_states").select("data").eq("user_id", user.id).single();
@@ -722,8 +689,6 @@ export async function handleCallbackQuery(
     // Handle edit amount/category/date (generic - keep last among edit_ handlers)
     if (selectedValue.startsWith("edit_")) {
       const [action, transactionId] = selectedValue.replace("edit_", "").split("_");
-      const user = await getOrCreateUser(supabase, telegramId);
-      if (!user) return;
       if (action === "amount") {
         await sendTelegramMessage(chatId, "Informe o novo valor:");
         await setWizardState(supabase, user.id, "edit_amount", { transaction_id: transactionId });
@@ -763,8 +728,6 @@ export async function handleCallbackQuery(
 
     // Handle wizard new category/group - user wants to type a custom name
     if (selectedValue === "wizard_new_category" || selectedValue === "wizard_new_group") {
-      const user = await getOrCreateUser(supabase, telegramId);
-      if (!user) return;
       const state = await getWizardState(supabase, user.id);
       if (!state) return;
       const prompt = selectedValue === "wizard_new_category"
@@ -778,8 +741,6 @@ export async function handleCallbackQuery(
     // Handle wizard tag toggle (multi-select)
     if (selectedValue.startsWith("wiz_tag_")) {
       const tag = selectedValue.replace("wiz_tag_", "");
-      const user = await getOrCreateUser(supabase, telegramId);
-      if (!user) return;
       const userId = user.id;
       const { data: state } = await supabase.from("wizard_states").select("*").eq("user_id", userId).single();
       if (!state) return;
@@ -811,8 +772,6 @@ export async function handleCallbackQuery(
 
     // Handle wizard done tags (confirm multi-selection and advance)
     if (selectedValue === "wiz_done_tags") {
-      const user = await getOrCreateUser(supabase, telegramId);
-      if (!user) return;
       const wizard = await getCurrentWizardStep(supabase, user.id);
       if (!wizard) return;
       const newStateData = { ...wizard.state.data };
@@ -822,8 +781,6 @@ export async function handleCallbackQuery(
 
     // Handle wizard skip tags
     if (selectedValue === "wizard_skip_tags") {
-      const user = await getOrCreateUser(supabase, telegramId);
-      if (!user) return;
       const wizard = await getCurrentWizardStep(supabase, user.id);
       if (!wizard) return;
       const newStateData = { ...wizard.state.data, [wizard.currentStep.step_key]: "" };
@@ -919,8 +876,6 @@ export async function handleCallbackQuery(
 
     // Handle custom_date for wizards
     if (selectedValue === "custom_date") {
-      const user = await getOrCreateUser(supabase, telegramId);
-      if (!user) return;
       const state = await getWizardState(supabase, user.id);
       if (!state) return;
       const underscoreIndex = state.step.indexOf("_");
@@ -931,12 +886,10 @@ export async function handleCallbackQuery(
     }
 
     // Handle generic wizard selections
-    const genericUser = await getOrCreateUser(supabase, telegramId);
-    if (!genericUser) return;
-    const wizard = await getCurrentWizardStep(supabase, genericUser.id);
+    const wizard = await getCurrentWizardStep(supabase, user.id);
     if (!wizard) return;
     const newStateData = { ...wizard.state.data, [wizard.currentStep.step_key]: selectedValue };
-    await advanceWizardToNextStep(supabase, genericUser.id, chatId, wizard.currentStep, sessionSeq, newStateData);
+    await advanceWizardToNextStep(supabase, user.id, chatId, wizard.currentStep, sessionSeq, newStateData);
   } catch (error) {
     console.error("Error handling callback query:", error);
     await sendTelegramMessage(callbackQuery.message.chat.id, "❌ Ops! Algo deu errado. Tente novamente.");
