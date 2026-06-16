@@ -302,6 +302,7 @@ export async function handleShowLastTransaction(supabase: any, userId: number, c
   await sendTelegramMessageWithKeyboard(
     chatId,
     `${emoji} *Última ${typeName}:*\n\n` +
+    `🆔 ID: \`${transaction.id}\`\n` +
     `💰 Valor: *${formatCurrencyBR(Number(transaction.amount))}*\n` +
     `🏷️ Categoria: ${catName}\n` +
     `📁 Grupo: ${groupName}\n` +

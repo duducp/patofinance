@@ -63,11 +63,11 @@ dev-test-gasto: ## [LOCAL] Test /gasto command locally
 # PRODUÇÃO
 # ============================================
 
-prod-deploy: ## [PROD] Deploy Edge Function to production
+prod-deploy: prod-db-push ## [PROD] Push migrations + deploy Edge Function
 	supabase functions deploy bot-core --no-verify-jwt
 
 prod-db-push: ## [PROD] Push database migrations to production
-	supabase db push
+	supabase db push --yes
 
 prod-webhook-set: ## [PROD] Set Telegram webhook
 	@read -p "Project URL (ex: https://xyz.supabase.co): " project_url; \
