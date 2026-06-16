@@ -476,10 +476,11 @@ export async function handleStatement(
   function appendTxLine(t: any): string {
     const shortDate = formatDateBR(t.transaction_date).slice(0, 5);
     const isFuture = t.transaction_date > today;
-    const prefix = isFuture ? "⏳ " : "";
-    const catName = t.categories?.name || "—";
+    const catName = t.categories?.name;
     const grpName = t.groups?.name || "Pessoal";
-    return `${prefix}\`#${t.id}\`  ${shortDate}  ${formatCurrencyBR(Number(t.amount))}  - ${grpName} - ${catName}\n`;
+    const catPart = catName ? ` - ${catName}` : "";
+    const line = `• \`#${t.id}\`  ${shortDate}  ${formatCurrencyBR(Number(t.amount))}  - ${grpName}${catPart}`;
+    return isFuture ? `_${line}_\n` : `${line}\n`;
   }
 
   // Income section
@@ -720,7 +721,7 @@ export async function handleDetails(
 
   await sendTelegramMessageWithKeyboard(
     chatId,
-    `${emoji} *${typeName} \`#${transaction.id}\`*\n\n` +
+    `${emoji} *${typeName} #${transaction.id}:*\n\n` +
     `💰 *Valor:* ${formatCurrencyBR(Number(transaction.amount))}\n` +
     `🏷️ *Categoria:* ${catName}\n` +
     `📁 *Grupo:* ${grpName}\n` +
@@ -782,6 +783,7 @@ export async function handleEdit(supabase: any, userId: number, chatId: number, 
   const catName = transaction.categories?.name || "Sem categoria";
   const groupName = transaction.groups?.name || "Sem grupo";
   const tags = transaction.tags?.length ? transaction.tags.join(" ") : "—";
+  const desc = transaction.description || "—";
 
   const sessionSeq = await getSessionSeq(supabase, user.id);
   const keyboard: InlineKeyboard = [
@@ -797,20 +799,18 @@ export async function handleEdit(supabase: any, userId: number, chatId: number, 
       { text: "📝 Editar descrição", callback_data: addSession(`edit_desc_${transaction.id}`, sessionSeq) },
       { text: "📅 Editar data", callback_data: addSession(`edit_date_${transaction.id}`, sessionSeq) },
     ],
-    [
-      { text: "❌ Excluir", callback_data: addSession(`confirm_delete_${transaction.id}`, sessionSeq) },
-    ],
   ];
 
   await sendTelegramMessageWithKeyboard(
     chatId,
-    `${emoji} *${typeName} \`#${transaction.id}\`:*\n\n` +
+    `${emoji} *${typeName} #${transaction.id}:*\n\n` +
     `💰 Valor: *${formatCurrencyBR(Number(transaction.amount))}*\n` +
     `🏷️ Categoria: ${catName}\n` +
     `📁 Grupo: ${groupName}\n` +
     `🔖 Tags: ${tags}\n` +
+    `📝 Descrição: ${desc}\n` +
     `📅 Data: ${formatDateBR(transaction.transaction_date)}\n\n` +
-    `O que deseja fazer?`,
+    `O que deseja alterar?`,
     keyboard
   );
 }
