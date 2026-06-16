@@ -275,6 +275,23 @@ export const TRANSACTION_DETAIL_FIELDS = `
     `;
 
 /**
+ * Delete a transaction by ID, ensuring it belongs to the user.
+ * Returns an object with success flag and error (if any).
+ */
+export async function deleteTransactionById(
+  supabase: any,
+  userId: number,
+  transactionId: string | number
+): Promise<{ success: boolean; error?: any }> {
+  const { error } = await supabase
+    .from("transactions")
+    .delete()
+    .eq("id", transactionId)
+    .eq("user_id", userId);
+  return { success: !error, error };
+}
+
+/**
  * Fetch a single transaction by ID with category and group joins.
  * Returns null if not found or not owned by the user.
  */

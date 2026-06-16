@@ -9,6 +9,7 @@ import { buildKeyboardGrid, buildEditKeyboard } from "../utils/keyboard.ts";
 
 import { getSummaryData, formatSummaryMessage, formatFutureBlock } from "./queries.ts";
 import { getWizardState, setWizardState, handleTransactionWizard } from "./wizard.ts";
+import { showDeleteConfirmation } from "./management.ts";
 
 export function resolvePeriod(period: ExtratoFilters["period"]): { start: string; end: string; label: string } {
   const now = new Date();
@@ -724,19 +725,7 @@ export async function handleDelete(supabase: any, userId: number, chatId: number
 
   const transactionId = args[0];
 
-  const { data: transaction } = await supabase
-    .from("transactions")
-    .select(`
-      id,
-      type,
-      amount,
-      description,
-      transaction_date,
-      categories (name)
-    `)
-    .eq("id", transactionId)
-    .eq("user_id", user.id)
-    .single();
+  const transaction = await getTransactionById(supabase, user.id, transactionId);
 
   if (!transaction) {
     await sendTelegramMessage(
@@ -747,27 +736,8 @@ export async function handleDelete(supabase: any, userId: number, chatId: number
     return;
   }
 
-  const emoji = transaction.type === "income" ? "📈" : "📉";
-  const typeName = transaction.type === "income" ? "Receita" : "Despesa";
-  const catName = transaction.categories?.name || "Sem categoria";
-
   const sessionSeq = await getSessionSeq(supabase, user.id);
-  const keyboard: InlineKeyboard = [
-    [
-      { text: "✅ Sim, excluir", callback_data: addSession(`confirm_delete_${transaction.id}`, sessionSeq) },
-      { text: "❌ Não, manter", callback_data: addSession("cancel_delete", sessionSeq) },
-    ],
-  ];
-
-  await sendTelegramMessageWithKeyboard(
-    chatId,
-    `${emoji} *${typeName} \`#${transaction.id}\`:*\n\n` +
-    `💰 Valor: *${formatCurrencyBR(Number(transaction.amount))}*\n` +
-    `🏷️ Categoria: ${catName}\n` +
-    `📅 Data: ${formatDateBR(transaction.transaction_date)}\n\n` +
-    `Tem certeza de que deseja excluir esta transação?`,
-    keyboard
-  );
+  await showDeleteConfirmation(supabase, user.id, chatId, transaction, sessionSeq);
 }
 
 export async function handleEntity(

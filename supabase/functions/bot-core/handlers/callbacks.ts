@@ -1,6 +1,6 @@
 import { InlineKeyboard, DeepSeekResponse, TelegramCallbackQuery } from "../types/index.ts";
 import { sendTelegramMessage, sendTelegramMessageWithKeyboard, editTelegramMessageWithKeyboard, answerCallbackQuery } from "../services/telegram.ts";
-import { getOrCreateUser, normalizeString, getAllUserTags, getOrCreateUncategorizedCategory } from "../services/database.ts";
+import { getOrCreateUser, normalizeString, getAllUserTags, getOrCreateUncategorizedCategory, deleteTransactionById } from "../services/database.ts";
 import { formatDateBR, getTodayISOBR, parseDateBR } from "../utils/formatting.ts";
 import { truncateCallbackData } from "../utils/rate-limiter.ts";
 import { getWizardState, setWizardState, clearWizardState, sendWizardStepMessage, getCurrentWizardStep, advanceWizardToNextStep } from "./wizard.ts";
@@ -290,13 +290,11 @@ export async function handleCallbackQuery(
     // Handle delete confirmation
     if (selectedValue.startsWith("confirm_delete_")) {
       const transactionId = selectedValue.replace("confirm_delete_", "");
-      const user = await getOrCreateUser(supabase, telegramId);
-      if (!user) return;
-      const { error } = await supabase.from("transactions").delete().eq("id", transactionId).eq("user_id", user.id);
-      if (error) {
-        await sendTelegramMessage(chatId, "❌ Ops! Algo deu errado ao excluir. Tente novamente.");
-      } else {
+      const { success } = await deleteTransactionById(supabase, user.id, transactionId);
+      if (success) {
         await sendTelegramMessage(chatId, "✅ Transação excluída com sucesso!");
+      } else {
+        await sendTelegramMessage(chatId, "❌ Ops! Algo deu errado ao excluir. Tente novamente.");
       }
       return;
     }

@@ -237,6 +237,41 @@ export async function handleShowLastTransaction(supabase: any, userId: number, c
   );
 }
 
+/**
+ * Show a delete confirmation dialog for a transaction.
+ * Used by both handleDelete (commands.ts) and handleDeleteLastTransaction.
+ */
+export async function showDeleteConfirmation(
+  supabase: any,
+  userId: number,
+  chatId: number,
+  transaction: any,
+  sessionSeq: number
+): Promise<void> {
+  const emoji = transaction.type === "income" ? "📈" : "📉";
+  const typeName = transaction.type === "income" ? "Receita" : "Despesa";
+  const catName = transaction.categories?.name || "Sem categoria";
+  const desc = transaction.description || "";
+
+  const keyboard: InlineKeyboard = [
+    [
+      { text: "✅ Sim, excluir", callback_data: addSession(`confirm_delete_${transaction.id}`, sessionSeq) },
+      { text: "❌ Não, manter", callback_data: addSession("cancel_delete", sessionSeq) },
+    ],
+  ];
+
+  await sendTelegramMessageWithKeyboard(
+    chatId,
+    `${emoji} *${typeName} \`#${transaction.id}\`:*\n\n` +
+    `💰 Valor: *${formatCurrencyBR(Number(transaction.amount))}*\n` +
+    `🏷️ Categoria: ${catName}\n` +
+    (desc ? `📝 Descrição: ${desc}\n` : "") +
+    `📅 Data: ${formatDateBR(transaction.transaction_date)}\n\n` +
+    `Tem certeza de que deseja excluir esta transação?`,
+    keyboard
+  );
+}
+
 export async function handleDeleteLastTransaction(supabase: any, userId: number, chatId: number): Promise<void> {
   const user = await requireUser(supabase, userId, chatId);
   if (!user) return;
@@ -247,6 +282,7 @@ export async function handleDeleteLastTransaction(supabase: any, userId: number,
       id,
       type,
       amount,
+      description,
       categories (name),
       transaction_date
     `)
@@ -260,27 +296,8 @@ export async function handleDeleteLastTransaction(supabase: any, userId: number,
     return;
   }
 
-  const emoji = transaction.type === "income" ? "📈" : "📉";
-  const typeName = transaction.type === "income" ? "Receita" : "Despesa";
-  const catName = transaction.categories?.name || "Sem categoria";
-
   const sessionSeq = await getSessionSeq(supabase, user.id);
-  const keyboard: InlineKeyboard = [
-    [
-      { text: "✅ Sim, excluir", callback_data: addSession(`confirm_delete_${transaction.id}`, sessionSeq) },
-      { text: "❌ Não, manter", callback_data: addSession("cancel_delete", sessionSeq) },
-    ],
-  ];
-
-  await sendTelegramMessageWithKeyboard(
-    chatId,
-    `${emoji} *Última ${typeName}:*\n\n` +
-    `💰 Valor: *${formatCurrencyBR(Number(transaction.amount))}*\n` +
-    `🏷️ Categoria: ${catName}\n` +
-    `📅 Data: ${formatDateBR(transaction.transaction_date)}\n\n` +
-    `Tem certeza de que deseja excluir esta transação?`,
-    keyboard
-  );
+  await showDeleteConfirmation(supabase, user.id, chatId, transaction, sessionSeq);
 }
 
 export async function handleListByTag(supabase: any, userId: number, chatId: number, tag: string, page: number = 0, messageId?: number): Promise<void> {
