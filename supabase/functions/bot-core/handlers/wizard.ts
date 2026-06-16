@@ -59,16 +59,25 @@ export async function sendWizardStepMessage(
     const wizardType = step.wizard_name === "receita" ? "income" : step.wizard_name === "gasto" ? "expense" : undefined;
     let catQuery = supabase
       .from("categories")
-      .select("name")
-      .eq("user_id", userId);
+      .select("name, normalized_name")
+      .or(`user_id.eq.${userId},user_id.is.null`)
+      .order("user_id", { ascending: false, nullsFirst: false })
+      .order("name");
     if (wizardType) {
       catQuery = catQuery.or(`transaction_type.eq.${wizardType},transaction_type.is.null`);
     }
-    const { data: categories } = await catQuery.order("name");
+    const { data: categories } = await catQuery;
+    // Deduplicate: user's own overrides system
+    const seen = new Set<string>();
+    const unique = (categories || []).filter((c: any) => {
+      if (seen.has(c.normalized_name)) return false;
+      seen.add(c.normalized_name);
+      return true;
+    });
     const keyboard: { text: string; callback_data: string }[][] = [];
-    if (categories && categories.length > 0) {
+    if (unique.length > 0) {
       let row: { text: string; callback_data: string }[] = [];
-      for (const c of categories) {
+      for (const c of unique) {
         row.push({ text: c.name, callback_data: addSession(c.name, sessionSeq) });
         if (row.length === 3) {
           keyboard.push(row);

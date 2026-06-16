@@ -49,7 +49,7 @@ async function fetchUserContext(supabase: any, userId: number): Promise<{
   tags: string[];
 }> {
   const [categoriesResult, groupsResult, tags] = await Promise.all([
-    supabase.from("categories").select("name, transaction_type").eq("user_id", userId),
+    supabase.from("categories").select("name, transaction_type").or(`user_id.eq.${userId},user_id.is.null`),
     supabase.from("groups").select("name, is_default").eq("user_id", userId),
     getAllUserTags(supabase, userId),
   ]);
@@ -153,29 +153,6 @@ serve(async (req: Request): Promise<Response> => {
         name: "Pessoal",
         normalized_name: normalizeString("Pessoal"),
         is_default: true,
-      });
-
-      const { data: predefined } = await supabase
-        .from("predefined_categories")
-        .select("name, transaction_type");
-
-      if (predefined) {
-        const categories = predefined.map((pc: any) => ({
-          user_id: newUser.id,
-          name: pc.name,
-          normalized_name: normalizeString(pc.name),
-          is_predefined: true,
-          transaction_type: pc.transaction_type || null,
-        }));
-        await supabase.from("categories").insert(categories);
-      }
-
-      // Create fallback category for deleted categories
-      await supabase.from("categories").insert({
-        user_id: newUser.id,
-        name: "Sem categoria",
-        normalized_name: "semcategoria",
-        is_predefined: true,
       });
 
       await handleStart(message.chat.id, message.from.first_name);

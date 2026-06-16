@@ -616,7 +616,7 @@ Project ref: `zjcfjqtlijktrikgvwrv`
 |-------|-------------|-------|
 | `users` | `id`, `telegram_id`, `username`, `first_name` | |
 | `groups` | `id`, `user_id`, `name`, `normalized_name`, `is_default` | `normalized_name` + pg_trgm index |
-| `categories` | `id`, `user_id`, `name`, `normalized_name`, `is_predefined`, `transaction_type` | `transaction_type`: expense/income/null=ambos |
+| `categories` | `id`, `user_id` (NULL=global), `name`, `normalized_name`, `is_predefined`, `transaction_type` | System categories: `user_id=NULL` (single row shared by all users), partial unique indexes per type |
 | `transactions` | `id`, `user_id`, `group_id`, `category_id`, `type`, `amount`, `tags TEXT[]` | |
 | `wizard_states` | `user_id`, `step`, `data JSONB`, `session_seq`, `expires_at` | `session_seq` for callback protection | |
 | `predefined_categories` | `id`, `name`, `transaction_type` | Seeded with 12 default categories (expense/income/both) |
@@ -640,20 +640,22 @@ Project ref: `zjcfjqtlijktrikgvwrv`
 20260615000001_add_normalized_name_and_trgm.sql  # pg_trgm extension + normalized_name + suggest_* functions
 20260615000002_add_category_type.sql            # transaction_type column (expense/income/null=both)
 20260615000003_add_session_seq.sql              # session_seq column for callback protection
+20260616000000_make_predefined_global.sql       # System categories global (user_id=NULL), partial indexes, suggest_categories update
 ```
 
 ### Predefined Categories
 
-Separated by transaction type:
+Separated by transaction type, stored globally in `categories` with `user_id = NULL` (single row, shared by all users):
 
 - **💸 Expense:** Alimentação · Moradia · Transporte · Saúde · Educação · Lazer · Vestuário · Contas
 - **💰 Income:** Salário · Freela · Investimentos · Benefícios
 - **🔄 Both (NULL):** Outros
 
 In the wizard:
-- `/despesa` shows expense + both categories
-- `/receita` shows income + both categories
+- `/despesa` shows expense + both categories (system + user-owned, deduplicated)
+- `/receita` shows income + both categories (system + user-owned, deduplicated)
 - User-created categories with NULL type appear for both
+- System categories (`user_id = NULL`) are shared by all users; copying on user creation was removed
 
 ### Extensions
 
@@ -808,14 +810,15 @@ Routes ~42 callback prefixes via `handleCallbackQuery`. Key callbacks:
 ```text
 supabase/
 ├── config.toml               # verify_jwt=false for local
-├── migrations/               # 7 SQL migrations
+├── migrations/               # 11 SQL migrations
 │   ├── 20260614000000_*.sql
 │   ├── 20260614000001_*.sql
 │   ├── 20260614000002_*.sql
 │   ├── 20260615000000_*.sql
 │   ├── 20260615000001_*.sql  # pg_trgm + normalized_name + suggest_* functions
 │   ├── 20260615000002_*.sql  # transaction_type on categories
-│   └── 20260615000003_*.sql  # session_seq on wizard_states
+│   ├── 20260615000003_*.sql  # session_seq on wizard_states
+│   └── 20260616000000_*.sql  # Global predefined categories (user_id=NULL)
 └── functions/bot-core/
     ├── index.ts              # Entry point (serve handler + wizard step routing)
     ├── config.ts             # Env vars, commonPhrases map, nlCache

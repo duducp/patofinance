@@ -14,11 +14,11 @@ export async function handleCreateCategory(supabase: any, userId: number, chatId
 
   const normalizedName = normalizeString(name);
 
-  // Check for exact match (normalized)
+  // Check for exact match - user's own or system predefined
   const { data: existing } = await supabase
     .from("categories")
     .select("id")
-    .eq("user_id", user.id)
+    .or(`user_id.eq.${user.id},user_id.is.null`)
     .eq("normalized_name", normalizedName)
     .maybeSingle();
 
@@ -108,13 +108,23 @@ export async function handleListCategories(supabase: any, userId: number, chatId
 
   const { data: categories } = await supabase
     .from("categories")
-    .select("name, is_predefined, transaction_type")
-    .eq("user_id", user.id)
+    .select("name, is_predefined, transaction_type, normalized_name, user_id")
+    .or(`user_id.eq.${user.id},user_id.is.null`)
+    .order("user_id", { ascending: false, nullsFirst: false })
     .order("name");
 
   if (!categories || categories.length === 0) {
     await sendTelegramMessage(chatId, "🏷️ Nenhuma categoria encontrada. Crie uma com `/categoria nome_da_categoria`");
     return;
+  }
+
+  // Deduplicate: user's own category overrides system one with same name
+  const seen = new Set<string>();
+  const unique: any[] = [];
+  for (const c of categories) {
+    if (seen.has(c.normalized_name)) continue;
+    seen.add(c.normalized_name);
+    unique.push(c);
   }
 
   const typeLabels: Record<string, string> = {
@@ -123,7 +133,7 @@ export async function handleListCategories(supabase: any, userId: number, chatId
   };
 
   let message = "🏷️ *Suas categorias:*\n\n";
-  for (const c of categories) {
+  for (const c of unique) {
     const defaultTag = c.is_predefined ? " ⭐ (padrão)" : "";
     const typeIcon = c.transaction_type ? ` ${typeLabels[c.transaction_type]}` : "";
     message += `• ${c.name}${defaultTag}${typeIcon}\n`;

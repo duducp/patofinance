@@ -30,9 +30,8 @@ export async function getCategories(supabase: any, userId: number, type?: "expen
   let query = supabase
     .from("categories")
     .select("name")
-    .eq("user_id", userId);
+    .or(`user_id.eq.${userId},user_id.is.null`);
   if (type) {
-    // Show categories matching the type OR with no type restriction (null = both)
     query = query.or(`transaction_type.eq.${type},transaction_type.is.null`);
   }
   const { data } = await query.order("name");
@@ -41,11 +40,14 @@ export async function getCategories(supabase: any, userId: number, type?: "expen
 
 export async function getOrCreateCategory(supabase: any, userId: number, categoryName: string, transactionType?: "expense" | "income" | null): Promise<string | null> {
   const normalizedName = normalizeString(categoryName);
+  // Check user's own first, then system categories
   const { data: existing } = await supabase
     .from("categories")
     .select("id, transaction_type")
-    .eq("user_id", userId)
+    .or(`user_id.eq.${userId},user_id.is.null`)
     .eq("normalized_name", normalizedName)
+    .order("user_id", { ascending: false, nullsFirst: false })
+    .limit(1)
     .maybeSingle();
   if (existing) return existing.id;
   const { data: newCategory } = await supabase
@@ -66,7 +68,7 @@ export async function resolveCategoryForNL(
   let exactQuery = supabase
     .from("categories")
     .select("id, name")
-    .eq("user_id", userId)
+    .or(`user_id.eq.${userId},user_id.is.null`)
     .eq("normalized_name", normalized);
   if (transactionType) {
     exactQuery = exactQuery.or(`transaction_type.eq.${transactionType},transaction_type.is.null`);
@@ -80,7 +82,7 @@ export async function resolveCategoryForNL(
     let matchQuery = supabase
       .from("categories")
       .select("id, name")
-      .eq("user_id", userId)
+      .or(`user_id.eq.${userId},user_id.is.null`)
       .eq("normalized_name", normalizeString(candidate.name));
     if (transactionType) {
       matchQuery = matchQuery.or(`transaction_type.eq.${transactionType},transaction_type.is.null`);
@@ -193,26 +195,13 @@ export async function getOrCreateGroup(supabase: any, userId: number, groupName:
   return newGroup?.id || null;
 }
 
-export async function getOrCreateUncategorizedCategory(supabase: any, userId: number): Promise<string | null> {
-  // Look for existing "Sem categoria" entry
-  const { data: existing } = await supabase
+export async function getOrCreateUncategorizedCategory(supabase: any, _userId: number): Promise<string | null> {
+  // Use system "Outros" as fallback for transactions with deleted categories
+  const { data: cat } = await supabase
     .from("categories")
     .select("id")
-    .eq("user_id", userId)
-    .eq("normalized_name", "semcategoria")
+    .is("user_id", null)
+    .eq("normalized_name", normalizeString("Outros"))
     .maybeSingle();
-  if (existing) return existing.id;
-
-  // Create fallback category
-  const { data: newCat } = await supabase
-    .from("categories")
-    .insert({
-      user_id: userId,
-      name: "Sem categoria",
-      normalized_name: "semcategoria",
-      is_predefined: true,
-    })
-    .select("id")
-    .maybeSingle();
-  return newCat?.id || null;
+  return cat?.id || null;
 }

@@ -34,13 +34,13 @@ Common behavior:
 | `suggestSimilarTags(supabase, userId, query, limit?)` | `(any, number, string, number)` | `{tag, similarity}[]` |
 | `sendSimilarityWarning(supabase, userId, chatId, type, query)` | `(any, number, number, string, string)` | `void` — sends Telegram message |
 | `getAllUserTags(supabase, userId)` | `(any, number)` | `string[]` — sorted, unique |
-| `getOrCreateUncategorizedCategory(supabase, userId)` | `(any, number)` | `category_id \| null` — "Sem categoria" fallback |
+| `getOrCreateUncategorizedCategory(supabase, userId)` | `(any, number)` | `category_id \| null` — returns system "Outros" as fallback |
 
 ### Category Resolution for NL (`resolveCategoryForNL`)
 
 When DeepSeek returns a category name:
-1. **Exact normalized match** — `normalized_name` equality
-2. **Trigram similarity** (≥ 0.5 threshold) — first result from `suggest_categories`
+1. **Exact normalized match** — `normalized_name` equality against both user-owned and system-global categories
+2. **Trigram similarity** (≥ 0.5 threshold) — first result from `suggest_categories` (includes system)
 3. **No match** → `null` (triggers category keyboard in NL processing)
 
 ### Trigram Suggest Flow
@@ -49,6 +49,7 @@ When DeepSeek returns a category name:
 suggestSimilarCategories(userId, query, limit=3)
   → supabase.rpc("suggest_categories", { p_user_id, p_query, p_limit })
   → PostgreSQL: similarity(normalized_name, normalize_string(query))
+  → Includes both user-owned and system-global categories (WHERE user_id = p_user_id OR user_id IS NULL)
   → Returns up to 3 similar names with similarity scores
 ```
 

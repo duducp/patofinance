@@ -69,7 +69,7 @@ fincance/
 ├── supabase/
 │   ├── config.toml          # Config local (verify_jwt=false)
 │   ├── .env.example         # Template de variáveis de ambiente
-│   ├── migrations/          # 7 migrations SQL
+│   ├── migrations/          # 11 migrations SQL
 │   │   ├── 20260614000000_initial_schema.sql
 │   │   ├── 20260614000001_add_wizard_steps.sql
 │   │   ├── 20260614000002_add_wizard_steps_index_and_timestamps.sql

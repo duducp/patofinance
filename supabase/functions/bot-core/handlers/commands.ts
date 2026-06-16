@@ -781,10 +781,15 @@ export async function handleEntity(
   const cmdRef = isCategory ? "/categoria nome_da_categoria" : "/grupo nome_do_grupo";
 
   if (args.length === 0 || (isCategory && args[0] === "listar")) {
-    const selectFields = isCategory ? `id, name, ${flagColumn}, transaction_type` : `id, name, ${flagColumn}`;
-    const orderQuery = isCategory
-      ? supabase.from(table).select(selectFields).eq("user_id", user.id).order("is_predefined", { ascending: false }).order("name")
-      : supabase.from(table).select(selectFields).eq("user_id", user.id).order("name");
+    const selectFields = isCategory ? `id, name, ${flagColumn}, transaction_type, normalized_name` : `id, name, ${flagColumn}`;
+    let orderQuery;
+    if (isCategory) {
+      orderQuery = supabase.from(table).select(selectFields)
+        .or(`user_id.eq.${user.id},user_id.is.null`);
+    } else {
+      orderQuery = supabase.from(table).select(selectFields).eq("user_id", user.id);
+    }
+    orderQuery = orderQuery.order("name");
     const { data: items } = await orderQuery;
 
     if (!items || items.length === 0) {
@@ -844,12 +849,15 @@ export async function handleEntity(
 
   // Check for exact match first (prevents duplicate creation with friendly message)
   const normalized = normalizeString(entityName);
-  const { data: existing } = await supabase
+  let existsQuery = supabase
     .from(table)
-    .select("id, name, " + flagColumn)
-    .eq("user_id", user.id)
-    .eq("normalized_name", normalized)
-    .maybeSingle();
+    .select("id, name, " + flagColumn);
+  if (isCategory) {
+    existsQuery = existsQuery.or(`user_id.eq.${user.id},user_id.is.null`);
+  } else {
+    existsQuery = existsQuery.eq("user_id", user.id);
+  }
+  const { data: existing } = await existsQuery.eq("normalized_name", normalized).maybeSingle();
   if (existing) {
     const defaultTag = existing[flagColumn] ? ` ⭐ (padrão)` : "";
     await sendTelegramMessage(

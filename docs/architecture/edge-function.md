@@ -81,9 +81,8 @@ serve()
 When a user sends a first message (no existing DB record):
 1. `supabase.from("users").insert({ telegram_id, username, first_name })`
 2. `supabase.from("groups").insert({ name: "Pessoal", is_default: true })`
-3. Fetch all `predefined_categories` → insert as `categories` with `is_predefined: true`
-4. Insert "Sem categoria" fallback category
-5. Call `handleStart()` (welcome message)
+3. System-global categories already exist in `categories` with `user_id = NULL` (seeded by migration)
+4. Call `handleStart()` (welcome message)
 
 ### User Resolution
 

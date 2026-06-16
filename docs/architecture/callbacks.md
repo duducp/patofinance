@@ -122,7 +122,7 @@ Telegram limits `callback_data` to 64 bytes. Use `truncateCallbackData()` (trunc
 
 | Prefix | Action | Message |
 |--------|--------|---------|
-| `cat_sel_{name}` / `grp_sel_{name}` | Select entity | Sends new |
+| `cat_sel_{name}` / `grp_sel_{name}` | Select entity (system categories show "Categoria padrão" — no rename/delete) | Sends new |
 | `cat_ren_{name}` / `grp_ren_{name}` | Rename prompt | Sends new |
 | `cat_del_{name}` / `grp_del_{name}` | Delete confirmation | Sends new |
 | `cat_del_yes_{name}` / `grp_del_yes_{name}` | Confirm delete | Sends new |

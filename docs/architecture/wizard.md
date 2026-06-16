@@ -52,9 +52,11 @@ Each step type renders differently:
 
 ### Category Step Logic
 
-Categories are filtered by transaction type:
+Categories are fetched from both user-owned and system-global (`user_id IS NULL`) rows, deduplicated:
 - `/despesa` wizard → shows categories where `transaction_type = 'expense'` OR `transaction_type IS NULL`
 - `/receita` wizard → shows categories where `transaction_type = 'income'` OR `transaction_type IS NULL`
+- System categories appear alongside user-created ones
+- If a user has a category with the same name as a system one, theirs takes priority
 
 A "✏️ Nova categoria" button lets users type a custom name.
 

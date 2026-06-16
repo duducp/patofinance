@@ -50,7 +50,10 @@ Lists all slash commands + NL example phrases.
 - Shared handler for category and group operations
 - `type: "category" | "group"` parameterized via table of constants
 - If no args: lists entities with counts + clickable management buttons
+  - For categories: includes system-global (`user_id IS NULL`) categories, deduplicated
+  - System categories show "⭐ Categoria padrão" — no rename/delete
 - If args: checks similarity before creating
+  - For categories: also checks system categories before creating (prevents duplicates)
 - Similarity prompt → "Usar X?" or "Criar Y mesmo assim?"
 
 ### `handleGroup(…)`
@@ -83,6 +86,7 @@ Alias: `handleEntity("category", …)`
 ### `handleListCategories / handleListGroups`
 - With `is_predefined`/`is_default` indicator star
 - With `transaction_type` icon for categories
+- Includes system-global categories (`user_id IS NULL`), deduplicated (user's own overrides system)
 
 ### `handleListTransactions(supabase, userId, chatId, limit, tag?, page?, messageId?)`
 - Parallel COUNT + data queries

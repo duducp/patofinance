@@ -87,14 +87,23 @@ async function renderFilterPanelMessage(
 
   const { data: categories } = await supabase
     .from("categories")
-    .select("id, name")
-    .eq("user_id", userId)
+    .select("id, name, normalized_name")
+    .or(`user_id.eq.${userId},user_id.is.null`)
+    .order("user_id", { ascending: false, nullsFirst: false })
     .order("name");
 
+  // Deduplicate: user's own overrides system
+  const seen = new Set<string>();
+  const unique = (categories || []).filter((c: any) => {
+    if (seen.has(c.normalized_name)) return false;
+    seen.add(c.normalized_name);
+    return true;
+  });
+
   const keyboard: InlineKeyboard = [];
-  if (categories) {
+  if (unique.length > 0) {
     let row: { text: string; callback_data: string }[] = [];
-    for (const c of categories) {
+    for (const c of unique) {
       const isSelected = filters.category_id === c.id;
       row.push({ text: isSelected ? `✅ ${c.name}` : c.name, callback_data: addSession(`stmt_f_cat_${c.id}`, sessionSeq) });
       if (row.length === 3) {
@@ -730,7 +739,7 @@ export async function handleCallbackQuery(
       const categoryName = parts.slice(1).join("_");
       const user = await getOrCreateUser(supabase, telegramId);
       if (!user) return;
-      const { data: category } = await supabase.from("categories").select("id").eq("user_id", user.id).ilike("name", categoryName).single();
+        const { data: category } = await supabase.from("categories").select("id").or(`user_id.eq.${user.id},user_id.is.null`).ilike("name", categoryName).maybeSingle();
       if (category) {
         const { error } = await supabase.from("transactions").update({ category_id: category.id }).eq("id", transactionId).eq("user_id", user.id);
         if (error) {
@@ -955,11 +964,18 @@ export async function handleCallbackQuery(
         await sendTelegramMessage(chatId, "Informe a nova descrição:");
         await setWizardState(supabase, user.id, "edit_description", { transaction_id: transactionId });
       } else if (action === "category") {
-        const { data: categories } = await supabase.from("categories").select("name").eq("user_id", user.id).order("name");
-        if (categories && categories.length > 0) {
+        const { data: categories } = await supabase.from("categories").select("name").or(`user_id.eq.${user.id},user_id.is.null`).order("name");
+        // Deduplicate: user's own overrides system
+        const seen = new Set<string>();
+        const unique = (categories || []).filter((c: any) => {
+          if (seen.has(c.name.toLowerCase())) return false;
+          seen.add(c.name.toLowerCase());
+          return true;
+        });
+        if (unique.length > 0) {
           const keyboard: InlineKeyboard = [];
           let row: { text: string; callback_data: string }[] = [];
-          for (const c of categories) {
+          for (const c of unique) {
             row.push({ text: c.name, callback_data: truncateCallbackData(`edit_cat_select_${transactionId}_${c.name}`, sessionSeq) });
             if (row.length === 3) {
               keyboard.push(row);
@@ -1077,7 +1093,7 @@ export async function handleCallbackQuery(
       const catName = selectedValue.replace("cat_sel_", "");
       const user = await getOrCreateUser(supabase, telegramId);
       if (!user) return;
-      const { data: cat } = await supabase.from("categories").select("id, is_predefined").eq("user_id", user.id).ilike("name", catName).single();
+      const { data: cat } = await supabase.from("categories").select("id, is_predefined").or(`user_id.eq.${user.id},user_id.is.null`).ilike("name", catName).maybeSingle();
       if (!cat) return;
       const keyboard: InlineKeyboard = [];
       if (cat.is_predefined) {

@@ -36,16 +36,16 @@ Default group "Pessoal" is created automatically for every new user and cannot b
 | Column | Type | Notes |
 |--------|------|-------|
 | `id` | `BIGSERIAL PK` | |
-| `user_id` | `BIGINT FK → users.id` | Owner |
+| `user_id` | `BIGINT FK → users.id` or `NULL` | Owner (`NULL` = system-global predefined) |
 | `name` | `TEXT` | Display name |
 | `normalized_name` | `TEXT NOT NULL` | Lowercase, no accents, no special chars |
-| `is_predefined` | `BOOLEAN` | True for categories seeded from predefined_categories |
+| `is_predefined` | `BOOLEAN` | True for system-global categories |
 | `transaction_type` | `TEXT CHECK` | `expense` / `income` / `NULL` (both) |
 | `created_at` | `TIMESTAMPTZ` | |
 
-**Unique**: `(user_id, normalized_name)` via index.
+**Unique**: partial indexes — `(user_id, normalized_name)` WHERE `user_id IS NOT NULL` for user-owned; `(normalized_name)` WHERE `user_id IS NULL` for system categories.
 
-12 predefined categories seeded from `predefined_categories` table, copied per-user on registration.
+System-global categories (`user_id = NULL`) are served to all users from a single row instead of being copied per-user. Users cannot rename or delete system categories. A user-owned category with the same name overrides the system one.
 
 ### `transactions`
 
@@ -91,6 +91,8 @@ Used for:
 | `id` | `BIGSERIAL PK` | |
 | `name` | `TEXT UNIQUE` | Category name |
 | `transaction_type` | `TEXT CHECK` | `expense` / `income` / `NULL` |
+
+Reference table for system-global categories. Not queried at runtime — contents are synced to `categories` with `user_id = NULL` via migration `20260616000000`.
 
 Seeded categories (12 total):
 
@@ -144,6 +146,7 @@ Implementation: `TRANSLATE` for accent removal + `REGEXP_REPLACE` for non-alphan
 ### `suggest_categories(p_user_id, p_query, p_limit) → TABLE(name, similarity)`
 
 Trigram similarity search on `categories.normalized_name`.
+Includes both user-owned and system-global categories (`WHERE user_id = p_user_id OR user_id IS NULL`).
 Uses `pg_trgm` `%` operator. Excludes exact matches.
 Minimum similarity: `0.3`. Returns top `p_limit` results.
 
@@ -164,7 +167,8 @@ Uses `DISTINCT ON` to avoid duplicate tags. Excludes exact matches.
 
 | Index | Table | Columns | Purpose |
 |-------|-------|---------|---------|
-| `idx_categories_user_normalized` | categories | `(user_id, normalized_name)` UNIQUE | Prevent duplicate names |
+| `idx_categories_user_normalized` | categories | `(user_id, normalized_name)` UNIQUE partial `WHERE user_id IS NOT NULL` | Prevent duplicate user-owned names |
+| `idx_categories_system_normalized` | categories | `(normalized_name)` UNIQUE partial `WHERE user_id IS NULL` | Prevent duplicate system names |
 | `idx_categories_normalized_trgm` | categories | `normalized_name` GIN trgm | Fuzzy search |
 | `idx_groups_user_normalized` | groups | `(user_id, normalized_name)` UNIQUE | Prevent duplicate names |
 | `idx_groups_normalized_trgm` | groups | `normalized_name` GIN trgm | Fuzzy search |
@@ -190,6 +194,7 @@ All tables have RLS enabled, but the bot uses the **service_role key** which byp
 | `20260615000004` | wizard_step_options table |
 | `20260615000005` | Sync existing categories type + insert new predefined for existing users |
 | `20260615000006` | Fix normalize_string TRANSLATE character count bug |
+| `20260616000000` | Make predefined categories global (`user_id = NULL`) — remove per-user copies, add partial unique indexes, update suggest_categories |
 
 ## Category Resolution by Transaction Type
 
