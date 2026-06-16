@@ -2,7 +2,7 @@ import { InlineKeyboard } from "../types/index.ts";
 import { sendTelegramMessage, sendTelegramMessageWithKeyboard, editTelegramMessageWithKeyboard } from "../services/telegram.ts";
 import { truncateCallbackData } from "../utils/rate-limiter.ts";
 import { addSession, getSessionSeq } from "../utils/session.ts";
-import { getOrCreateUser, normalizeString, suggestSimilarCategories, suggestSimilarGroups, listTransactionsPaginated, TRANSACTION_DETAIL_FIELDS, deduplicateByNormalizedName } from "../services/database.ts";
+import { requireUser, normalizeString, suggestSimilarCategories, suggestSimilarGroups, listTransactionsPaginated, TRANSACTION_DETAIL_FIELDS, deduplicateByNormalizedName } from "../services/database.ts";
 import { formatCurrencyBR, formatDateBR } from "../utils/formatting.ts";
 
 async function handleCreateEntity(
@@ -12,11 +12,8 @@ async function handleCreateEntity(
   chatId: number,
   name: string
 ): Promise<void> {
-  const user = await getOrCreateUser(supabase, userId);
-  if (!user) {
-    await sendTelegramMessage(chatId, "Ops! Você ainda não está cadastrado. Use /start para começar.");
-    return;
-  }
+  const user = await requireUser(supabase, userId, chatId);
+  if (!user) return;
 
   const isCategory = type === "category";
   const icon = isCategory ? "🏷️" : "📁";
@@ -83,11 +80,8 @@ export async function handleCreateGroup(supabase: any, userId: number, chatId: n
 }
 
 export async function handleListCategories(supabase: any, userId: number, chatId: number): Promise<void> {
-  const user = await getOrCreateUser(supabase, userId);
-  if (!user) {
-    await sendTelegramMessage(chatId, "Ops! Você ainda não está cadastrado. Use /start para começar.");
-    return;
-  }
+  const user = await requireUser(supabase, userId, chatId);
+  if (!user) return;
 
   const { data: categories } = await supabase
     .from("categories")
@@ -119,11 +113,8 @@ export async function handleListCategories(supabase: any, userId: number, chatId
 }
 
 export async function handleListGroups(supabase: any, userId: number, chatId: number): Promise<void> {
-  const user = await getOrCreateUser(supabase, userId);
-  if (!user) {
-    await sendTelegramMessage(chatId, "Ops! Você ainda não está cadastrado. Use /start para começar.");
-    return;
-  }
+  const user = await requireUser(supabase, userId, chatId);
+  if (!user) return;
 
   const { data: groups } = await supabase
     .from("groups")
@@ -146,11 +137,8 @@ export async function handleListGroups(supabase: any, userId: number, chatId: nu
 }
 
 export async function handleListTransactions(supabase: any, userId: number, chatId: number, limit: number, tag?: string, page: number = 0, messageId?: number): Promise<void> {
-  const user = await getOrCreateUser(supabase, userId);
-  if (!user) {
-    await sendTelegramMessage(chatId, "Ops! Você ainda não está cadastrado. Use /start para começar.");
-    return;
-  }
+  const user = await requireUser(supabase, userId, chatId);
+  if (!user) return;
 
   const { transactions: items, totalCount, hasMore } = await listTransactionsPaginated(supabase, user.id, limit, page, tag);
 
@@ -203,11 +191,8 @@ export async function handleListTransactions(supabase: any, userId: number, chat
 }
 
 export async function handleShowLastTransaction(supabase: any, userId: number, chatId: number): Promise<void> {
-  const user = await getOrCreateUser(supabase, userId);
-  if (!user) {
-    await sendTelegramMessage(chatId, "Ops! Você ainda não está cadastrado. Use /start para começar.");
-    return;
-  }
+  const user = await requireUser(supabase, userId, chatId);
+  if (!user) return;
 
   const { data: transaction } = await supabase
     .from("transactions")
@@ -253,11 +238,8 @@ export async function handleShowLastTransaction(supabase: any, userId: number, c
 }
 
 export async function handleDeleteLastTransaction(supabase: any, userId: number, chatId: number): Promise<void> {
-  const user = await getOrCreateUser(supabase, userId);
-  if (!user) {
-    await sendTelegramMessage(chatId, "Ops! Você ainda não está cadastrado. Use /start para começar.");
-    return;
-  }
+  const user = await requireUser(supabase, userId, chatId);
+  if (!user) return;
 
   const { data: transaction } = await supabase
     .from("transactions")

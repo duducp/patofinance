@@ -1,6 +1,6 @@
 import type { InlineKeyboard, ExtratoFilters } from "../types/index.ts";
 import { sendTelegramMessage, sendTelegramMessageWithKeyboard } from "../services/telegram.ts";
-import { requireUser, getOrCreateUser, getOrCreateCategory, getOrCreateGroup, normalizeString, suggestSimilarCategories, suggestSimilarGroups, sendSimilarityWarning, getAllUserTags, createTransaction, applyFiltersToQuery, getTransactionById, findGroupByName } from "../services/database.ts";
+import { requireUser, getOrCreateCategory, getOrCreateGroup, normalizeString, suggestSimilarCategories, suggestSimilarGroups, sendSimilarityWarning, getAllUserTags, createTransaction, applyFiltersToQuery, getTransactionById, findGroupByName } from "../services/database.ts";
 import { formatCurrencyBR, formatDateBR, getTodayISOBR, getMonthName } from "../utils/formatting.ts";
 import { getDateRange } from "../utils/date-helpers.ts";
 import { parseCommand, parsePeriodFromArgs } from "../utils/command-parsing.ts";
@@ -103,11 +103,8 @@ export async function handleHelp(chatId: number): Promise<void> {
 }
 
 export async function handleBalance(supabase: any, userId: number, chatId: number, args: string[] = []): Promise<void> {
-  const user = await getOrCreateUser(supabase, userId);
-  if (!user) {
-    await sendTelegramMessage(chatId, "Ops! Você ainda não está cadastrado. Use /start para começar.");
-    return;
-  }
+  const user = await requireUser(supabase, userId, chatId);
+  if (!user) return;
 
   // Parse period and group from args
   const { period, cleanArgs } = parsePeriodFromArgs(args);
@@ -327,11 +324,8 @@ export async function handleStatement(
   typeFilter: StatementFilter = "all",
   filters?: ExtratoFilters
 ): Promise<void> {
-  const user = await getOrCreateUser(supabase, userId);
-  if (!user) {
-    await sendTelegramMessage(chatId, "Ops! Você ainda não está cadastrado. Use /start para começar.");
-    return;
-  }
+  const user = await requireUser(supabase, userId, chatId);
+  if (!user) return;
 
   // Resolve period — from filters or default to current month
   const period = filters?.period || "this_month";
@@ -538,11 +532,8 @@ export async function handleStatement(
 }
 
 export async function handleSummary(supabase: any, userId: number, chatId: number, args: string[] = []): Promise<void> {
-  const user = await getOrCreateUser(supabase, userId);
-  if (!user) {
-    await sendTelegramMessage(chatId, "Ops! Você ainda não está cadastrado. Use /start para começar.");
-    return;
-  }
+  const user = await requireUser(supabase, userId, chatId);
+  if (!user) return;
 
   // Parse period and group from args
   const { period, cleanArgs } = parsePeriodFromArgs(args);
@@ -606,11 +597,8 @@ export async function handleDetails(
   chatId: number,
   args: string[] = []
 ): Promise<void> {
-  const user = await getOrCreateUser(supabase, userId);
-  if (!user) {
-    await sendTelegramMessage(chatId, "Ops! Você ainda não está cadastrado. Use /start para começar.");
-    return;
-  }
+  const user = await requireUser(supabase, userId, chatId);
+  if (!user) return;
 
   if (args.length === 0) {
     await sendTelegramMessage(
@@ -666,11 +654,8 @@ export async function handleDetails(
 }
 
 export async function handleEdit(supabase: any, userId: number, chatId: number, args: string[] = []): Promise<void> {
-  const user = await getOrCreateUser(supabase, userId);
-  if (!user) {
-    await sendTelegramMessage(chatId, "Ops! Você ainda não está cadastrado. Use /start para começar.");
-    return;
-  }
+  const user = await requireUser(supabase, userId, chatId);
+  if (!user) return;
 
   if (args.length === 0) {
     await sendTelegramMessage(
@@ -722,11 +707,8 @@ export async function handleEdit(supabase: any, userId: number, chatId: number, 
 }
 
 export async function handleDelete(supabase: any, userId: number, chatId: number, args: string[] = []): Promise<void> {
-  const user = await getOrCreateUser(supabase, userId);
-  if (!user) {
-    await sendTelegramMessage(chatId, "Ops! Você ainda não está cadastrado. Use /start para começar.");
-    return;
-  }
+  const user = await requireUser(supabase, userId, chatId);
+  if (!user) return;
 
   if (args.length === 0) {
     await sendTelegramMessage(
@@ -795,11 +777,8 @@ export async function handleEntity(
   chatId: number,
   args: string[]
 ): Promise<void> {
-  const user = await getOrCreateUser(supabase, userId);
-  if (!user) {
-    await sendTelegramMessage(chatId, "Ops! Você ainda não está cadastrado. Use /start para começar.");
-    return;
-  }
+  const user = await requireUser(supabase, userId, chatId);
+  if (!user) return;
 
   const isCategory = type === "category";
   const table = isCategory ? "categories" : "groups";
@@ -943,11 +922,8 @@ export function handleCategory(supabase: any, userId: number, chatId: number, ar
 }
 
 export async function handleTag(supabase: any, userId: number, chatId: number, _args: string[]): Promise<void> {
-  const user = await getOrCreateUser(supabase, userId);
-  if (!user) {
-    await sendTelegramMessage(chatId, "Ops! Você ainda não está cadastrado. Use /start para começar.");
-    return;
-  }
+  const user = await requireUser(supabase, userId, chatId);
+  if (!user) return;
 
   const allTags = await getAllUserTags(supabase, user.id);
 
@@ -991,11 +967,8 @@ export async function handleTag(supabase: any, userId: number, chatId: number, _
 }
 
 export async function handleCleanup(supabase: any, userId: number, chatId: number): Promise<void> {
-  const user = await getOrCreateUser(supabase, userId);
-  if (!user) {
-    await sendTelegramMessage(chatId, "Ops! Você ainda não está cadastrado. Use /start para começar.");
-    return;
-  }
+  const user = await requireUser(supabase, userId, chatId);
+  if (!user) return;
 
   // Find categories with no transactions (excluding predefined)
   const { data: categories } = await supabase
@@ -1056,11 +1029,8 @@ export async function handleCleanup(supabase: any, userId: number, chatId: numbe
 }
 
 export async function handleReset(supabase: any, userId: number, chatId: number): Promise<void> {
-  const user = await getOrCreateUser(supabase, userId);
-  if (!user) {
-    await sendTelegramMessage(chatId, "Ops! Você ainda não está cadastrado. Use /start para começar.");
-    return;
-  }
+  const user = await requireUser(supabase, userId, chatId);
+  if (!user) return;
 
   // Get stats for warning message
   const [txCount, catCount, grpCount] = await Promise.all([
