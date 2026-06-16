@@ -22,9 +22,9 @@ Formato esperado:
 {"intent":"string|null","amount":number|null,"category":"string|null","date":"string|null","period":"this_month|last_month|null","name":"string|null","tag":"string|null","limit":number|null}
 
 Intents:
-- "expense": despesa (gastei, paguei, comprei, etc.)
-- "income": receita (recebi, ganhei, salário, etc.)
-- "query_balance": ver saldo
+- "expense": despesa (gastei, gasto, paguei, pago, comprei, compro, debitou, custou, gasolina, ifood, aluguel, conta, fatura, boleto, assinatura, desembolsei, saiu, sangrou, quebrei, ralei, suei, pedi, consumo, comi, almocei, jantei, abasteci, recarreguei)
+- "income": receita (recebi, recebo, ganhei, ganho, faturo, faturei, salário, renda, bônus, bonificação, freela, freela, deposito, depositaram, caiu, creditou, lucro, vendi, vendo, investimento, embolsei, bati, puxei, bico, quebra-galho)
+- "query_balance": ver saldo (quanto tenho, saldo)
 - "query_expenses_month": gastos do mês atual
 - "query_expenses_last_month": gastos do mês passado
 - "query_expenses_date": gastos de data específica
@@ -44,7 +44,9 @@ Intents:
 - null: não entendeu
 
 REGRAS IMPORTANTES:
-- Identifique a intenção mesmo com typos
+- Identifique a intenção mesmo com erros de digitação (ex: "ganhei" quer dizer "ganhei")
+- Palavras que indicam RECEBIMENTO de dinheiro → intent "income": recebi, recebo, ganhei, ganho, salário, renda, bônus, freela, deposito, caiu, creditou, lucro, vendi, faturei, embolsei
+- Palavras que indicam GASTO de dinheiro → intent "expense": gastei, paguei, comprei, custou, gasolina, ifood, aluguel, conta, fatura, boleto, assinatura, desembolsei, saiu, pedi, comi, abasteci
 - Se não houver palavra-chave clara indicando despesa ou receita, retorne intent como null
 - category: palavras de moeda (reais, real, R$, dinheiro, conto, pila, grana), data (ontem, hoje, amanhã), preposições (de, em, no, na, do, da) e verbos de ação não são categorias. Ignore-as.
 - amount numérico, date YYYY-MM-DD, period this_month/last_month, name para criar entidade, tag sem #
