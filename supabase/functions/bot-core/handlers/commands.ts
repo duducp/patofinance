@@ -496,7 +496,7 @@ export async function handleStatement(
   const keyboard: InlineKeyboard = [];
 
   // 🔍 Filtrar (filtro completo)
-  keyboard.push([{ text: "🔍 Nova busca", callback_data: addSession("stmt_filter", sessionSeq) }]);
+  keyboard.push([{ text: "🔍 Filtrar", callback_data: addSession("stmt_filter", sessionSeq) }]);
 
   // ❌ Limpar filtros — only when there are active filters
   const hasActiveFilters = typeFilter !== "all" || (
@@ -685,7 +685,7 @@ export async function handleEdit(supabase: any, userId: number, chatId: number, 
   const sessionSeq = await getSessionSeq(supabase, user.id);
   const keyboard: InlineKeyboard = [
     ...buildEditKeyboard(transaction.id, sessionSeq),
-    [{ text: "🚫 Cancelar", callback_data: addSession("cancel_wizard", sessionSeq) }],
+    [{ text: "🚫 Cancelar", callback_data: addSession("cancel_edit", sessionSeq) }],
   ];
 
   await sendTelegramMessageWithKeyboard(

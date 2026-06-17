@@ -60,8 +60,7 @@ async function renderFilterPanelMessage(
     `🔖 Tags: ${tagStr}\n` +
     `📈 Tipo: ${typeLabels[filters.type]}\n` +
     `📅 Período: ${periodStr}\n` +
-    `📆 Status: ${statusLabels[filters.status]}\n\n` +
-    `🔍 [Aplicar Filtros]  ❌ [Limpar]`;
+    `📆 Status: ${statusLabels[filters.status]}`;
 
   const keyboard: InlineKeyboard = [
     [{ text: `🏷️ Categoria: ${catName}`, callback_data: addSession("stmt_f_cat", sessionSeq) }],

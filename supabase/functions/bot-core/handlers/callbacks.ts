@@ -373,6 +373,11 @@ export async function handleCallbackQuery(
       return;
     }
 
+    if (selectedValue === "cancel_edit") {
+      await sendTelegramMessage(chatId, "👍 Beleza! Edição cancelada.");
+      return;
+    }
+
     if (selectedValue === "cancel_wizard") {
       if (telegramId) {
         const user = await getOrCreateUser(supabase, telegramId);
