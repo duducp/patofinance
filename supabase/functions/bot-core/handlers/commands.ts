@@ -680,7 +680,10 @@ export async function handleEdit(supabase: any, userId: number, chatId: number, 
   const desc = transaction.description || "—";
 
   const sessionSeq = await getSessionSeq(supabase, user.id);
-  const keyboard: InlineKeyboard = buildEditKeyboard(transaction.id, sessionSeq);
+  const keyboard: InlineKeyboard = [
+    ...buildEditKeyboard(transaction.id, sessionSeq),
+    [{ text: "❌ Cancelar", callback_data: addSession("cancel_wizard", sessionSeq) }],
+  ];
 
   await sendTelegramMessageWithKeyboard(
     chatId,
