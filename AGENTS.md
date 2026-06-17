@@ -268,7 +268,20 @@ When building user-facing strings with conditional plurals in Portuguese, **alwa
 
 ## NL Processing
 
-Natural language via DeepSeek API.
+Natural language via DeepSeek API. Also used to parse period/date expressions in commands (`/saldo mes passado`, `/extrato janeiro 2025`, `/resumo ultimo mes`).
+
+### Command Period Resolution
+
+```typescript
+// utils/period-parser.ts
+resolveCommandPeriod(args, userId?) → { period: PeriodResult | null, groupName: string | null, typeFilter: "all" | "income" | "expense" }
+```
+
+- Extracts `--grupo` flag from args
+- Remaining text sent to DeepSeek via `parseCommandPeriod()` (focused prompt for date/period only)
+- Returns `PeriodResult { start, end, label }` or null
+- DeepSeek also identifies expense/income type and group from text
+- Cache: same `nlCache` as main NL (5min TTL), key prefixed with `__period__`
 
 ### Architecture
 
@@ -702,11 +715,10 @@ In the wizard:
 |----------|---------|-------|
 | `handleStart(chatId, firstName)` | `/start` | |
 | `handleHelp(chatId)` | `/ajuda` | |
-| `handleBalance(supabase, userId, chatId, args?)` | `/saldo` | Optional group filter via args |
+| `handleBalance(supabase, userId, chatId, args?)` | `/saldo` | Period via DeepSeek (ex: `mes passado`, `janeiro`). `--grupo` flag for group filter |
 | `handleTransaction(type, supabase, userId, chatId, args, descriptionOverride?)` | `/gasto`, `/receita` | Unified handler, `type: "expense"|"income"` |
-| `handleStatement(supabase, userId, chatId, page?, filter?, filters?)` | `/extrato` | Pagination + optional `ExtratoFilters` object (category_id, group_id, tags, type, period) |
-| `resolvePeriod(period)` | (utility) | `PeriodPreset` or `{start,end}` → `{start, end, label}` |
-| `handleSummary(supabase, userId, chatId, args?)` | `/resumo` | Delegates to `getSummaryData` + `formatSummaryMessage` |
+| `handleStatement(supabase, userId, chatId, page?, filter?, filters?)` | `/extrato` | Pagination + `ExtratoFilters`. Period via DeepSeek (ex: `janeiro 2025`). `--grupo` flag for group filter |
+| `handleSummary(supabase, userId, chatId, args?)` | `/resumo` | Delegates to `getSummaryData` + `formatSummaryMessage`. Period via DeepSeek (ex: `ultimo mes`). `--grupo` flag for group filter |
 | `handleDetails(supabase, userId, chatId, args)` | `/detalhes` | Shows all transaction details with edit keyboard |
 | `handleEntity(type, supabase, userId, chatId, args)` | (shared) | `type: "category"|"group"` -- list, create, suggest |
 | `handleGroup(supabase, userId, chatId, args)` | `/grupo` | Alias for `handleEntity("group", ...)` |
@@ -835,11 +847,12 @@ supabase/
     │   ├── rate-limiter.ts   # isRateLimited, truncateCallbackData (60 chars)
     │   ├── date-helpers.ts   # getDateRange, getMonthName, getNowBR
     │   ├── command-parsing.ts # parseCommand
+    │   ├── period-parser.ts  # resolveCommandPeriod (NL period via DeepSeek for commands)
     │   └── session.ts        # addSession, removeSession, incrementSessionSeq, getSessionSeq, validateCallbackSession
     ├── services/
     │   ├── telegram.ts       # 4 Telegram API wrappers (send, sendWithKeyboard, edit, answer)
     │   ├── database.ts       # 11 functions: CRUD + suggestSimilar* + getAllUserTags
-    │   └── deepseek.ts       # callDeepSeek, parseNaturalLanguage, chat history
+    │   └── deepseek.ts       # callDeepSeek, parseNaturalLanguage, parseCommandPeriod, chat history
     └── handlers/
         ├── commands.ts       # 14 slash command handlers + shared handleEntity
         ├── management.ts     # 8 entity management functions with pagination

@@ -1,7 +1,7 @@
 import { getMonthName, formatDateBR, getNowBR } from "./formatting.ts";
 
 export function getDateRange(
-  period: "this_month" | "last_month" | "last_3_months" | "this_year" | null,
+  period: string | null,
   date: string | null
 ): { start: string; end: string; label: string } {
   const now = getNowBR();

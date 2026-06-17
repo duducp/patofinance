@@ -58,7 +58,11 @@ export function resolvePeriod(period: ExtratoFilters["period"]): { start: string
     }
   }
   if (period && typeof period === "object") {
-    return { start: period.start, end: period.end, label: `${period.start} — ${period.end}` };
+    return {
+      start: period.start,
+      end: period.end,
+      label: period.label || `${formatDateBR(period.start)} — ${formatDateBR(period.end)}`,
+    };
   }
   // Fallback: current month
   const start = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split("T")[0];
@@ -554,7 +558,7 @@ export async function showStatusSelector(
 
   const options: { label: string; value: ExtratoFilters["status"] }[] = [
     { label: "📋 Todas", value: "all" },
-    { label: "✅ Realizadas", value: "past" },
+    { label: "📆 Realizadas", value: "past" },
     { label: "⏳ Agendadas", value: "future" },
   ];
 

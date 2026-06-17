@@ -1,3 +1,4 @@
+import { PeriodResult } from "../types/index.ts";
 import { sendTelegramMessage, sendTelegramMessageWithKeyboard } from "../services/telegram.ts";
 import { requireUser } from "../services/database.ts";
 import { formatCurrencyBR, formatDateBR, getTodayISOBR } from "../utils/formatting.ts";
@@ -38,11 +39,21 @@ export interface SummaryData {
 export async function getSummaryData(
   supabase: any,
   userId: number,
-  period: "this_month" | "last_month" | null,
+  periodResult: PeriodResult | null,
   groupId?: number | null,
   includeFuture?: boolean
 ): Promise<SummaryData | null> {
-  const { start, end, label } = getDateRange(period, null);
+  let start: string, end: string, label: string;
+  if (periodResult) {
+    start = periodResult.start;
+    end = periodResult.end;
+    label = periodResult.label;
+  } else {
+    const range = getDateRange(null, null);
+    start = range.start;
+    end = range.end;
+    label = range.label;
+  }
   let query = supabase
     .from("transactions")
     .select(`type, amount, categories(name)`)
@@ -102,7 +113,7 @@ export async function handleQueryExpenses(
   supabase: any,
   userId: number,
   chatId: number,
-  period: "this_month" | "last_month" | null,
+  period: string | null,
   date: string | null,
   category: string | null
 ): Promise<void> {
@@ -169,18 +180,19 @@ export async function handleQuerySummary(
   supabase: any,
   userId: number,
   chatId: number,
-  period: "this_month" | "last_month" | null
+  period: string | null
 ): Promise<void> {
   const user = await requireUser(supabase, userId, chatId);
   if (!user) return;
+  const periodResult = period ? getDateRange(period, null) : null;
   const [data, futureData] = await Promise.all([
-    getSummaryData(supabase, user.id, period),
-    getSummaryData(supabase, user.id, period, undefined, true),
+    getSummaryData(supabase, user.id, periodResult),
+    getSummaryData(supabase, user.id, periodResult, undefined, true),
   ]);
 
   // If no transactions at all (past nor future)
   if (!data && !futureData) {
-    const { label } = getDateRange(period, null);
+    const label = periodResult?.label || getDateRange(null, null).label;
     await sendTelegramMessage(chatId, `📊 Nenhuma transação em ${label}.`);
     return;
   }

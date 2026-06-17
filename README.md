@@ -31,7 +31,7 @@
 
 - **💸 Registrar despesas** — `/despesa 50 mercado` ou `/gasto 50 mercado` ou "gastei 50 no almoço"
 - **💰 Registrar receitas** — `/receita 3000 salário` ou "recebi 3000 de salário"
-- **📊 Saldo mensal** — `/saldo` com filtro por grupo
+- **📊 Saldo do período** — `/saldo`, `/saldo mes passado`, `/saldo janeiro`
 - **📋 Extrato interativo** — `/extrato` com painel de filtros (categoria, grupo, tags, tipo, período), paginação e visualização otimizada
 - **📈 Resumo por categoria** — `/resumo` com totais agrupados
 - **📁 Grupos (contas)** — Organize por conta bancária, cartão de crédito, etc.
@@ -249,9 +249,9 @@ Resposta esperada:
 ```
 despesa - Registrar despesa (ex: /despesa 50 mercado)
 receita - Registrar receita (ex: /receita 3000 salario)
-saldo - Ver saldo do mes
-extrato - Ver extrato do mes com filtros
-resumo - Resumo por categoria
+saldo - Ver saldo (ex: /saldo mes passado)
+extrato - Ver extrato (ex: /extrato janeiro 2025)
+resumo - Resumo por categoria (ex: /resumo ultimo mes)
 detalhes - Detalhes, edicao e exclusao de transacao
 categoria - Gerenciar categorias
 grupo - Gerenciar grupos
@@ -277,9 +277,9 @@ ajuda - Ajuda completa
 |---------|-----------|---------|
 | `/despesa` | Registrar despesa (ou `/gasto`) | `/despesa 50 mercado` |
 | `/receita` | Registrar receita | `/receita 3000 salario` |
-| `/saldo` | Saldo do m\u00EAs | `/saldo` |
-| `/extrato` | Extrato interativo — painel de filtros + paginação | `/extrato` |
-| `/resumo` | Resumo por categoria | `/resumo` |
+| `/saldo` | Saldo do per\u00EDodo | `/saldo`, `/saldo mes passado`, `/saldo janeiro` |
+| `/extrato` | Extrato interativo — painel de filtros + paginação | `/extrato`, `/extrato janeiro 2025`, `/extrato --grupo Pessoal` |
+| `/resumo` | Resumo por categoria | `/resumo`, `/resumo ultimo mes`, `/resumo --grupo Trabalho` |
 | `/detalhes` | Detalhes, edição e exclusão da transação pelo ID | `/detalhes 42` |
 
 ### 📁 Organização
@@ -303,7 +303,7 @@ ajuda - Ajuda completa
 
 ### 🌐 Linguagem Natural
 
-Com `DEEPSEEK_API_KEY` configurada, você pode digitar frases diretamente:
+Com `DEEPSEEK_API_KEY` configurada, você pode digitar frases diretamente ou usar períodos naturais nos comandos:
 
 - `"gastei 50 no almoço"` — registra despesa
 - `"recebi 3000 de salário"` — registra receita
@@ -315,6 +315,19 @@ Com `DEEPSEEK_API_KEY` configurada, você pode digitar frases diretamente:
 - `"transações com #alimentação"` — filtrar por tag
 - `"quais tags uso?"` — listar tags
 - `"limpe categorias sem uso"` — limpeza
+
+**Período natural nos comandos:**
+
+| Comando | Descrição |
+|---------|-----------|
+| `/saldo mes passado` | Saldo do mês anterior |
+| `/saldo janeiro` | Saldo de janeiro |
+| `/saldo semana passada` | Saldo da semana passada |
+| `/saldo ontem` | Saldo de ontem |
+| `/extrato janeiro 2025` | Extrato de janeiro de 2025 |
+| `/extrato --grupo Pessoal` | Extrato filtrado por grupo |
+| `/resumo ultimo mes` | Resumo do mês passado |
+| `/resumo --grupo Trabalho` | Resumo filtrado por grupo |
 
 Sem a chave DeepSeek, apenas comandos `/` funcionam.
 

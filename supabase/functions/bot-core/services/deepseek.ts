@@ -1,4 +1,4 @@
-import { DeepSeekResponse } from "../types/index.ts";
+import { DeepSeekResponse, PeriodParseResult } from "../types/index.ts";
 import { DEEPSEEK_API_KEY, nlCache, NL_CACHE_TTL } from "../config.ts";
 import { getTodayISOBR } from "../utils/formatting.ts";
 
@@ -356,4 +356,132 @@ export async function parseNaturalLanguage(
   }
 
   return result;
+}
+
+function buildCommandPeriodPrompt(): string {
+  const today = new Date();
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+  const todayStr = today.toISOString().split("T")[0];
+  const yesterdayStr = yesterday.toISOString().split("T")[0];
+  const thisYear = today.getFullYear();
+  const thisMonth = today.getMonth();
+  const lastMonthStart = new Date(thisYear, thisMonth - 1, 1).toISOString().split("T")[0];
+  const lastMonthEnd = new Date(thisYear, thisMonth, 0).toISOString().split("T")[0];
+  const thisMonthStart = new Date(thisYear, thisMonth, 1).toISOString().split("T")[0];
+  const thisMonthEnd = new Date(thisYear, thisMonth + 1, 0).toISOString().split("T")[0];
+
+  return `Você é um assistente que extrai período e tipo de textos em português sobre finanças.
+DATA DE HOJE: ${todayStr}
+
+Retorne APENAS um JSON válido, sem texto adicional:
+{
+  "start": "YYYY-MM-DD" | null,
+  "end": "YYYY-MM-DD" | null,
+  "label": string | null,
+  "type": "expense" | "income" | null,
+  "group": string | null
+}
+
+REGRAS:
+- "start"/"end": intervalo de datas. Se for um único dia, faça start = end
+- "label": descrição amigável em português (ex: "Janeiro de 2025", "Semana passada", "Ontem")
+- "type": "expense" se mencionar despesas/gastos/saídas, "income" se receitas/entradas/ganhos
+- "group": nome de um grupo mencionado no texto (ex: Pessoal, Casa, Trabalho)
+- Se NÃO identificar período, retorne start=null, end=null, label=null
+- type e group podem ser preenchidos mesmo sem período
+
+EXEMPLOS:
+"mes de janeiro 2025" → {"start":"2025-01-01","end":"2025-01-31","label":"Janeiro de 2025","type":null,"group":null}
+"ultimo mes" → {"start":"${lastMonthStart}","end":"${lastMonthEnd}","label":"Mês passado","type":null,"group":null}
+"mes atual" → {"start":"${thisMonthStart}","end":"${thisMonthEnd}","label":"Este mês","type":null,"group":null}
+"ontem" → {"start":"${yesterdayStr}","end":"${yesterdayStr}","label":"Ontem","type":null,"group":null}
+"Pessoal mes passado" → {"start":"${lastMonthStart}","end":"${lastMonthEnd}","label":"Mês passado","type":null,"group":"Pessoal"}
+"despesas janeiro" → {"start":"2026-01-01","end":"2026-01-31","label":"Janeiro de 2026","type":"expense","group":null}
+"Casa semana passada" → {"start":"${lastMonthStart}","end":"${lastMonthEnd}","label":"Mês passado","type":null,"group":"Casa"}
+"dia 15 de janeiro de 2025" → {"start":"2025-01-15","end":"2025-01-15","label":"15 de janeiro de 2025","type":null,"group":null}
+"ano passado" → {"start":"${thisYear - 1}-01-01","end":"${thisYear - 1}-12-31","label":"Ano passado","type":null,"group":null}
+"" → {"start":null,"end":null,"label":null,"type":null,"group":null}`;
+}
+
+/**
+ * Parse period/date from command args using DeepSeek.
+ * Returns null if API key is not set, API fails, or no period/type/group identified.
+ */
+export async function parseCommandPeriod(
+  text: string,
+  userId?: number
+): Promise<PeriodParseResult | null> {
+  if (!DEEPSEEK_API_KEY) return null;
+  if (!text.trim()) return null;
+
+  if (userId) {
+    const userCache = nlCache.get(userId);
+    if (userCache) {
+      const cached = userCache.get(`__period__${text}`);
+      if (cached && Date.now() - cached.timestamp < NL_CACHE_TTL) {
+        return { ...cached.response } as unknown as PeriodParseResult;
+      }
+    }
+  }
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    const systemPrompt = buildCommandPeriodPrompt();
+
+    const response = await fetch("https://api.deepseek.com/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${DEEPSEEK_API_KEY}` },
+      body: JSON.stringify({
+        model: "deepseek-chat",
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: text },
+        ],
+        temperature: 0.1,
+        max_tokens: 150,
+      }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      console.error("DeepSeek period API error:", await response.text());
+      return null;
+    }
+
+    const data = await response.json();
+    const raw = data.choices?.[0]?.message?.content;
+    if (!raw) return null;
+
+    const cleaned = raw.replace(/```json\n?|\n?```/g, "").trim();
+    const parsed = JSON.parse(cleaned);
+    const result = {
+      start: parsed.start || null,
+      end: parsed.end || null,
+      label: parsed.label || null,
+      type: parsed.type || null,
+      group: parsed.group || null,
+    };
+
+    // Cache only if at least one field is non-null
+    if (userId && (result.start || result.type || result.group)) {
+      let userCache = nlCache.get(userId);
+      if (!userCache) {
+        userCache = new Map();
+        nlCache.set(userId, userCache);
+      }
+      userCache.set(`__period__${text}`, { response: result as unknown as DeepSeekResponse, timestamp: Date.now() });
+    }
+
+    return result;
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      console.error("DeepSeek period API timeout");
+    } else {
+      console.error("Error calling DeepSeek for period:", error);
+    }
+    return null;
+  }
 }

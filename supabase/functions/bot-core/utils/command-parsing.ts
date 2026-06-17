@@ -1,28 +1,9 @@
 import { ParsedCommand } from "../types/index.ts";
 
-/**
- * Extract --periodo / --mes flag from raw args.
- * Returns the period value and remaining clean args.
- */
-export function parsePeriodFromArgs(args: string[]): { period: string | null; cleanArgs: string[] } {
-  let period: string | null = null;
-  const cleanArgs: string[] = [];
-  for (let i = 0; i < args.length; i++) {
-    if (args[i] === "--periodo" || args[i] === "--mes") {
-      period = args[i + 1] || null;
-      i++;
-    } else {
-      cleanArgs.push(args[i]);
-    }
-  }
-  return { period, cleanArgs };
-}
-
 export function parseCommand(args: string[]): ParsedCommand {
   let amount: number | null = null;
   let group: string | null = null;
   let date: string | null = null;
-  let period: string | null = null;
   const categoryParts: string[] = [];
   const tags: string[] = [];
 
@@ -32,9 +13,6 @@ export function parseCommand(args: string[]): ParsedCommand {
       i++;
     } else if (args[i] === "--grupo") {
       group = args[i + 1] || null;
-      i++;
-    } else if (args[i] === "--periodo" || args[i] === "--mes") {
-      period = args[i + 1] || null;
       i++;
     } else if (args[i].startsWith("#")) {
       tags.push(args[i]);
@@ -46,5 +24,5 @@ export function parseCommand(args: string[]): ParsedCommand {
   }
 
   const category = categoryParts.length > 0 ? categoryParts.join(" ") : null;
-  return { amount, category, group, date, tags, period };
+  return { amount, category, group, date, tags, period: null };
 }

@@ -8,13 +8,13 @@ import {
 import type {
   DeepSeekResponse,
   TelegramUpdate,
-  PeriodPreset,
   ExtratoFilters,
 } from "./types/index.ts";
 import { isRateLimited } from "./utils/rate-limiter.ts";
 import { incrementSessionSeq, addSession, getSessionSeq } from "./utils/session.ts";
 import { formatCurrencyBR, formatDateBR, parseDateBR } from "./utils/formatting.ts";
 import { parseNaturalLanguage } from "./services/deepseek.ts";
+import { resolveCommandPeriod } from "./utils/period-parser.ts";
 import { sendTelegramMessage, sendTelegramMessageWithKeyboard } from "./services/telegram.ts";
 import { getCategories, sendSimilarityWarning, normalizeString, getAllUserTags } from "./services/database.ts";
 import { handleCreateCategory } from "./handlers/management.ts";
@@ -498,30 +498,13 @@ serve(async (req: Request): Promise<Response> => {
           if (args.length === 0) {
             await handleStatement(supabase, message.from.id, message.chat.id);
           } else {
-            // Parse direct args: --periodo, --grupo, --mes
-            let period: string | null = null;
-            let groupName: string | null = null;
-            let typeFilter: "all" | "income" | "expense" = "all";
-            for (let i = 0; i < args.length; i++) {
-              if (args[i] === "--periodo" || args[i] === "--mes") {
-                period = args[i + 1] || null;
-                i++;
-              } else if (args[i] === "--grupo") {
-                groupName = args[i + 1] || null;
-                i++;
-              } else if (args[i] === "--tipo" || args[i] === "--type") {
-                const t = args[i + 1] || "";
-                if (t === "income" || t === "receita") typeFilter = "income";
-                else if (t === "expense" || t === "despesa") typeFilter = "expense";
-                i++;
-              }
-            }
+            const { period, groupName, typeFilter } = await resolveCommandPeriod(args, existingUser.id);
             const filters: ExtratoFilters = {
               category_id: null,
               group_id: null,
               tags: [],
               type: typeFilter,
-              period: (period as PeriodPreset) || "this_month",
+              period: period ? { start: period.start, end: period.end, label: period.label } : "this_month",
               status: "all",
             };
             if (groupName) {

@@ -60,6 +60,26 @@ export interface ParsedCommand {
   period: string | null;
 }
 
+export interface PeriodResult {
+  start: string;
+  end: string;
+  label: string;
+}
+
+export interface PeriodObject {
+  start: string;
+  end: string;
+  label?: string;
+}
+
+export interface PeriodParseResult {
+  start: string | null;
+  end: string | null;
+  label: string | null;
+  type: "expense" | "income" | null;
+  group: string | null;
+}
+
 export type PeriodPreset = "this_month" | "last_month" | "last_3_months" | "this_year" | "all";
 
 export interface ExtratoFilters {
@@ -67,6 +87,6 @@ export interface ExtratoFilters {
   group_id: number | null;
   tags: string[];
   type: "all" | "income" | "expense";
-  period: PeriodPreset | { start: string; end: string };
+  period: PeriodPreset | PeriodObject;
   status: "all" | "past" | "future";
 }

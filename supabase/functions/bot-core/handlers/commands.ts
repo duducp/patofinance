@@ -3,7 +3,8 @@ import { sendTelegramMessage, sendTelegramMessageWithKeyboard, editTelegramMessa
 import { requireUser, getOrCreateCategory, getOrCreateGroup, normalizeString, suggestSimilarCategories, suggestSimilarGroups, sendSimilarityWarning, getAllUserTags, createTransaction, getTransactionById, findGroupByName } from "../services/database.ts";
 import { formatCurrencyBR, formatDateBR, getTodayISOBR } from "../utils/formatting.ts";
 import { getDateRange } from "../utils/date-helpers.ts";
-import { parseCommand, parsePeriodFromArgs } from "../utils/command-parsing.ts";
+import { parseCommand } from "../utils/command-parsing.ts";
+import { resolveCommandPeriod } from "../utils/period-parser.ts";
 import { addSession, getSessionSeq } from "../utils/session.ts";
 import { buildKeyboardGrid, buildEditKeyboard } from "../utils/keyboard.ts";
 
@@ -16,6 +17,11 @@ export async function handleStart(chatId: number, firstName: string): Promise<vo
     `Olá ${firstName}! 👋\n\n` +
     `Que bom ter você aqui! Sou seu assistente de controle financeiro.\n\n` +
     `Comigo você pode registrar gastos e receitas, ver seu saldo e muito mais!\n\n` +
+    `💡 Alguns exemplos:\n` +
+    `/despesa 50 mercado — registra um gasto\n` +
+    `/saldo mes passado — saldo do mês anterior\n` +
+    `/extrato janeiro 2025 — extrato de janeiro\n` +
+    `/resumo ultimo mes — resumo do mês passado\n\n` +
     `Digite /ajuda para ver tudo que posso fazer por você.`
   );
 }
@@ -27,9 +33,9 @@ export async function handleHelp(chatId: number): Promise<void> {
     `💰 *Financeiros:*\n` +
     `/despesa - Registrar despesa\n` +
     `/receita - Registrar receita\n` +
-    `/saldo - Ver saldo do mês (ex: \`/saldo --mes last_month\`)\n` +
-    `/extrato - Ver extrato (ex: \`/extrato --periodo last_month --grupo Pessoal\`)\n` +
-    `/resumo - Resumo por categoria (ex: \`/resumo --mes last_month\`)\n\n` +
+    `/saldo - Ver saldo (ex: \`/saldo mes passado\` ou \`/saldo --grupo Pessoal\`)\n` +
+    `/extrato - Ver extrato (ex: \`/extrato janeiro 2025\` ou \`/extrato --grupo Pessoal\`)\n` +
+    `/resumo - Resumo por categoria (ex: \`/resumo ultimo mes\` ou \`/resumo --grupo Pessoal\`)\n\n` +
     `📁 *Organização:*\n` +
     `/grupo - Gerenciar grupos\n` +
     `/categoria - Gerenciar categorias\n` +
@@ -72,18 +78,24 @@ export async function handleBalance(supabase: any, userId: number, chatId: numbe
   const user = await requireUser(supabase, userId, chatId);
   if (!user) return;
 
-  // Parse period and group from args
-  const { period, cleanArgs } = parsePeriodFromArgs(args);
+  const { period, groupName: resolvedGroup } = await resolveCommandPeriod(args, user.id);
 
-  const resolvedPeriod = period === "last_month" ? "last_month" as const : "this_month" as const;
-  const { start: startOfMonth, end: endOfMonth, label: monthName } = getDateRange(resolvedPeriod, null);
+  let startDate: string, endDate: string, monthName: string;
+  if (period) {
+    startDate = period.start;
+    endDate = period.end;
+    monthName = period.label;
+  } else {
+    const range = getDateRange(null, null);
+    startDate = range.start;
+    endDate = range.end;
+    monthName = range.label;
+  }
 
-  // Determine group filter
   let groupId: number | null = null;
   let groupName: string | null = null;
-  if (cleanArgs.length > 0) {
-    const searchName = cleanArgs.join(" ");
-    const group = await findGroupByName(supabase, user.id, searchName);
+  if (resolvedGroup) {
+    const group = await findGroupByName(supabase, user.id, resolvedGroup);
     if (group) {
       groupId = group.id;
       groupName = group.name;
@@ -98,8 +110,8 @@ export async function handleBalance(supabase: any, userId: number, chatId: numbe
     .select("amount")
     .eq("user_id", user.id)
     .eq("type", "income")
-    .gte("transaction_date", startOfMonth)
-    .lte("transaction_date", endOfMonth)
+    .gte("transaction_date", startDate)
+    .lte("transaction_date", endDate)
     .lte("transaction_date", today);
   if (groupId) incomeQuery = incomeQuery.eq("group_id", groupId);
 
@@ -109,8 +121,8 @@ export async function handleBalance(supabase: any, userId: number, chatId: numbe
     .select("amount")
     .eq("user_id", user.id)
     .eq("type", "expense")
-    .gte("transaction_date", startOfMonth)
-    .lte("transaction_date", endOfMonth)
+    .gte("transaction_date", startDate)
+    .lte("transaction_date", endDate)
     .lte("transaction_date", today);
   if (groupId) expensesQuery = expensesQuery.eq("group_id", groupId);
 
@@ -269,17 +281,12 @@ export async function handleSummary(supabase: any, userId: number, chatId: numbe
   const user = await requireUser(supabase, userId, chatId);
   if (!user) return;
 
-  // Parse period and group from args
-  const { period, cleanArgs } = parsePeriodFromArgs(args);
+  const { period, groupName: resolvedGroup } = await resolveCommandPeriod(args, user.id);
 
-  const resolvedPeriod = period === "last_month" ? "last_month" as const : null;
-
-  // Determine group filter
   let groupId: number | null = null;
   let groupName: string | null = null;
-  if (cleanArgs.length > 0) {
-    const searchName = cleanArgs.join(" ");
-    const group = await findGroupByName(supabase, user.id, searchName);
+  if (resolvedGroup) {
+    const group = await findGroupByName(supabase, user.id, resolvedGroup);
     if (group) {
       groupId = group.id;
       groupName = group.name;
@@ -287,8 +294,8 @@ export async function handleSummary(supabase: any, userId: number, chatId: numbe
   }
 
   const [data, futureData] = await Promise.all([
-    getSummaryData(supabase, user.id, resolvedPeriod, groupId),
-    getSummaryData(supabase, user.id, resolvedPeriod, groupId, true),
+    getSummaryData(supabase, user.id, period, groupId),
+    getSummaryData(supabase, user.id, period, groupId, true),
   ]);
 
   // If no transactions at all (past nor future)
