@@ -423,9 +423,19 @@ serve(async (req: Request): Promise<Response> => {
             keyboard
           );
         } else {
+          const messages = [
+            `🤔 Não entendi. Você pode usar o comando /receita para registrar uma receita.`,
+            `🤔 Não entendi. Você pode usar o comando /despesa para registrar uma despesa.`,
+            `🤔 Não entendi. Você pode usar o comando /extrato para ver suas transações.`,
+            `🤔 Não entendi. Você pode usar o comando /saldo para consultar seu saldo.`,
+            `🤔 Não entendi. Você pode usar o comando /resumo para ver um resumo do mês.`,
+            `🤔 Não entendi. Você pode usar o comando /ajuda para ver todos os comandos disponíveis.`,
+            `🤔 Não entendi. Tente /despesa 50 mercado ou /receita 3000 salário. Use /ajuda para mais comandos.`,
+            `🤔 Não entendi. Você pode digitar algo como "gastei 50 no almoço" ou usar /despesa.`,
+          ];
           await sendTelegramMessage(
             message.chat.id,
-            `🤔 Não entendi. Você pode usar comandos como /despesa ou digitar algo como "gastei 50 no almoço".\n\nUse /ajuda para ver todos os comandos.`
+            messages[Math.floor(Math.random() * messages.length)]
           );
         }
         return new Response("OK", { status: 200 });
