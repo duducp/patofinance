@@ -224,7 +224,8 @@ export async function completeWizard(
   }
   const txId = inserted?.id;
   const typeName = type === "expense" ? "Despesa" : "Receita";
-  await sendTelegramMessage(
+  const seq = await getSessionSeq(supabase, userId);
+  await sendTelegramMessageWithKeyboard(
     chatId,
     `✅ *${typeName} registrada com sucesso!*\n\n` +
     `💰 Valor: *${formatCurrencyBR(amount)}*\n` +
@@ -232,8 +233,8 @@ export async function completeWizard(
     `📁 Grupo: ${data.group || "Pessoal"}\n` +
     `📅 Data: ${formatDateBR(date)}` +
     (data.description ? `\n📝 Descrição: ${data.description}` : "") +
-    (tags.length > 0 ? `\n🔖 Tags: ${tags.join(" ")}` : "") +
-    `\n\n✏️ Para editar ou excluir, use */detalhes ${txId}*`
+    (tags.length > 0 ? `\n🔖 Tags: ${tags.join(" ")}` : ""),
+    [[{ text: "📋 Ver detalhes", callback_data: addSession(`edit_show_${txId}`, seq) }]]
   );
 }
 
