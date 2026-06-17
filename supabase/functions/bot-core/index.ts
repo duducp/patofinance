@@ -387,6 +387,14 @@ serve(async (req: Request): Promise<Response> => {
         await supabase.from("groups").delete().eq("user_id", internalUserId);
         await supabase.from("users").delete().eq("id", internalUserId);
         await sendTelegramMessage(message.chat.id, "✅ *Conta resetada com sucesso!* Todos os seus dados foram apagados.\n\nUse /start para começar de novo.");
+      } else if (wizardState.step === "detalhes_ask_id") {
+        const id = text.trim();
+        if (!/^\d+$/.test(id)) {
+          await sendTelegramMessage(message.chat.id, "❌ ID inválido. Digite apenas o número da transação (ex: 42).");
+          return new Response("OK", { status: 200 });
+        }
+        await clearWizardState(supabase, existingUser.id);
+        await handleDetails(supabase, message.from.id, message.chat.id, [id]);
       }
       return new Response("OK", { status: 200 });
     }

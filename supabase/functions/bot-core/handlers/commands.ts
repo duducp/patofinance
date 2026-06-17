@@ -598,12 +598,12 @@ export async function handleDetails(
   if (!user) return;
 
   if (args.length === 0) {
+    await setWizardState(supabase, user.id, "detalhes_ask_id", {});
     await sendTelegramMessage(
       chatId,
-      `📋 *Como ver detalhes de uma transação:*\n\n` +
-      `1️⃣ Use \`/extrato\` para ver o extrato do mês\n` +
-      `2️⃣ Identifique o #ID da transação\n` +
-      `3️⃣ Digite \`/detalhes ID\` (ex: \`/detalhes 42\`)`
+      `📋 *Qual transação?*\n\n` +
+      `Digite o #ID da transação que deseja ver.\n\n` +
+      `💡 Use \`/extrato\` para ver o extrato e encontrar o ID.`
     );
     return;
   }
