@@ -309,7 +309,7 @@ export async function handleCallbackQuery(
         .single();
       if (transaction) {
         const sessionSeq = await getSessionSeq(supabase, user.id);
-        await showDeleteConfirmation(chatId, transaction, sessionSeq);
+        await showDeleteConfirmation(chatId, transaction, sessionSeq, message.message_id);
       }
       return;
     }
@@ -325,10 +325,13 @@ export async function handleCallbackQuery(
       return;
     }
 
-    if (selectedValue === "cancel_delete") {
-      await sendTelegramMessage(chatId, "👍 Tudo bem! Transação mantida.");
+    if (selectedValue.startsWith("cancel_delete_")) {
+      const transactionId = selectedValue.replace("cancel_delete_", "");
+      await showDetailsMainView(supabase, user.id, chatId, transactionId, message.message_id);
       return;
-    }      // Handle cleanup (clean up unused categories/groups)
+    }
+
+    // Handle cleanup (clean up unused categories/groups)
     if (selectedValue === "confirm_cleanup") {
       // Find and delete unused categories
       const { data: catCounts } = await supabase

@@ -242,7 +242,8 @@ export async function handleShowLastTransaction(supabase: any, userId: number, c
 export async function showDeleteConfirmation(
   chatId: number,
   transaction: any,
-  sessionSeq: number
+  sessionSeq: number,
+  messageId?: number
 ): Promise<void> {
   const emoji = transaction.type === "income" ? "📈" : "📉";
   const typeName = transaction.type === "income" ? "Receita" : "Despesa";
@@ -252,20 +253,24 @@ export async function showDeleteConfirmation(
   const keyboard: InlineKeyboard = [
     [
       { text: "✅ Sim, excluir", callback_data: addSession(`confirm_delete_${transaction.id}`, sessionSeq) },
-      { text: "❌ Não, manter", callback_data: addSession("cancel_delete", sessionSeq) },
+      { text: "❌ Não, manter", callback_data: addSession(`cancel_delete_${transaction.id}`, sessionSeq) },
     ],
   ];
 
-  await sendTelegramMessageWithKeyboard(
-    chatId,
+  const messageText =
     `${emoji} *${typeName} #${transaction.id}:*\n\n` +
     `💰 Valor: *${formatCurrencyBR(Number(transaction.amount))}*\n` +
     `🏷️ Categoria: ${catName}\n` +
     (desc ? `📝 Descrição: ${desc}\n` : "") +
     `📅 Data: ${formatDateBR(transaction.transaction_date)}\n\n` +
-    `Tem certeza de que deseja excluir esta transação?`,
-    keyboard
-  );
+    `Tem certeza de que deseja excluir esta transação?`;
+
+  if (messageId) {
+    await editTelegramMessageWithKeyboard(chatId, messageId, messageText, keyboard);
+    return;
+  }
+
+  await sendTelegramMessageWithKeyboard(chatId, messageText, keyboard);
 }
 
 export async function handleDeleteLastTransaction(supabase: any, userId: number, chatId: number): Promise<void> {
