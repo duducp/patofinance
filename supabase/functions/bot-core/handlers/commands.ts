@@ -601,7 +601,7 @@ export async function handleDetails(
     const sessionSeq = await getSessionSeq(supabase, user.id);
     await setWizardState(supabase, user.id, "detalhes_ask_id", {});
     const keyboard: InlineKeyboard = [
-      [{ text: "❌ Cancelar", callback_data: addSession("cancel_wizard", sessionSeq) }],
+      [{ text: "🚫 Cancelar", callback_data: addSession("cancel_wizard", sessionSeq) }],
     ];
     await sendTelegramMessageWithKeyboard(
       chatId,
@@ -638,7 +638,10 @@ export async function handleDetails(
   const keyboard: InlineKeyboard = [
     ...buildEditKeyboard(transaction.id, sessionSeq),
     [
-      { text: "❌ Excluir", callback_data: addSession(`confirm_delete_${transaction.id}`, sessionSeq) },
+      { text: "🗑️ Excluir", callback_data: addSession(`del_prompt_${transaction.id}`, sessionSeq) },
+    ],
+    [
+      { text: "🚫 Cancelar", callback_data: addSession("cancel_wizard", sessionSeq) },
     ],
   ];
 
@@ -682,7 +685,7 @@ export async function handleEdit(supabase: any, userId: number, chatId: number, 
   const sessionSeq = await getSessionSeq(supabase, user.id);
   const keyboard: InlineKeyboard = [
     ...buildEditKeyboard(transaction.id, sessionSeq),
-    [{ text: "❌ Cancelar", callback_data: addSession("cancel_wizard", sessionSeq) }],
+    [{ text: "🚫 Cancelar", callback_data: addSession("cancel_wizard", sessionSeq) }],
   ];
 
   await sendTelegramMessageWithKeyboard(

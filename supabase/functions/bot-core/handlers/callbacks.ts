@@ -6,7 +6,7 @@ import { truncateCallbackData } from "../utils/rate-limiter.ts";
 import { getWizardState, setWizardState, clearWizardState, sendWizardStepMessage, getCurrentWizardStep, advanceWizardToNextStep } from "./wizard.ts";
 import { executeNaturalLanguageAction } from "./nl-processing.ts";
 import { handleStatement, handleBalance, handleSummary, handleEdit, handleGroup, handleCategory, handleTransaction } from "./commands.ts";
-import { handleListTransactions, handleListByTag } from "./management.ts";
+import { handleListTransactions, handleListByTag, showDeleteConfirmation } from "./management.ts";
 import { handleFilterCallback } from "./filters.ts";
 import { addSession, removeSession, validateCallbackSession, getSessionSeq } from "../utils/session.ts";
 import { buildKeyboardGrid } from "../utils/keyboard.ts";
@@ -212,7 +212,7 @@ async function handleEntitySelect(
     keyboard.push([{ text: `⭐ ${isCategory ? "Categoria" : "Grupo"} padrão`, callback_data: "none" }]);
   } else {
     keyboard.push([{ text: "✏️ Renomear", callback_data: addSession(`${cbRename}${entityName}`, sessionSeq) }]);
-    keyboard.push([{ text: "❌ Excluir", callback_data: addSession(`${cbDelete}${entityName}`, sessionSeq) }]);
+    keyboard.push([{ text: "🗑️ Excluir", callback_data: addSession(`${cbDelete}${entityName}`, sessionSeq) }]);
   }
   keyboard.push([{ text: "◀️ Voltar", callback_data: addSession(cbBack, sessionSeq) }]);
   await sendTelegramMessageWithKeyboard(chatId, `${icon} *${entityName}*\n\nO que deseja fazer?`, keyboard);
@@ -299,6 +299,21 @@ export async function handleCallbackQuery(
     const sessionSeq = decoded.seq;
 
     // Handle delete confirmation
+    if (selectedValue.startsWith("del_prompt_")) {
+      const transactionId = selectedValue.replace("del_prompt_", "");
+      const { data: transaction } = await supabase
+        .from("transactions")
+        .select("id, type, amount, categories(name), transaction_date, description")
+        .eq("id", transactionId)
+        .eq("user_id", user.id)
+        .single();
+      if (transaction) {
+        const sessionSeq = await getSessionSeq(supabase, user.id);
+        await showDeleteConfirmation(chatId, transaction, sessionSeq);
+      }
+      return;
+    }
+
     if (selectedValue.startsWith("confirm_delete_")) {
       const transactionId = selectedValue.replace("confirm_delete_", "");
       const { success } = await deleteTransactionById(supabase, user.id, transactionId);

@@ -217,7 +217,7 @@ export async function handleShowLastTransaction(supabase: any, userId: number, c
   const keyboard: InlineKeyboard = [
     [
       { text: "✏️ Editar", callback_data: addSession(`edit_show_${transaction.id}`, sessionSeq) },
-      { text: "🗑️ Excluir", callback_data: addSession(`confirm_delete_${transaction.id}`, sessionSeq) },
+      { text: "🗑️ Excluir", callback_data: addSession(`del_prompt_${transaction.id}`, sessionSeq) },
     ],
   ];
 
