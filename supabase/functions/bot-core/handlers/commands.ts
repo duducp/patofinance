@@ -7,7 +7,7 @@ import { parseCommand, parsePeriodFromArgs } from "../utils/command-parsing.ts";
 import { addSession, getSessionSeq } from "../utils/session.ts";
 import { buildKeyboardGrid, buildEditKeyboard } from "../utils/keyboard.ts";
 
-import { getSummaryData, formatSummaryMessage, formatFutureBlock } from "./queries.ts";
+import { getSummaryData, formatSummaryMessage, formatFutureBlock, sendTransactionSuccess } from "./queries.ts";
 import { getWizardState, setWizardState, handleTransactionWizard } from "./wizard.ts";
 
 export async function handleStart(chatId: number, firstName: string): Promise<void> {
@@ -255,17 +255,14 @@ export async function handleTransaction(
     return;
   }
 
-  const typeName = type === "expense" ? "Despesa" : "Receita";
-  await sendTelegramMessage(
-    chatId,
-    `✅ *${typeName} registrada com sucesso!*\n\n` +
-    `💰 Valor: *${formatCurrencyBR(parsed.amount)}*\n` +
-    `🏷️ Categoria: ${parsed.category || "Não definida"}\n` +
-    `📁 Grupo: ${parsed.group || "Pessoal"}\n` +
-    `📅 Data: ${formatDateBR(parsed.date || getTodayISOBR())}` +
-    (parsed.tags.length > 0 ? `\n🔖 Tags: ${parsed.tags.join(" ")}` : "") +
-    `\n\n✏️ Para editar ou excluir, use */detalhes ${id}*`
-  );
+  await sendTransactionSuccess(supabase, chatId, user.id, type, {
+    amount: parsed.amount,
+    category: parsed.category,
+    group: parsed.group,
+    date: parsed.date || getTodayISOBR(),
+    tags: parsed.tags,
+    transactionId: id,
+  });
 }
 
 export async function handleSummary(supabase: any, userId: number, chatId: number, args: string[] = []): Promise<void> {

@@ -1,6 +1,7 @@
-import { sendTelegramMessage } from "../services/telegram.ts";
+import { sendTelegramMessage, sendTelegramMessageWithKeyboard } from "../services/telegram.ts";
 import { requireUser } from "../services/database.ts";
 import { formatCurrencyBR, formatDateBR, getTodayISOBR } from "../utils/formatting.ts";
+import { addSession, getSessionSeq } from "../utils/session.ts";
 import { getDateRange } from "../utils/date-helpers.ts";
 
 /**
@@ -197,4 +198,35 @@ export async function handleQuerySummary(
   }
 
   await sendTelegramMessage(chatId, message);
+}
+
+export async function sendTransactionSuccess(
+  supabase: any,
+  chatId: number,
+  userId: number,
+  type: "expense" | "income",
+  params: {
+    amount: number;
+    category?: string | null;
+    group?: string | null;
+    date: string;
+    description?: string | null;
+    tags: string[];
+    transactionId?: number | null;
+  }
+): Promise<void> {
+  const typeName = type === "expense" ? "Despesa" : "Receita";
+  const seq = await getSessionSeq(supabase, userId);
+  if (!params.transactionId) return;
+  await sendTelegramMessageWithKeyboard(
+    chatId,
+    `✅ *${typeName} registrada com sucesso!*\n\n` +
+    `💰 Valor: *${formatCurrencyBR(params.amount)}*\n` +
+    `🏷️ Categoria: ${params.category || "Não definida"}\n` +
+    `📁 Grupo: ${params.group || "Pessoal"}\n` +
+    `📅 Data: ${formatDateBR(params.date)}` +
+    (params.description ? `\n📝 Descrição: ${params.description}` : "") +
+    (params.tags.length > 0 ? `\n🔖 Tags: ${params.tags.join(" ")}` : ""),
+    [[{ text: "📋 Ver detalhes", callback_data: addSession(`edit_show_${params.transactionId}`, seq) }]]
+  );
 }

@@ -2,8 +2,9 @@ import { WizardState } from "../types/index.ts";
 import { InlineKeyboard } from "../types/index.ts";
 import { sendTelegramMessage, sendTelegramMessageWithKeyboard, editTelegramMessageWithKeyboard } from "../services/telegram.ts";
 import { getOrCreateCategory, getOrCreateGroup, sendSimilarityWarning, getAllUserTags, deduplicateByNormalizedName } from "../services/database.ts";
-import { formatCurrencyBR, formatDateBR, parseDateBR, getTodayISOBR } from "../utils/formatting.ts";
+import { parseDateBR, getTodayISOBR } from "../utils/formatting.ts";
 import { addSession, getSessionSeq } from "../utils/session.ts";
+import { sendTransactionSuccess } from "./queries.ts";
 import { buildKeyboardGrid } from "../utils/keyboard.ts";
 
 export async function getWizardState(supabase: any, userId: number): Promise<WizardState | null> {
@@ -223,19 +224,15 @@ export async function completeWizard(
     return;
   }
   const txId = inserted?.id;
-  const typeName = type === "expense" ? "Despesa" : "Receita";
-  const seq = await getSessionSeq(supabase, userId);
-  await sendTelegramMessageWithKeyboard(
-    chatId,
-    `✅ *${typeName} registrada com sucesso!*\n\n` +
-    `💰 Valor: *${formatCurrencyBR(amount)}*\n` +
-    `🏷️ Categoria: ${data.category || "Não definida"}\n` +
-    `📁 Grupo: ${data.group || "Pessoal"}\n` +
-    `📅 Data: ${formatDateBR(date)}` +
-    (data.description ? `\n📝 Descrição: ${data.description}` : "") +
-    (tags.length > 0 ? `\n🔖 Tags: ${tags.join(" ")}` : ""),
-    [[{ text: "📋 Ver detalhes", callback_data: addSession(`edit_show_${txId}`, seq) }]]
-  );
+  await sendTransactionSuccess(supabase, chatId, userId, type, {
+    amount,
+    category: data.category,
+    group: data.group,
+    date,
+    description: data.description,
+    tags,
+    transactionId: txId,
+  });
 }
 
 export async function getCurrentWizardStep(
