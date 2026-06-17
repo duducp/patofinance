@@ -344,6 +344,15 @@ export async function handleCallbackQuery(
       return;
     }
 
+    if (selectedValue === "cancel_wizard") {
+      if (telegramId) {
+        const user = await getOrCreateUser(supabase, telegramId);
+        if (user) await clearWizardState(supabase, user.id);
+      }
+      await sendTelegramMessage(chatId, "❌ Operação cancelada.");
+      return;
+    }
+
     // ========== Statement filter panel ==========
     if (selectedValue.startsWith("stmt_")) {
       const handled = await handleFilterCallback(supabase, telegramId, chatId, selectedValue, sessionSeq, message.message_id);

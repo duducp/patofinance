@@ -57,7 +57,7 @@ export async function handleHelp(chatId: number): Promise<void> {
     chatId,
     `📚 *Comandos Disponíveis:*\n\n` +
     `💰 *Financeiros:*\n` +
-    `/despesa - Registrar despesa (/gasto também funciona)\n` +
+    `/despesa - Registrar despesa\n` +
     `/receita - Registrar receita\n` +
     `/saldo - Ver saldo do mês (ex: \`/saldo --mes last_month\`)\n` +
     `/extrato - Ver extrato (ex: \`/extrato --periodo last_month --grupo Pessoal\`)\n` +
@@ -598,12 +598,17 @@ export async function handleDetails(
   if (!user) return;
 
   if (args.length === 0) {
+    const sessionSeq = await getSessionSeq(supabase, user.id);
     await setWizardState(supabase, user.id, "detalhes_ask_id", {});
-    await sendTelegramMessage(
+    const keyboard: InlineKeyboard = [
+      [{ text: "❌ Cancelar", callback_data: addSession("cancel_wizard", sessionSeq) }],
+    ];
+    await sendTelegramMessageWithKeyboard(
       chatId,
       `📋 *Qual transação?*\n\n` +
       `Digite o #ID da transação que deseja ver.\n\n` +
-      `💡 Use \`/extrato\` para ver o extrato e encontrar o ID.`
+      `💡 Use \`/extrato\` para ver o extrato e encontrar o ID.`,
+      keyboard
     );
     return;
   }

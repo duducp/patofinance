@@ -247,7 +247,7 @@ Resposta esperada:
 4. Cole:
 
 ```
-despesa - Registrar despesa (ex: /despesa 50 mercado, /gasto também funciona)
+despesa - Registrar despesa (ex: /despesa 50 mercado)
 receita - Registrar receita (ex: /receita 3000 salario)
 saldo - Ver saldo do mes
 extrato - Ver extrato do mes com filtros
