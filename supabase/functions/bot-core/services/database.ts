@@ -329,45 +329,6 @@ export async function findGroupByName(
 }
 
 /**
- * Apply common ExtratoFilters to a Supabase query builder.
- * Returns the query with all filters applied.
- */
-export function applyFiltersToQuery(
-  query: any,
-  userId: number,
-  periodStart: string,
-  periodEnd: string,
-  typeFilter?: "all" | "income" | "expense",
-  filters?: { category_id?: number | null; group_id?: number | null; tags?: string[]; status?: "all" | "past" | "future" }
-): any {
-  let q = query
-    .eq("user_id", userId)
-    .gte("transaction_date", periodStart)
-    .lte("transaction_date", periodEnd);
-
-  if (typeFilter && typeFilter !== "all") {
-    q = q.eq("type", typeFilter);
-  }
-  if (filters?.category_id) {
-    q = q.eq("category_id", filters.category_id);
-  }
-  if (filters?.group_id) {
-    q = q.eq("group_id", filters.group_id);
-  }
-  if (filters?.tags && filters.tags.length > 0) {
-    for (const tag of filters.tags) {
-      q = q.contains("tags", [tag]);
-    }
-  }
-  if (filters?.status === "past") {
-    q = q.lte("transaction_date", getTodayISOBR());
-  } else if (filters?.status === "future") {
-    q = q.gt("transaction_date", getTodayISOBR());
-  }
-  return q;
-}
-
-/**
  * Paginated transaction list with count — used by handleListTransactions and handleListByTag.
  */
 export interface PaginatedTransaction {

@@ -9,10 +9,10 @@ import { buildKeyboardGrid } from "../utils/keyboard.ts";
 import {
   handleTransaction,
   handleBalance,
-  handleStatement,
   handleCleanup,
   handleTag,
 } from "./commands.ts";
+import { handleStatement } from "./statement.ts";
 import {
   handleCreateCategory,
   handleCreateGroup,

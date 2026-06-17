@@ -5,9 +5,9 @@ import { formatDateBR, getTodayISOBR, parseDateBR } from "../utils/formatting.ts
 import { truncateCallbackData } from "../utils/rate-limiter.ts";
 import { getWizardState, setWizardState, clearWizardState, sendWizardStepMessage, getCurrentWizardStep, advanceWizardToNextStep } from "./wizard.ts";
 import { executeNaturalLanguageAction } from "./nl-processing.ts";
-import { handleStatement, handleBalance, handleSummary, handleEdit, handleGroup, handleCategory, handleTransaction } from "./commands.ts";
+import { handleBalance, handleSummary, handleEdit, handleGroup, handleCategory, handleTransaction } from "./commands.ts";
 import { handleListTransactions, handleListByTag, showDeleteConfirmation } from "./management.ts";
-import { handleFilterCallback } from "./filters.ts";
+import { handleStatement, handleFilterCallback } from "./statement.ts";
 import { addSession, removeSession, validateCallbackSession, getSessionSeq } from "../utils/session.ts";
 import { buildKeyboardGrid } from "../utils/keyboard.ts";
 
@@ -406,7 +406,7 @@ export async function handleCallbackQuery(
             : filterSuffix === "exp" ? "expense" as const
             : filterSuffix === "fut" ? "future" as const
             : "all" as const;
-          await handleStatement(supabase, telegramId, chatId, page, filter);
+          await handleStatement(supabase, telegramId, chatId, page, filter, undefined, message.message_id);
         }
       }
       return;

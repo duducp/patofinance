@@ -11,7 +11,7 @@ export async function getWizardState(supabase: any, userId: number): Promise<Wiz
     .from("wizard_states")
     .select("step, data, expires_at")
     .eq("user_id", userId)
-    .single();
+    .maybeSingle();
   if (!data || !data.step) return null;
   if (new Date(data.expires_at) < new Date()) {
     await supabase.from("wizard_states").delete().eq("user_id", userId);
@@ -31,7 +31,7 @@ export async function setWizardState(
     .from("wizard_states")
     .select("user_id")
     .eq("user_id", userId)
-    .single();
+    .maybeSingle();
   if (existing) {
     await supabase
       .from("wizard_states")
@@ -102,7 +102,7 @@ export async function sendWizardStepMessage(
       .from("wizard_states")
       .select("data")
       .eq("user_id", userId)
-      .single();
+      .maybeSingle();
     const currentTags: string[] = wizardData?.data?.tags
       ? (Array.isArray(wizardData.data.tags) ? wizardData.data.tags : [wizardData.data.tags])
       : [];
@@ -232,7 +232,7 @@ export async function getCurrentWizardStep(
   supabase: any,
   userId: number
 ): Promise<{ state: any; currentStep: any } | null> {
-  const { data: state } = await supabase.from("wizard_states").select("*").eq("user_id", userId).single();
+  const { data: state } = await supabase.from("wizard_states").select("*").eq("user_id", userId).maybeSingle();
   if (!state) return null;
   const underscoreIndex = state.step.indexOf("_");
   const wizardName = state.step.substring(0, underscoreIndex);

@@ -31,7 +31,6 @@ import {
   handleHelp,
   handleBalance,
   handleTransaction,
-  handleStatement,
   handleSummary,
   handleDetails,
   handleGroup,
@@ -40,6 +39,7 @@ import {
   handleCleanup,
   handleReset,
 } from "./handlers/commands.ts";
+import { handleStatement } from "./handlers/statement.ts";
 
 
 async function fetchUserContext(supabase: any, userId: number): Promise<{
@@ -371,9 +371,11 @@ serve(async (req: Request): Promise<Response> => {
         const data = wizardState.data as any;
         const filters = { ...data } as any;
         delete filters._start;
+        delete filters._filterPanelMessageId;
         filters.period = { start: data._start, end: parsed };
+        const messageId = data._filterPanelMessageId;
         await clearWizardState(supabase, existingUser.id);
-        await handleStatement(supabase, message.from.id, message.chat.id, 0, filters.type || "all", filters);
+        await handleStatement(supabase, message.from.id, message.chat.id, 0, filters.type || "all", filters, messageId);
       } else if (wizardState.step === "reset_confirm") {
         if (text.trim() !== "RESETAR") {
           await sendTelegramMessage(message.chat.id, "❌ Confirmação incorreta. Digite exatamente `RESETAR` para confirmar, ou use `/cancelar` para cancelar.");
