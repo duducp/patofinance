@@ -1,5 +1,5 @@
 import type { InlineKeyboard } from "../types/index.ts";
-import { sendTelegramMessage, sendTelegramMessageWithKeyboard } from "../services/telegram.ts";
+import { sendTelegramMessage, sendTelegramMessageWithKeyboard, editTelegramMessageWithKeyboard } from "../services/telegram.ts";
 import { requireUser, getOrCreateCategory, getOrCreateGroup, normalizeString, suggestSimilarCategories, suggestSimilarGroups, sendSimilarityWarning, getAllUserTags, createTransaction, getTransactionById, findGroupByName } from "../services/database.ts";
 import { formatCurrencyBR, formatDateBR, getTodayISOBR } from "../utils/formatting.ts";
 import { getDateRange } from "../utils/date-helpers.ts";
@@ -329,7 +329,8 @@ export async function handleDetails(
   supabase: any,
   userId: number,
   chatId: number,
-  args: string[] = []
+  args: string[] = [],
+  messageId?: number
 ): Promise<void> {
   const user = await requireUser(supabase, userId, chatId);
   if (!user) return;
@@ -364,6 +365,10 @@ export async function handleDetails(
     return;
   }
 
+  await showDetailsMainView(supabase, user.id, chatId, transaction.id, messageId);
+}
+
+function formatDetailMessage(transaction: any): string {
   const emoji = transaction.type === "income" ? "📈" : "📉";
   const typeName = transaction.type === "income" ? "Receita" : "Despesa";
   const catName = transaction.categories?.name || "—";
@@ -372,75 +377,65 @@ export async function handleDetails(
   const desc = transaction.description || "—";
   const date = formatDateBR(transaction.transaction_date);
 
-  const sessionSeq = await getSessionSeq(supabase, user.id);
-  const keyboard: InlineKeyboard = [
-    ...buildEditKeyboard(transaction.id, sessionSeq),
-    [
-      { text: "🗑️ Excluir", callback_data: addSession(`del_prompt_${transaction.id}`, sessionSeq) },
-    ],
-    [
-      { text: "🚫 Cancelar", callback_data: addSession("cancel_wizard", sessionSeq) },
-    ],
-  ];
-
-  await sendTelegramMessageWithKeyboard(
-    chatId,
-    `${emoji} *${typeName} #${transaction.id}:*\n\n` +
+  return `${emoji} *${typeName} #${transaction.id}:*\n\n` +
     `💰 *Valor:* ${formatCurrencyBR(Number(transaction.amount))}\n` +
     `🏷️ *Categoria:* ${catName}\n` +
     `📁 *Grupo:* ${grpName}\n` +
     `🔖 *Tags:* ${tags}\n` +
     `📅 *Data:* ${date}\n` +
-    `📝 *Descrição:* ${desc}`,
-    keyboard
-  );
+    `📝 *Descrição:* ${desc}`;
 }
 
-export async function handleEdit(supabase: any, userId: number, chatId: number, args: string[] = []): Promise<void> {
-  const user = await requireUser(supabase, userId, chatId);
-  if (!user) return;
+export async function showDetailsMainView(
+  supabase: any,
+  userId: number,
+  chatId: number,
+  transactionId: string | number,
+  messageId?: number,
+): Promise<void> {
+  const transaction = await getTransactionById(supabase, userId, transactionId);
+  if (!transaction) return;
 
-  const transactionId = args[0];
-
-  const transaction = await getTransactionById(supabase, user.id, transactionId);
-
-  if (!transaction) {
-    await sendTelegramMessage(
-      chatId,
-      `❌ Transação #${transactionId} não encontrada.\n\n` +
-      `Use \`/extrato\` para ver as transações disponíveis.`
-    );
-    return;
-  }
-
-  const emoji = transaction.type === "income" ? "📈" : "📉";
-  const typeName = transaction.type === "income" ? "Receita" : "Despesa";
-  const catName = transaction.categories?.name || "Sem categoria";
-  const groupName = transaction.groups?.name || "Sem grupo";
-  const tags = transaction.tags?.length ? transaction.tags.join(" ") : "—";
-  const desc = transaction.description || "—";
-
-  const sessionSeq = await getSessionSeq(supabase, user.id);
+  const sessionSeq = await getSessionSeq(supabase, userId);
   const keyboard: InlineKeyboard = [
-    ...buildEditKeyboard(transaction.id, sessionSeq),
-    [{ text: "🚫 Cancelar", callback_data: addSession("cancel_edit", sessionSeq) }],
+    [
+      { text: "📝 Editar", callback_data: addSession(`edit_show_actions_${transaction.id}`, sessionSeq) },
+      { text: "🗑️ Excluir", callback_data: addSession(`del_prompt_${transaction.id}`, sessionSeq) },
+    ],
   ];
 
-  await sendTelegramMessageWithKeyboard(
-    chatId,
-    `${emoji} *${typeName} #${transaction.id}:*\n\n` +
-    `💰 Valor: *${formatCurrencyBR(Number(transaction.amount))}*\n` +
-    `🏷️ Categoria: ${catName}\n` +
-    `📁 Grupo: ${groupName}\n` +
-    `🔖 Tags: ${tags}\n` +
-    `📝 Descrição: ${desc}\n` +
-    `📅 Data: ${formatDateBR(transaction.transaction_date)}\n\n` +
-    `O que deseja alterar?`,
-    keyboard
-  );
+  const message = formatDetailMessage(transaction);
+
+  if (messageId) {
+    await editTelegramMessageWithKeyboard(chatId, messageId, message, keyboard);
+  } else {
+    await sendTelegramMessageWithKeyboard(chatId, message, keyboard);
+  }
 }
 
+export async function showDetailsEditActions(
+  supabase: any,
+  userId: number,
+  chatId: number,
+  transactionId: string | number,
+  messageId: number,
+): Promise<void> {
+  const transaction = await getTransactionById(supabase, userId, transactionId);
+  if (!transaction) return;
 
+  const sessionSeq = await getSessionSeq(supabase, userId);
+  const keyboard: InlineKeyboard = [
+    ...buildEditKeyboard(transaction.id, sessionSeq),
+    [{ text: "🔙 Voltar", callback_data: addSession(`edit_show_main_${transaction.id}`, sessionSeq) }],
+  ];
+
+  await editTelegramMessageWithKeyboard(
+    chatId,
+    messageId,
+    formatDetailMessage(transaction) + "\n\nO que deseja alterar?",
+    keyboard,
+  );
+}
 
 export async function handleEntity(
   type: "category" | "group",

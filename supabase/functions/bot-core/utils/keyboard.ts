@@ -24,7 +24,7 @@ export function buildKeyboardGrid(
 
 /**
  * Build the standard edit transaction keyboard.
- * Used in both handleDetails and handleEdit.
+ * Used in handleDetails.
  */
 export function buildEditKeyboard(
   transactionId: string | number,

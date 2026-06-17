@@ -187,11 +187,13 @@ serve(async (req: Request): Promise<Response> => {
         const transactionId = wizardState.data.transaction_id;
         await supabase.from("transactions").update({ amount }).eq("id", transactionId).eq("user_id", existingUser.id);
         await clearWizardState(supabase, existingUser.id);
+        await incrementSessionSeq(supabase, existingUser.id);
         await sendTelegramMessage(message.chat.id, `✅ Valor atualizado para ${formatCurrencyBR(amount)}!`);
       } else if (wizardState.step === "edit_description") {
         const transactionId = wizardState.data.transaction_id;
         await supabase.from("transactions").update({ description: text }).eq("id", transactionId).eq("user_id", existingUser.id);
         await clearWizardState(supabase, existingUser.id);
+        await incrementSessionSeq(supabase, existingUser.id);
         await sendTelegramMessage(message.chat.id, `✅ Descrição atualizada para "${text}"!`);
       } else if (wizardState.step === "edit_date") {
         const parsed = parseDateBR(text);
@@ -202,6 +204,7 @@ serve(async (req: Request): Promise<Response> => {
         const transactionId = wizardState.data.transaction_id;
         await supabase.from("transactions").update({ transaction_date: parsed }).eq("id", transactionId).eq("user_id", existingUser.id);
         await clearWizardState(supabase, existingUser.id);
+        await incrementSessionSeq(supabase, existingUser.id);
         await sendTelegramMessage(message.chat.id, `✅ Data atualizada para ${formatDateBR(parsed)}!`);
       } else if (wizardState.step.startsWith("edit_tags_")) {
         const transactionId = wizardState.data.transaction_id;
@@ -219,6 +222,7 @@ serve(async (req: Request): Promise<Response> => {
 
         await supabase.from("transactions").update({ tags: accumulated }).eq("id", transactionId).eq("user_id", existingUser.id);
         await clearWizardState(supabase, existingUser.id);
+        await incrementSessionSeq(supabase, existingUser.id);
         const tagsStr = accumulated.length > 0 ? accumulated.join(" ") : "—";
         await sendTelegramMessage(message.chat.id, `✅ Tags atualizadas: ${tagsStr}`);
       } else if (wizardState.step === "rename_cat") {

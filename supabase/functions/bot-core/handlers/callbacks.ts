@@ -5,10 +5,10 @@ import { formatDateBR, getTodayISOBR, parseDateBR } from "../utils/formatting.ts
 import { truncateCallbackData } from "../utils/rate-limiter.ts";
 import { getWizardState, setWizardState, clearWizardState, sendWizardStepMessage, getCurrentWizardStep, advanceWizardToNextStep } from "./wizard.ts";
 import { executeNaturalLanguageAction } from "./nl-processing.ts";
-import { handleBalance, handleSummary, handleEdit, handleGroup, handleCategory, handleTransaction } from "./commands.ts";
+import { handleBalance, handleSummary, handleDetails, handleGroup, handleCategory, handleTransaction, showDetailsEditActions, showDetailsMainView } from "./commands.ts";
 import { handleListTransactions, handleListByTag, showDeleteConfirmation } from "./management.ts";
 import { handleStatement, handleFilterCallback } from "./statement.ts";
-import { addSession, removeSession, validateCallbackSession, getSessionSeq } from "../utils/session.ts";
+import { addSession, removeSession, validateCallbackSession, getSessionSeq, incrementSessionSeq } from "../utils/session.ts";
 import { buildKeyboardGrid } from "../utils/keyboard.ts";
 
 async function handleGroupFilterCallback(
@@ -378,6 +378,11 @@ export async function handleCallbackQuery(
       return;
     }
 
+    if (selectedValue === "cancel_details") {
+      await sendTelegramMessage(chatId, "👍 Beleza!");
+      return;
+    }
+
     if (selectedValue === "cancel_wizard") {
       if (telegramId) {
         const user = await getOrCreateUser(supabase, telegramId);
@@ -535,10 +540,24 @@ export async function handleCallbackQuery(
       return;
     }
 
+    // Handle edit show actions (MUST come before edit_show_)
+    if (selectedValue.startsWith("edit_show_actions_")) {
+      const transactionId = selectedValue.replace("edit_show_actions_", "");
+      await showDetailsEditActions(supabase, user.id, chatId, transactionId, message.message_id);
+      return;
+    }
+
+    // Handle edit show main (MUST come before edit_show_)
+    if (selectedValue.startsWith("edit_show_main_")) {
+      const transactionId = selectedValue.replace("edit_show_main_", "");
+      await showDetailsMainView(supabase, user.id, chatId, transactionId, message.message_id);
+      return;
+    }
+
     // Handle edit callbacks (specific prefixes MUST come before generic edit_)
     if (selectedValue.startsWith("edit_show_")) {
       const transactionId = selectedValue.replace("edit_show_", "");
-      await handleEdit(supabase, telegramId, chatId, [transactionId]);
+      await handleDetails(supabase, telegramId, chatId, [transactionId]);
       return;
     }
 
@@ -554,6 +573,7 @@ export async function handleCallbackQuery(
           await sendTelegramMessage(chatId, "❌ Ops! Algo deu errado ao atualizar. Tente novamente.");
         } else {
           await sendTelegramMessage(chatId, `✅ Categoria atualizada para "${categoryName}"!`);
+          await incrementSessionSeq(supabase, user.id);
         }
       }
       return;
@@ -569,6 +589,7 @@ export async function handleCallbackQuery(
         await sendTelegramMessage(chatId, "❌ Ops! Algo deu errado ao atualizar. Tente novamente.");
       } else {
         await sendTelegramMessage(chatId, `✅ Data atualizada para ${formatDateBR(dateStr)}!`);
+        await incrementSessionSeq(supabase, user.id);
       }
       return;
     }
@@ -595,6 +616,7 @@ export async function handleCallbackQuery(
             await sendTelegramMessage(chatId, "❌ Ops! Algo deu errado ao atualizar o grupo. Tente novamente.");
           } else {
             await sendTelegramMessage(chatId, `✅ Grupo alterado para "${groupName}"!`);
+            await incrementSessionSeq(supabase, user.id);
           }
         }
       }
@@ -625,6 +647,7 @@ export async function handleCallbackQuery(
       const formattedTags = tags.map((t: string) => t.startsWith("#") ? t : `#${t}`);
       await supabase.from("transactions").update({ tags: formattedTags }).eq("id", transactionId).eq("user_id", user.id);
       await clearWizardState(supabase, user.id);
+      await incrementSessionSeq(supabase, user.id);
       const tagsStr = formattedTags.length > 0 ? formattedTags.join(" ") : "—";
       await sendTelegramMessage(chatId, `✅ Tags atualizadas: ${tagsStr}`);
       return;
@@ -635,6 +658,7 @@ export async function handleCallbackQuery(
       const transactionId = selectedValue.replace("edit_tags_clr_", "");
       await supabase.from("transactions").update({ tags: [] }).eq("id", transactionId).eq("user_id", user.id);
       await clearWizardState(supabase, user.id);
+      await incrementSessionSeq(supabase, user.id);
       await sendTelegramMessage(chatId, "✅ Tags removidas!");
       return;
     }
