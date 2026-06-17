@@ -15,7 +15,7 @@ import { incrementSessionSeq, addSession, getSessionSeq } from "./utils/session.
 import { formatCurrencyBR, formatDateBR, parseDateBR } from "./utils/formatting.ts";
 import { parseNaturalLanguage } from "./services/deepseek.ts";
 import { resolveCommandPeriod } from "./utils/period-parser.ts";
-import { sendTelegramMessage, sendTelegramMessageWithKeyboard } from "./services/telegram.ts";
+import { sendTelegramMessage, sendTelegramMessageWithKeyboard, deleteTelegramMessage } from "./services/telegram.ts";
 import { getCategories, sendSimilarityWarning, normalizeString, getAllUserTags } from "./services/database.ts";
 import { handleCreateCategory } from "./handlers/management.ts";
 import { handleCallbackQuery, handleCancelWizard } from "./handlers/callbacks.ts";
@@ -39,7 +39,7 @@ import {
   handleCleanup,
   handleReset,
 } from "./handlers/commands.ts";
-import { handleStatement } from "./handlers/statement.ts";
+import { handleStatement, handleFilterPanel } from "./handlers/statement.ts";
 
 
 async function fetchUserContext(supabase: any, userId: number): Promise<{
@@ -357,15 +357,18 @@ serve(async (req: Request): Promise<Response> => {
         await clearWizardState(supabase, existingUser.id);
         await executeNaturalLanguageAction(supabase, message.from.id, message.chat.id, natural);
       } else if (wizardState.step === "extrato_custom_period") {
-        // First text input: start date
         const parsed = parseDateBR(text);
         if (!parsed) {
           await sendTelegramMessage(message.chat.id, "Formato inválido. Use DD/MM/AAAA (ex: 15/01/2024)");
           return new Response("OK", { status: 200 });
         }
         const filters = wizardState.data as any;
-        await setWizardState(supabase, existingUser.id, "extrato_custom_period_end", { ...filters, _start: parsed });
-        await sendTelegramMessage(message.chat.id, "📅 Informe a data de *fim* (formato: DD/MM/AAAA):");
+        const endPromptMsgId = await sendTelegramMessage(message.chat.id, "📅 Informe a data de *fim* (formato: DD/MM/AAAA):");
+        await setWizardState(supabase, existingUser.id, "extrato_custom_period_end", {
+          ...filters,
+          _start: parsed,
+          _endPromptMessageId: endPromptMsgId,
+        });
       } else if (wizardState.step === "extrato_custom_period_end") {
         const parsed = parseDateBR(text);
         if (!parsed) {
@@ -373,13 +376,25 @@ serve(async (req: Request): Promise<Response> => {
           return new Response("OK", { status: 200 });
         }
         const data = wizardState.data as any;
-        const filters = { ...data } as any;
-        delete filters._start;
-        delete filters._filterPanelMessageId;
-        filters.period = { start: data._start, end: parsed };
-        const messageId = data._filterPanelMessageId;
+        const filters: ExtratoFilters = {
+          ...data,
+          period: { start: data._start, end: parsed, label: `${formatDateBR(data._start)} — ${formatDateBR(parsed)}` },
+        };
+        delete (filters as any)._start;
+        delete (filters as any)._filterPanelMessageId;
+        delete (filters as any)._promptMessageId;
+        delete (filters as any)._endPromptMessageId;
         await clearWizardState(supabase, existingUser.id);
-        await handleStatement(supabase, message.from.id, message.chat.id, 0, filters.type || "all", filters, messageId);
+        if (data._filterPanelMessageId) {
+          await deleteTelegramMessage(message.chat.id, data._filterPanelMessageId);
+        }
+        if (data._promptMessageId) {
+          await deleteTelegramMessage(message.chat.id, data._promptMessageId);
+        }
+        if (data._endPromptMessageId) {
+          await deleteTelegramMessage(message.chat.id, data._endPromptMessageId);
+        }
+        await handleFilterPanel(supabase, existingUser.id, message.chat.id, filters);
       } else if (wizardState.step === "reset_confirm") {
         if (text.trim() !== "RESETAR") {
           await sendTelegramMessage(message.chat.id, "❌ Confirmação incorreta. Digite exatamente `RESETAR` para confirmar, ou use `/cancelar` para cancelar.");

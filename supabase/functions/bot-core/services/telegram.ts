@@ -32,8 +32,35 @@ async function callTelegramAPI(method: string, body: Record<string, unknown>): P
   }
 }
 
-export async function sendTelegramMessage(chatId: number, text: string): Promise<void> {
-  await callTelegramAPI("sendMessage", { chat_id: chatId, text, parse_mode: "Markdown" });
+export async function sendTelegramMessage(chatId: number, text: string): Promise<number | null> {
+  try {
+    const response = await fetch(`${TELEGRAM_API_BASE}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: chatId, text, parse_mode: "Markdown" }),
+    });
+    if (!response.ok) {
+      const errorText = await response.text();
+      if (errorText.includes("parse")) {
+        const retry = await fetch(`${TELEGRAM_API_BASE}/sendMessage`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ chat_id: chatId, text }),
+        });
+        if (retry.ok) {
+          const data = await retry.json();
+          return data.result?.message_id ?? null;
+        }
+      }
+      console.error(`Telegram API error (sendMessage):`, errorText);
+      return null;
+    }
+    const data = await response.json();
+    return data.result?.message_id ?? null;
+  } catch (error) {
+    console.error(`Error calling Telegram API (sendMessage):`, error);
+    return null;
+  }
 }
 
 export async function sendTelegramMessageWithKeyboard(

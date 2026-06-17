@@ -130,6 +130,10 @@ export async function handleStatement(
   const user = await requireUser(supabase, userId, chatId);
   if (!user) return;
 
+  if (filters) {
+    await setWizardState(supabase, user.id, "extrato_filters", { ...filters });
+  }
+
   const period = filters?.period || "this_month";
   const { start: periodStart, end: periodEnd, label: periodLabel } = resolvePeriod(period);
 
@@ -152,10 +156,14 @@ export async function handleStatement(
   if (!totalCount || totalCount === 0) {
     const filterName = typeFilter === "income" ? "receita" : typeFilter === "expense" ? "despesa" : typeFilter === "future" ? "agendada" : "transação";
     const noResultMsg = `📋 Nenhuma ${filterName} encontrada${period !== "this_month" ? ` em ${periodLabel}` : " este mês"}.`;
+    const sessionSeq = await getSessionSeq(supabase, user.id);
+    const keyboard: InlineKeyboard = [[
+      { text: "◀️ Voltar", callback_data: addSession("stmt_filter", sessionSeq) },
+    ]];
     if (messageId) {
-      await editTelegramMessageWithKeyboard(chatId, messageId, noResultMsg, []);
+      await editTelegramMessageWithKeyboard(chatId, messageId, noResultMsg, keyboard);
     } else {
-      await sendTelegramMessage(chatId, noResultMsg);
+      await sendTelegramMessageWithKeyboard(chatId, noResultMsg, keyboard);
     }
     return;
   }
@@ -746,8 +754,12 @@ export async function handleFilterCallback(
     if (key === "custom") {
       const { data: state } = await supabase.from("wizard_states").select("data").eq("user_id", user.id).maybeSingle();
       const filters: ExtratoFilters = state?.data || { ...DEFAULT_FILTERS };
-      await setWizardState(supabase, user.id, "extrato_custom_period", { ...filters, _filterPanelMessageId: messageId });
-      await sendTelegramMessage(chatId, "📅 Informe a data de *início* (formato: DD/MM/AAAA):");
+      const promptMsgId = await sendTelegramMessage(chatId, "📅 Informe a data de *início* (formato: DD/MM/AAAA):");
+      await setWizardState(supabase, user.id, "extrato_custom_period", {
+        ...filters,
+        _filterPanelMessageId: messageId,
+        _promptMessageId: promptMsgId,
+      });
       return true;
     }
     const { data: state } = await supabase.from("wizard_states").select("data").eq("user_id", user.id).maybeSingle();
