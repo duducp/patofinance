@@ -386,6 +386,17 @@ export async function handleCallbackQuery(
       return;
     }
 
+    if (selectedValue === "detalhes_show_extrato") {
+      if (telegramId) {
+        const user = await getOrCreateUser(supabase, telegramId);
+        if (user) {
+          await handleCancelWizard(supabase, user.id, chatId);
+          await handleStatement(supabase, telegramId, chatId);
+        }
+      }
+      return;
+    }
+
     // ========== Statement filter panel ==========
     if (selectedValue.startsWith("stmt_")) {
       const handled = await handleFilterCallback(supabase, telegramId, chatId, selectedValue, sessionSeq, message.message_id);

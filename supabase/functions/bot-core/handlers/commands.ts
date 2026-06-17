@@ -341,6 +341,7 @@ export async function handleDetails(
     const sessionSeq = await getSessionSeq(supabase, user.id);
     await setWizardState(supabase, user.id, "detalhes_ask_id", {});
     const keyboard: InlineKeyboard = [
+      [{ text: "📋 Ver extrato", callback_data: addSession("detalhes_show_extrato", sessionSeq) }],
       [{ text: "🚫 Cancelar", callback_data: addSession("cancel_wizard", sessionSeq) }],
     ];
     await sendTelegramMessageWithKeyboard(
