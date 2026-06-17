@@ -71,13 +71,11 @@ async function handleCreateEntity(
   await sendTelegramMessage(chatId, `✅ ${icon} ${label.charAt(0).toUpperCase() + label.slice(1)} "${name}" criad${art} com sucesso!`);
 }
 
-export async function handleCreateCategory(supabase: any, userId: number, chatId: number, name: string): Promise<void> {
-  return handleCreateEntity("category", supabase, userId, chatId, name);
-}
+export const handleCreateCategory = (supabase: any, userId: number, chatId: number, name: string): Promise<void> =>
+  handleCreateEntity("category", supabase, userId, chatId, name);
 
-export async function handleCreateGroup(supabase: any, userId: number, chatId: number, name: string): Promise<void> {
-  return handleCreateEntity("group", supabase, userId, chatId, name);
-}
+export const handleCreateGroup = (supabase: any, userId: number, chatId: number, name: string): Promise<void> =>
+  handleCreateEntity("group", supabase, userId, chatId, name);
 
 export async function handleListCategories(supabase: any, userId: number, chatId: number): Promise<void> {
   const user = await requireUser(supabase, userId, chatId);
@@ -242,8 +240,6 @@ export async function handleShowLastTransaction(supabase: any, userId: number, c
  * Used by both handleDelete (commands.ts) and handleDeleteLastTransaction.
  */
 export async function showDeleteConfirmation(
-  supabase: any,
-  userId: number,
   chatId: number,
   transaction: any,
   sessionSeq: number
@@ -297,7 +293,7 @@ export async function handleDeleteLastTransaction(supabase: any, userId: number,
   }
 
   const sessionSeq = await getSessionSeq(supabase, user.id);
-  await showDeleteConfirmation(supabase, user.id, chatId, transaction, sessionSeq);
+  await showDeleteConfirmation(chatId, transaction, sessionSeq);
 }
 
 export async function handleListByTag(supabase: any, userId: number, chatId: number, tag: string, page: number = 0, messageId?: number): Promise<void> {

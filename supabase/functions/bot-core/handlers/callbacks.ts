@@ -61,11 +61,8 @@ async function handleEntityDeletePrompt(
 ): Promise<void> {
   const isCategory = type === "category";
   const table = isCategory ? "categories" : "groups";
-  const icon = isCategory ? "🏷️" : "📁";
-  const flagColumn = isCategory ? "is_predefined" : "is_default";
   const cbYesPrefix = isCategory ? "cat_del_yes_" : "grp_del_yes_";
   const cbBack = isCategory ? "cat_back" : "grp_back";
-  const label = isCategory ? "categoria" : "grupo";
   const fallbackName = isCategory ? "Sem categoria" : "Pessoal";
 
   const { data: entity } = await supabase

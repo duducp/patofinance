@@ -189,7 +189,6 @@ export async function handleBalance(supabase: any, userId: number, chatId: numbe
   const hasFuture = totalFutureIncome > 0 || totalFutureExpenses > 0;
 
   const balance = totalIncome - totalExpenses;
-  const projectedBalance = balance + totalFutureIncome - totalFutureExpenses;
 
   const emoji = balance >= 0 ? "✅" : "⚠️";
 
@@ -737,7 +736,7 @@ export async function handleDelete(supabase: any, userId: number, chatId: number
   }
 
   const sessionSeq = await getSessionSeq(supabase, user.id);
-  await showDeleteConfirmation(supabase, user.id, chatId, transaction, sessionSeq);
+  await showDeleteConfirmation(chatId, transaction, sessionSeq);
 }
 
 export async function handleEntity(
