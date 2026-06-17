@@ -944,11 +944,16 @@ export async function handleCallbackQuery(
       return;
     }
 
-    // Handle generic wizard selections
+    // Handle generic wizard selections — only process if callback matches current step
     const wizard = await getCurrentWizardStep(supabase, user.id);
     if (!wizard) return;
-    const newStateData = { ...wizard.state.data, [wizard.currentStep.step_key]: selectedValue };
-    await advanceWizardToNextStep(supabase, user.id, chatId, wizard.currentStep, sessionSeq, newStateData);
+    const stepKey = wizard.currentStep.step_key;
+    const prefix = `wiz_${stepKey}_`;
+    if (selectedValue.startsWith(prefix)) {
+      const value = selectedValue.replace(prefix, "");
+      const newStateData = { ...wizard.state.data, [stepKey]: value };
+      await advanceWizardToNextStep(supabase, user.id, chatId, wizard.currentStep, sessionSeq, newStateData);
+    }
   } catch (error) {
     console.error("Error handling callback query:", error);
     await sendTelegramMessage(callbackQuery.message.chat.id, "❌ Ops! Algo deu errado. Tente novamente.");

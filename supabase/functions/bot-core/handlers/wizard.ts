@@ -74,7 +74,7 @@ export async function sendWizardStepMessage(
     if (unique.length > 0) {
       const grid = buildKeyboardGrid(unique, (c) => ({
         text: c.name,
-        callback_data: addSession(c.name, sessionSeq),
+        callback_data: addSession(`wiz_cat_${c.name}`, sessionSeq),
       }), 3);
       keyboard.push(...grid);
     }
@@ -90,7 +90,7 @@ export async function sendWizardStepMessage(
     if (groups && groups.length > 0) {
       const grid = buildKeyboardGrid(groups, (g) => ({
         text: g.name,
-        callback_data: addSession(g.name, sessionSeq),
+        callback_data: addSession(`wiz_grp_${g.name}`, sessionSeq),
       }), 3);
       keyboard.push(...grid);
     }
@@ -148,8 +148,8 @@ export async function sendWizardStepMessage(
     const yesterday = new Date(Date.now() - 86400000).toISOString().split("T")[0];
     const keyboard = [
       [
-        { text: "📅 Hoje", callback_data: addSession(today, sessionSeq) },
-        { text: "📅 Ontem", callback_data: addSession(yesterday, sessionSeq) },
+        { text: "📅 Hoje", callback_data: addSession(`wiz_date_${today}`, sessionSeq) },
+        { text: "📅 Ontem", callback_data: addSession(`wiz_date_${yesterday}`, sessionSeq) },
       ],
       [{ text: "📆 Outra data", callback_data: addSession("custom_date", sessionSeq) }],
     ];

@@ -10,5 +10,5 @@ WHERE wizard_name IN ('gasto', 'receita') AND step_order >= 102;
 
 -- Step 3: Insert description step at the freed position
 INSERT INTO wizard_steps (wizard_name, step_order, step_key, prompt, input_type, is_required) VALUES
-  ('gasto', 2, 'description', 'Descrição (opcional)?\n\nEx: almoço no restaurante', 'text', FALSE),
-  ('receita', 2, 'description', 'Descrição (opcional)?\n\nEx: pagamento do projeto', 'text', FALSE);
+  ('gasto', 2, 'description', E'Descrição (opcional)?\n\nEx: almoço no restaurante', 'text', FALSE),
+  ('receita', 2, 'description', E'Descrição (opcional)?\n\nEx: pagamento do projeto', 'text', FALSE);
