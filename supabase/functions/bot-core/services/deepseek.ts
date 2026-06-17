@@ -1,6 +1,6 @@
 import { DeepSeekResponse, PeriodParseResult } from "../types/index.ts";
-import { DEEPSEEK_API_KEY, nlCache, NL_CACHE_TTL } from "../config.ts";
-import { getTodayISOBR } from "../utils/formatting.ts";
+import { DEEPSEEK_API_KEY, nlCache, periodCache, NL_CACHE_TTL } from "../config.ts";
+import { getTodayISOBR, getNowBR } from "../utils/formatting.ts";
 
 // ============================================================
 // System Prompt Building Blocks
@@ -359,13 +359,13 @@ export async function parseNaturalLanguage(
 }
 
 function buildCommandPeriodPrompt(): string {
-  const today = new Date();
-  const yesterday = new Date(today);
-  yesterday.setDate(today.getDate() - 1);
-  const todayStr = today.toISOString().split("T")[0];
+  const now = getNowBR();
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  const todayStr = now.toISOString().split("T")[0];
   const yesterdayStr = yesterday.toISOString().split("T")[0];
-  const thisYear = today.getFullYear();
-  const thisMonth = today.getMonth();
+  const thisYear = now.getFullYear();
+  const thisMonth = now.getMonth();
   const lastMonthStart = new Date(thisYear, thisMonth - 1, 1).toISOString().split("T")[0];
   const lastMonthEnd = new Date(thisYear, thisMonth, 0).toISOString().split("T")[0];
   const thisMonthStart = new Date(thisYear, thisMonth, 1).toISOString().split("T")[0];
@@ -397,7 +397,7 @@ EXEMPLOS:
 "mes atual" → {"start":"${thisMonthStart}","end":"${thisMonthEnd}","label":"Este mês","type":null,"group":null}
 "ontem" → {"start":"${yesterdayStr}","end":"${yesterdayStr}","label":"Ontem","type":null,"group":null}
 "Pessoal mes passado" → {"start":"${lastMonthStart}","end":"${lastMonthEnd}","label":"Mês passado","type":null,"group":"Pessoal"}
-"despesas janeiro" → {"start":"2026-01-01","end":"2026-01-31","label":"Janeiro de 2026","type":"expense","group":null}
+"despesas janeiro" → {"start":"${thisYear}-01-01","end":"${thisYear}-01-31","label":"Janeiro de ${thisYear}","type":"expense","group":null}
 "Casa semana passada" → {"start":"${lastMonthStart}","end":"${lastMonthEnd}","label":"Mês passado","type":null,"group":"Casa"}
 "dia 15 de janeiro de 2025" → {"start":"2025-01-15","end":"2025-01-15","label":"15 de janeiro de 2025","type":null,"group":null}
 "ano passado" → {"start":"${thisYear - 1}-01-01","end":"${thisYear - 1}-12-31","label":"Ano passado","type":null,"group":null}
@@ -416,11 +416,11 @@ export async function parseCommandPeriod(
   if (!text.trim()) return null;
 
   if (userId) {
-    const userCache = nlCache.get(userId);
+    const userCache = periodCache.get(userId);
     if (userCache) {
-      const cached = userCache.get(`__period__${text}`);
+      const cached = userCache.get(text);
       if (cached && Date.now() - cached.timestamp < NL_CACHE_TTL) {
-        return { ...cached.response } as unknown as PeriodParseResult;
+        return { ...cached.response };
       }
     }
   }
@@ -465,14 +465,13 @@ export async function parseCommandPeriod(
       group: parsed.group || null,
     };
 
-    // Cache only if at least one field is non-null
     if (userId && (result.start || result.type || result.group)) {
-      let userCache = nlCache.get(userId);
+      let userCache = periodCache.get(userId);
       if (!userCache) {
         userCache = new Map();
-        nlCache.set(userId, userCache);
+        periodCache.set(userId, userCache);
       }
-      userCache.set(`__period__${text}`, { response: result as unknown as DeepSeekResponse, timestamp: Date.now() });
+      userCache.set(text, { response: { ...result }, timestamp: Date.now() });
     }
 
     return result;

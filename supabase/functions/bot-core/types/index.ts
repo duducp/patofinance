@@ -66,12 +66,6 @@ export interface PeriodResult {
   label: string;
 }
 
-export interface PeriodObject {
-  start: string;
-  end: string;
-  label?: string;
-}
-
 export interface PeriodParseResult {
   start: string | null;
   end: string | null;
@@ -87,6 +81,6 @@ export interface ExtratoFilters {
   group_id: number | null;
   tags: string[];
   type: "all" | "income" | "expense";
-  period: PeriodPreset | PeriodObject;
+  period: PeriodPreset | { start: string; end: string; label?: string };
   status: "all" | "past" | "future";
 }

@@ -131,7 +131,10 @@ export async function handleStatement(
   if (!user) return;
 
   if (filters) {
-    await setWizardState(supabase, user.id, "extrato_filters", { ...filters });
+    const existingState = await getWizardState(supabase, user.id);
+    if (!existingState || existingState.step !== "extrato_filters") {
+      await setWizardState(supabase, user.id, "extrato_filters", { ...filters });
+    }
   }
 
   const period = filters?.period || "this_month";

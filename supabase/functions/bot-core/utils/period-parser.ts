@@ -44,6 +44,7 @@ export async function resolveCommandPeriod(
       label: result.label || `${result.start} — ${result.end}`,
     };
   } else if (result.label && !result.start) {
+    console.warn(`resolveCommandPeriod: NL returned label "${result.label}" without dates for "${text}" — falling back to current month`);
     period = getDateRange(null, null);
     period = { ...period, label: result.label };
   }

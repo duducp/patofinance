@@ -281,7 +281,7 @@ resolveCommandPeriod(args, userId?) → { period: PeriodResult | null, groupName
 - Remaining text sent to DeepSeek via `parseCommandPeriod()` (focused prompt for date/period only)
 - Returns `PeriodResult { start, end, label }` or null
 - DeepSeek also identifies expense/income type and group from text
-- Cache: same `nlCache` as main NL (5min TTL), key prefixed with `__period__`
+- Cache: separate `periodCache` (5min TTL)
 
 ### Architecture
 
@@ -704,9 +704,9 @@ In the wizard:
 
 | Function | Purpose |
 |----------|---------|
-| `sendTelegramMessage(chatId, text)` | Send plain message |
-| `sendTelegramMessageWithKeyboard(chatId, text, keyboard)` | Send with inline keyboard |
-| `editTelegramMessageWithKeyboard(chatId, messageId, text, keyboard)` | Edit existing message |
+| `sendTelegramMessage(chatId, text)` | Send plain message, returns `message_id \| null` |
+| `sendTelegramMessageWithKeyboard(chatId, text, keyboard)` | Send with inline keyboard, returns `message_id \| null` |
+| `editTelegramMessageWithKeyboard(chatId, messageId, text, keyboard)` | Edit existing message, returns `message_id \| null` |
 | `answerCallbackQuery(callbackQueryId)` | Acknowledge callback (required by Telegram) |
 
 ### `handlers/commands.ts` -- Slash command handlers
@@ -839,7 +839,7 @@ supabase/
 │   └── 20260616000000_*.sql  # Global predefined categories (user_id=NULL)
 └── functions/bot-core/
     ├── index.ts              # Entry point (serve handler + wizard step routing)
-    ├── config.ts             # Env vars, commonPhrases map, nlCache
+    ├── config.ts             # Env vars, commonPhrases map, nlCache, periodCache
     ├── types/
     │   └── index.ts          # DeepSeekResponse, Telegram types, InlineKeyboard, WizardState
     ├── utils/

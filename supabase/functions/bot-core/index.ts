@@ -375,24 +375,26 @@ serve(async (req: Request): Promise<Response> => {
           await sendTelegramMessage(message.chat.id, "Formato inválido. Use DD/MM/AAAA (ex: 15/01/2024)");
           return new Response("OK", { status: 200 });
         }
-        const data = wizardState.data as any;
+        const {
+          _start,
+          _filterPanelMessageId: filterPanelMsgId,
+          _promptMessageId: promptMsgId,
+          _endPromptMessageId: endPromptMsgId,
+          ...cleanData
+        } = wizardState.data as any;
         const filters: ExtratoFilters = {
-          ...data,
-          period: { start: data._start, end: parsed, label: `${formatDateBR(data._start)} — ${formatDateBR(parsed)}` },
+          ...cleanData,
+          period: { start: _start, end: parsed, label: `${formatDateBR(_start)} — ${formatDateBR(parsed)}` },
         };
-        delete (filters as any)._start;
-        delete (filters as any)._filterPanelMessageId;
-        delete (filters as any)._promptMessageId;
-        delete (filters as any)._endPromptMessageId;
         await clearWizardState(supabase, existingUser.id);
-        if (data._filterPanelMessageId) {
-          await deleteTelegramMessage(message.chat.id, data._filterPanelMessageId);
+        if (filterPanelMsgId) {
+          await deleteTelegramMessage(message.chat.id, filterPanelMsgId);
         }
-        if (data._promptMessageId) {
-          await deleteTelegramMessage(message.chat.id, data._promptMessageId);
+        if (promptMsgId) {
+          await deleteTelegramMessage(message.chat.id, promptMsgId);
         }
-        if (data._endPromptMessageId) {
-          await deleteTelegramMessage(message.chat.id, data._endPromptMessageId);
+        if (endPromptMsgId) {
+          await deleteTelegramMessage(message.chat.id, endPromptMsgId);
         }
         await handleFilterPanel(supabase, existingUser.id, message.chat.id, filters);
       } else if (wizardState.step === "reset_confirm") {
@@ -448,9 +450,11 @@ serve(async (req: Request): Promise<Response> => {
             `🤔 Não entendi. Tente /despesa 50 mercado ou /receita 3000 salário. Use /ajuda para mais comandos.`,
             `🤔 Não entendi. Você pode digitar algo como "gastei 50 no almoço" ou usar /despesa.`,
           ];
+          const msgIndex = Math.floor(Math.random() * messages.length);
+          console.log(`Random fallback message index: ${msgIndex}`);
           await sendTelegramMessage(
             message.chat.id,
-            messages[Math.floor(Math.random() * messages.length)]
+            messages[msgIndex]
           );
         }
         return new Response("OK", { status: 200 });
