@@ -19,7 +19,7 @@ export async function handleStart(chatId: number, firstName: string): Promise<vo
     `Que bom ter você aqui! Sou seu assistente de controle financeiro.\n\n` +
     `Comigo você pode registrar gastos e receitas, ver seu saldo e muito mais!\n\n` +
     `💡 Alguns exemplos:\n` +
-    `/despesa 50 mercado — registra um gasto\n` +
+    `/despesa 50 mercado — registra uma despesa\n` +
     `/saldo mes passado — saldo do mês anterior\n` +
     `/extrato janeiro 2025 — extrato de janeiro\n` +
     `/resumo ultimo mes — resumo do mês passado\n\n` +

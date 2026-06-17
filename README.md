@@ -29,7 +29,7 @@
 
 ## 🎯 Funcionalidades
 
-- **💸 Registrar despesas** — `/despesa 50 mercado` ou `/gasto 50 mercado` ou "gastei 50 no almoço"
+- **💸 Registrar despesas** — `/despesa 50 mercado` ou "gastei 50 no almoço"
 - **💰 Registrar receitas** — `/receita 3000 salário` ou "recebi 3000 de salário"
 - **📊 Saldo do período** — `/saldo`, `/saldo mes passado`, `/saldo janeiro`
 - **📋 Extrato interativo** — `/extrato` com painel de filtros (categoria, grupo, tags, tipo, período), paginação e visualização otimizada
@@ -275,7 +275,7 @@ ajuda - Ajuda completa
 
 | Comando | Descri\u00E7\u00E3o | Exemplo |
 |---------|-----------|---------|
-| `/despesa` | Registrar despesa (ou `/gasto`) | `/despesa 50 mercado` |
+| `/despesa` | Registrar despesa | `/despesa 50 mercado` |
 | `/receita` | Registrar receita | `/receita 3000 salario` |
 | `/saldo` | Saldo do per\u00EDodo | `/saldo`, `/saldo mes passado`, `/saldo janeiro` |
 | `/extrato` | Extrato interativo — painel de filtros + paginação | `/extrato`, `/extrato janeiro 2025`, `/extrato --grupo Pessoal` |
@@ -334,8 +334,8 @@ Sem a chave DeepSeek, apenas comandos `/` funcionam.
 ### Comandos Rápidos
 
 ```text
-/gasto 50 mercado --grupo Pessoal --tags #almoço
-/gasto 100 vestuário --data 15/01/2024 --tags #presente
+/despesa 50 mercado --grupo Pessoal --tags #almoço
+/despesa 100 vestuário --data 15/01/2024 --tags #presente
 /receita 3000 salário --grupo Nubank
 ```
 

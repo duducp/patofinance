@@ -8,13 +8,12 @@ export function findHelp(input: string): string | null {
 
 const COMMAND_HELP: Record<string, { keys: string[]; text: string }> = {
   despesa: {
-    keys: ["despesa", "gasto"],
+    keys: ["despesa"],
     text:
       `📖 *Ajuda — /despesa*\n\n` +
-      `Registra uma despesa (gasto).\n\n` +
+      `Registra uma despesa.\n\n` +
       `*Como usar:*\n` +
       `\`/despesa 50 mercado\`\n` +
-      `\`/gasto 25,90 ifood\`\n` +
       `\`/despesa 100 vestuário --grupo Nubank\`\n` +
       `\`/despesa 200 mercado --data 15/01/2024 --tags #feira\`\n\n` +
       `*Flags:*\n` +

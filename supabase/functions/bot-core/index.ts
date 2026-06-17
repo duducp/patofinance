@@ -473,7 +473,7 @@ serve(async (req: Request): Promise<Response> => {
 
       // Check for active wizard on non-wizard commands
       const activeWizard = await getWizardState(supabase, existingUser.id);
-      const wizardCommands = ["/despesa", "/gasto", "/receita", "/cancelar", "/resetar"];
+      const wizardCommands = ["/despesa", "/receita", "/cancelar", "/resetar"];
       if (activeWizard && !wizardCommands.includes(command.toLowerCase())) {
         await clearWizardState(supabase, existingUser.id);
         await sendTelegramMessage(
@@ -497,7 +497,6 @@ serve(async (req: Request): Promise<Response> => {
           break;
 
         case "/despesa":
-        case "/gasto":
           if (args.length > 0) {
             await handleCommandWithNL("expense", supabase, message, args, existingUser);
           } else {

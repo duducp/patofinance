@@ -57,9 +57,9 @@ dev-test-start: ## [LOCAL] Test /start
 	curl $(CURL_ARGS) \
 		-d '{"update_id": 1, "message": {"message_id": 1, "from": {"id": 123, "first_name": "Test"}, "chat": {"id": 123, "type": "private"}, "date": 1234567890, "text": "/start"}}'
 
-dev-test-gasto: ## [LOCAL] Test /gasto (aka /despesa)
+dev-test-gasto: ## [LOCAL] Test /despesa
 	curl $(CURL_ARGS) \
-		-d '{"update_id": 2, "message": {"message_id": 2, "from": {"id": 123, "first_name": "Test"}, "chat": {"id": 123, "type": "private"}, "date": 1234567890, "text": "/gasto 50 alimentação"}}'
+		-d '{"update_id": 2, "message": {"message_id": 2, "from": {"id": 123, "first_name": "Test"}, "chat": {"id": 123, "type": "private"}, "date": 1234567890, "text": "/despesa 50 alimentação"}}'
 
 dev-test-saldo: ## [LOCAL] Test /saldo
 	curl $(CURL_ARGS) \

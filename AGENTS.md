@@ -388,7 +388,7 @@ Se `DEEPSEEK_API_KEY` não configurada, fallback para comandos apenas.
 # Test /start
 make dev-test-start
 
-# Test /despesa 50 alimentacao (/gasto also works)
+# Test /despesa 50 alimentacao
 make dev-test-gasto
 
 # Test a custom webhook payload (edit the JSON inline)
@@ -716,7 +716,7 @@ In the wizard:
 | `handleStart(chatId, firstName)` | `/start` | |
 | `handleHelp(chatId)` | `/ajuda` | |
 | `handleBalance(supabase, userId, chatId, args?)` | `/saldo` | Period via DeepSeek (ex: `mes passado`, `janeiro`). `--grupo` flag for group filter |
-| `handleTransaction(type, supabase, userId, chatId, args, descriptionOverride?)` | `/gasto`, `/receita` | Unified handler, `type: "expense"|"income"` |
+| `handleTransaction(type, supabase, userId, chatId, args, descriptionOverride?)` | `/despesa`, `/receita` | Unified handler, `type: "expense"|"income"` |
 | `handleStatement(supabase, userId, chatId, page?, filter?, filters?)` | `/extrato` | Pagination + `ExtratoFilters`. Period via DeepSeek (ex: `janeiro 2025`). `--grupo` flag for group filter |
 | `handleSummary(supabase, userId, chatId, args?)` | `/resumo` | Delegates to `getSummaryData` + `formatSummaryMessage`. Period via DeepSeek (ex: `ultimo mes`). `--grupo` flag for group filter |
 | `handleDetails(supabase, userId, chatId, args)` | `/detalhes` | Shows all transaction details with edit keyboard |
