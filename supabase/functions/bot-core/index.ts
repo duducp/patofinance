@@ -18,7 +18,7 @@ import { parseNaturalLanguage } from "./services/deepseek.ts";
 import { sendTelegramMessage, sendTelegramMessageWithKeyboard } from "./services/telegram.ts";
 import { getCategories, sendSimilarityWarning, normalizeString, getAllUserTags } from "./services/database.ts";
 import { handleCreateCategory } from "./handlers/management.ts";
-import { handleCallbackQuery } from "./handlers/callbacks.ts";
+import { handleCallbackQuery, handleCancelWizard } from "./handlers/callbacks.ts";
 import { handleNaturalLanguageWithFollowUp, executeNaturalLanguageAction, buildNLCategoryKeyboard } from "./handlers/nl-processing.ts";
 import {
   getWizardState,
@@ -550,13 +550,7 @@ serve(async (req: Request): Promise<Response> => {
           break;
 
         case "/cancelar": {
-          const hadWizard = await getWizardState(supabase, existingUser.id);
-          await clearWizardState(supabase, existingUser.id);
-          if (hadWizard) {
-            await sendTelegramMessage(message.chat.id, "❌ Operação cancelada. Pode ficar tranquilo!");
-          } else {
-            await sendTelegramMessage(message.chat.id, "ℹ️ Nenhuma operação em andamento para cancelar.");
-          }
+          await handleCancelWizard(supabase, existingUser.id, message.chat.id);
           break;
         }
 

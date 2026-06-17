@@ -258,6 +258,20 @@ async function handleEntityBack(
   await handler(supabase, userId, chatId, []);
 }
 
+export async function handleCancelWizard(
+  supabase: any,
+  userId: number,
+  chatId: number
+): Promise<void> {
+  const hadWizard = await getWizardState(supabase, userId);
+  await clearWizardState(supabase, userId);
+  if (hadWizard) {
+    await sendTelegramMessage(chatId, "❌ Operação cancelada. Pode ficar tranquilo!");
+  } else {
+    await sendTelegramMessage(chatId, "ℹ️ Nenhuma operação em andamento para cancelar.");
+  }
+}
+
 export async function handleCallbackQuery(
   supabase: any,
   callbackQuery: TelegramCallbackQuery
@@ -347,9 +361,8 @@ export async function handleCallbackQuery(
     if (selectedValue === "cancel_wizard") {
       if (telegramId) {
         const user = await getOrCreateUser(supabase, telegramId);
-        if (user) await clearWizardState(supabase, user.id);
+        if (user) await handleCancelWizard(supabase, user.id, chatId);
       }
-      await sendTelegramMessage(chatId, "❌ Operação cancelada.");
       return;
     }
 
