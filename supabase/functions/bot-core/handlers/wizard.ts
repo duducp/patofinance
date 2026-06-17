@@ -246,7 +246,7 @@ export async function getCurrentWizardStep(
   const underscoreIndex = state.step.indexOf("_");
   const wizardName = state.step.substring(0, underscoreIndex);
   const stepKey = state.step.substring(underscoreIndex + 1);
-  const { data: currentStep } = await supabase.from("wizard_steps").select("*").eq("wizard_name", wizardName).eq("step_key", stepKey).single();
+  const { data: currentStep } = await supabase.from("wizard_steps").select("*").eq("wizard_name", wizardName).eq("step_key", stepKey).maybeSingle();
   if (!currentStep) return null;
   return { state, currentStep };
 }

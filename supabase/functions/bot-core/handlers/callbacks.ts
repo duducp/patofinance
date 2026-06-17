@@ -792,7 +792,7 @@ export async function handleCallbackQuery(
     if (selectedValue.startsWith("wiz_tag_")) {
       const tag = selectedValue.replace("wiz_tag_", "");
       const userId = user.id;
-      const { data: state } = await supabase.from("wizard_states").select("*").eq("user_id", userId).single();
+      const { data: state } = await supabase.from("wizard_states").select("*").eq("user_id", userId).maybeSingle();
       if (!state) return;
 
       const currentTags: string[] = state.data?.tags
@@ -815,7 +815,7 @@ export async function handleCallbackQuery(
       const stepKey = state.step.substring(underscoreIndex + 1);
       const { data: currentStep } = await supabase.from("wizard_steps").select("*").eq("wizard_name", wizardName).eq("step_key", stepKey).single();
       if (currentStep) {
-        await sendWizardStepMessage(chatId, currentStep, userId, supabase, message.message_id);
+        await sendWizardStepMessage(chatId, currentStep, userId, supabase, sessionSeq, message.message_id);
       }
       return;
     }

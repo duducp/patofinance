@@ -16,7 +16,7 @@ export function removeSession(encoded: string): { data: string; seq: number } | 
     return { data: encoded, seq: 0 };
   }
   const underscoreIdx = encoded.indexOf("_", 1);
-  if (underscoreIdx < 2 || underscoreIdx > 4) return null;
+  if (underscoreIdx < 2 || underscoreIdx > 7) return null;
   const seq = parseInt(encoded.substring(1, underscoreIdx), 10);
   if (isNaN(seq) || seq < 0) return null;
   return { data: encoded.substring(underscoreIdx + 1), seq };
