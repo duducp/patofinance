@@ -7,6 +7,7 @@ import { parseCommand } from "../utils/command-parsing.ts";
 import { resolveCommandPeriod } from "../utils/period-parser.ts";
 import { addSession, getSessionSeq } from "../utils/session.ts";
 import { buildKeyboardGrid, buildEditKeyboard } from "../utils/keyboard.ts";
+import { findHelp } from "../utils/help-texts.ts";
 
 import { getSummaryData, formatSummaryMessage, formatFutureBlock, sendTransactionSuccess } from "./queries.ts";
 import { getWizardState, setWizardState, handleTransactionWizard } from "./wizard.ts";
@@ -26,7 +27,19 @@ export async function handleStart(chatId: number, firstName: string): Promise<vo
   );
 }
 
-export async function handleHelp(chatId: number): Promise<void> {
+export async function handleHelp(chatId: number, args: string[] = []): Promise<void> {
+  if (args.length > 0) {
+    const text = findHelp(args[0]);
+    if (text) {
+      await sendTelegramMessage(chatId, text);
+      return;
+    }
+    await sendTelegramMessage(
+      chatId,
+      `❓ Comando "${args[0]}" não encontrado.\n\nUse \`/ajuda\` para ver todos os comandos disponíveis.`
+    );
+    return;
+  }
   await sendTelegramMessage(
     chatId,
     `📚 *Comandos Disponíveis:*\n\n` +
@@ -43,7 +56,7 @@ export async function handleHelp(chatId: number): Promise<void> {
     `/detalhes - Ver/editar/excluir transação pelo ID (ex: \`/detalhes 42\`)\n` +
     `/limpar - Remover categorias/grupos sem transações\n` +
     `/cancelar - Cancelar operação em andamento\n` +
-    `/ajuda - Esta mensagem\n\n` +
+    `/ajuda <comando> - Detalhes de um comando (ex: \`/ajuda extrato\`)\n\n` +
     `💡 *Linguagem Natural:*\n` +
     `Você também pode digitar naturalmente:\n\n` +
     `💰 *Registrar:*\n` +

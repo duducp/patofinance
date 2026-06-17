@@ -848,6 +848,7 @@ supabase/
     │   ├── date-helpers.ts   # getDateRange, getMonthName, getNowBR
     │   ├── command-parsing.ts # parseCommand
     │   ├── period-parser.ts  # resolveCommandPeriod (NL period via DeepSeek for commands)
+    │   ├── help-texts.ts     # commandHelpMap + findHelp() for /ajuda <comando>
     │   └── session.ts        # addSession, removeSession, incrementSessionSeq, getSessionSeq, validateCallbackSession
     ├── services/
     │   ├── telegram.ts       # 4 Telegram API wrappers (send, sendWithKeyboard, edit, answer)

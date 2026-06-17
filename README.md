@@ -299,7 +299,7 @@ ajuda - Ajuda completa
 | `/limpar` | Remover categorias/grupos sem transações |
 | `/resetar` | Resetar conta (apaga todas as transações, categorias, grupos e tags) |
 | `/cancelar` | Cancelar operação em andamento |
-| `/ajuda` | Ajuda completa |
+| `/ajuda` | Ajuda completa. Use `/ajuda <comando>` para detalhes (ex: `/ajuda saldo`) |
 
 ### 🌐 Linguagem Natural
 

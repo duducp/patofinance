@@ -489,7 +489,7 @@ serve(async (req: Request): Promise<Response> => {
 
         case "/ajuda":
         case "/help":
-          await handleHelp(message.chat.id);
+          await handleHelp(message.chat.id, args);
           break;
 
         case "/saldo":
