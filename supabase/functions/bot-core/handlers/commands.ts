@@ -347,7 +347,7 @@ export async function handleStatement(
   const { count: totalCount } = await countQuery;
 
   if (!totalCount || totalCount === 0) {
-    const filterName = typeFilter === "income" ? "receitas" : typeFilter === "expense" ? "despesas" : typeFilter === "future" ? "agendadas" : "transações";
+    const filterName = typeFilter === "income" ? "receita" : typeFilter === "expense" ? "despesa" : typeFilter === "future" ? "agendada" : "transação";
     await sendTelegramMessage(chatId, `📋 Nenhuma ${filterName} encontrada${period !== "this_month" ? ` em ${periodLabel}` : " este mês"}.`);
     return;
   }
