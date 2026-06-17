@@ -237,7 +237,7 @@ export async function handleShowLastTransaction(supabase: any, userId: number, c
 
 /**
  * Show a delete confirmation dialog for a transaction.
- * Used by both handleDelete (commands.ts) and handleDeleteLastTransaction.
+  * Used by handleDeleteLastTransaction.
  */
 export async function showDeleteConfirmation(
   chatId: number,

@@ -33,9 +33,7 @@ import {
   handleTransaction,
   handleStatement,
   handleSummary,
-  handleEdit,
   handleDetails,
-  handleDelete,
   handleGroup,
   handleCategory,
   handleTag,
@@ -521,14 +519,6 @@ serve(async (req: Request): Promise<Response> => {
 
         case "/detalhes":
           await handleDetails(supabase, message.from.id, message.chat.id, args);
-          break;
-
-        case "/editar":
-          await handleEdit(supabase, message.from.id, message.chat.id, args);
-          break;
-
-        case "/excluir":
-          await handleDelete(supabase, message.from.id, message.chat.id, args);
           break;
 
         case "/grupo":

@@ -701,8 +701,6 @@ In the wizard:
 | `resolvePeriod(period)` | (utility) | `PeriodPreset` or `{start,end}` → `{start, end, label}` |
 | `handleSummary(supabase, userId, chatId, args?)` | `/resumo` | Delegates to `getSummaryData` + `formatSummaryMessage` |
 | `handleDetails(supabase, userId, chatId, args)` | `/detalhes` | Shows all transaction details with edit keyboard |
-| `handleEdit(supabase, userId, chatId, args)` | `/editar` | |
-| `handleDelete(supabase, userId, chatId, args)` | `/excluir` | |
 | `handleEntity(type, supabase, userId, chatId, args)` | (shared) | `type: "category"|"group"` -- list, create, suggest |
 | `handleGroup(supabase, userId, chatId, args)` | `/grupo` | Alias for `handleEntity("group", ...)` |
 | `handleCategory(supabase, userId, chatId, args)` | `/categoria` | Alias for `handleEntity("category", ...)` |

@@ -9,7 +9,6 @@ import { buildKeyboardGrid, buildEditKeyboard } from "../utils/keyboard.ts";
 
 import { getSummaryData, formatSummaryMessage, formatFutureBlock } from "./queries.ts";
 import { getWizardState, setWizardState, handleTransactionWizard } from "./wizard.ts";
-import { showDeleteConfirmation } from "./management.ts";
 
 export function resolvePeriod(period: ExtratoFilters["period"]): { start: string; end: string; label: string } {
   const now = new Date();
@@ -67,9 +66,7 @@ export async function handleHelp(chatId: number): Promise<void> {
     `/grupo - Gerenciar grupos\n` +
     `/categoria - Gerenciar categorias\n` +
     `/tag - Gerenciar tags\n\n` + `⚙️ *Utilidades:*\n` +
-    `/detalhes - Ver detalhes da transação (ex: \`/detalhes 42\`)\n` +
-    `/editar - Editar transação (ex: \`/editar 42\`)\n` +
-    `/excluir - Excluir transação (ex: \`/excluir 42\`)\n` +
+    `/detalhes - Ver/editar/excluir transação pelo ID (ex: \`/detalhes 42\`)\n` +
     `/limpar - Remover categorias/grupos sem transações\n` +
     `/cancelar - Cancelar operação em andamento\n` +
     `/ajuda - Esta mensagem\n\n` +
@@ -299,7 +296,7 @@ export async function handleTransaction(
     `📁 Grupo: ${parsed.group || "Pessoal"}\n` +
     `📅 Data: ${formatDateBR(parsed.date || getTodayISOBR())}` +
     (parsed.tags.length > 0 ? `\n🔖 Tags: ${parsed.tags.join(" ")}` : "") +
-    `\n\n✏️ Para editar, use */editar ${id}* ou */excluir ${id}* para excluir.`
+    `\n\n✏️ Para editar ou excluir, use */detalhes ${id}*`
   );
 }
 
@@ -657,18 +654,6 @@ export async function handleEdit(supabase: any, userId: number, chatId: number, 
   const user = await requireUser(supabase, userId, chatId);
   if (!user) return;
 
-  if (args.length === 0) {
-    await sendTelegramMessage(
-      chatId,
-      `📝 *Como editar uma transação:*\n\n` +
-      `1️⃣ Use \`/extrato\` para ver o extrato do mês\n` +
-      `2️⃣ Identifique o #ID da transação que deseja editar\n` +
-      `3️⃣ Digite \`/editar ID\` (ex: \`/editar 42\`)\n\n` +
-      `💡 Exemplo: \`/editar 42\``
-    );
-    return;
-  }
-
   const transactionId = args[0];
 
   const transaction = await getTransactionById(supabase, user.id, transactionId);
@@ -706,38 +691,7 @@ export async function handleEdit(supabase: any, userId: number, chatId: number, 
   );
 }
 
-export async function handleDelete(supabase: any, userId: number, chatId: number, args: string[] = []): Promise<void> {
-  const user = await requireUser(supabase, userId, chatId);
-  if (!user) return;
 
-  if (args.length === 0) {
-    await sendTelegramMessage(
-      chatId,
-      `🗑️ *Como excluir uma transação:*\n\n` +
-      `1️⃣ Use \`/extrato\` para ver o extrato do mês\n` +
-      `2️⃣ Identifique o #ID da transação que deseja excluir\n` +
-      `3️⃣ Digite \`/excluir ID\` (ex: \`/excluir 42\`)\n\n` +
-      `💡 Exemplo: \`/excluir 42\``
-    );
-    return;
-  }
-
-  const transactionId = args[0];
-
-  const transaction = await getTransactionById(supabase, user.id, transactionId);
-
-  if (!transaction) {
-    await sendTelegramMessage(
-      chatId,
-      `❌ Transação #${transactionId} não encontrada.\n\n` +
-      `Use \`/extrato\` para ver as transações disponíveis.`
-    );
-    return;
-  }
-
-  const sessionSeq = await getSessionSeq(supabase, user.id);
-  await showDeleteConfirmation(chatId, transaction, sessionSeq);
-}
 
 export async function handleEntity(
   type: "category" | "group",
