@@ -138,12 +138,19 @@ export async function sendWizardStepMessage(
     } else {
       await sendTelegramMessageWithKeyboard(chatId, prompt, keyboard);
     }
+  } else if (step.step_key === "description") {
+    const keyboard: InlineKeyboard = [
+      [{ text: "⏭️ Pular (opcional)", callback_data: addSession("wizard_skip_description", sessionSeq) }],
+    ];
+    await sendTelegramMessageWithKeyboard(chatId, step.prompt, keyboard);
   } else if (step.step_key === "date") {
     const today = getTodayISOBR();
     const yesterday = new Date(Date.now() - 86400000).toISOString().split("T")[0];
     const keyboard = [
-      [{ text: "📅 Hoje", callback_data: addSession(today, sessionSeq) }],
-      [{ text: "📅 Ontem", callback_data: addSession(yesterday, sessionSeq) }],
+      [
+        { text: "📅 Hoje", callback_data: addSession(today, sessionSeq) },
+        { text: "📅 Ontem", callback_data: addSession(yesterday, sessionSeq) },
+      ],
       [{ text: "📆 Outra data", callback_data: addSession("custom_date", sessionSeq) }],
     ];
     await sendTelegramMessageWithKeyboard(chatId, step.prompt, keyboard);
@@ -196,6 +203,7 @@ export async function completeWizard(
       ? data.tags.split(" ").filter((t: string) => t).map((t: string) => t.startsWith("#") ? t : `#${t}`)
       : [];
   const date = data.date || getTodayISOBR();
+  const desc = data.description || data.category || "";
   const { data: inserted, error } = await supabase
     .from("transactions")
     .insert({
@@ -204,7 +212,7 @@ export async function completeWizard(
       category_id: categoryId,
       type,
       amount,
-      description: data.category || "",
+      description: desc,
       tags,
       transaction_date: date,
     })
@@ -223,6 +231,7 @@ export async function completeWizard(
     `🏷️ Categoria: ${data.category || "Não definida"}\n` +
     `📁 Grupo: ${data.group || "Pessoal"}\n` +
     `📅 Data: ${formatDateBR(date)}` +
+    (data.description ? `\n📝 Descrição: ${data.description}` : "") +
     (tags.length > 0 ? `\n🔖 Tags: ${tags.join(" ")}` : "") +
     `\n\n✏️ Para editar ou excluir, use */detalhes ${txId}*`
   );

@@ -818,6 +818,15 @@ export async function handleCallbackQuery(
       return;
     }
 
+    // Handle wizard skip description
+    if (selectedValue === "wizard_skip_description") {
+      const wizard = await getCurrentWizardStep(supabase, user.id);
+      if (!wizard) return;
+      const newStateData = { ...wizard.state.data, [wizard.currentStep.step_key]: "" };
+      await advanceWizardToNextStep(supabase, user.id, chatId, wizard.currentStep, sessionSeq, newStateData);
+      return;
+    }
+
     // Handle wizard skip tags
     if (selectedValue === "wizard_skip_tags") {
       const wizard = await getCurrentWizardStep(supabase, user.id);
