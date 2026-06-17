@@ -9,7 +9,8 @@ make dev              # Start local Supabase (port 54321)
 make check            # Type-check with Deno
 make lint             # Lint edge function code
 make test             # Run all checks (type + lint + boot)
-make prod-deploy      # Deploy Edge Function to production
+make prod-deploy        # Push migrations + deploy Edge Function (CLI)
+make prod-deploy-fn     # Deploy Edge Function only
 make help             # List all commands
 ```
 
@@ -563,17 +564,22 @@ make install-link       # Link to project zjcfjqtlijktrikgvwrv
 ```bash
 make dev                # Start local Supabase
 make dev-stop           # Stop local Supabase
-make dev-logs           # Tail local Edge Function logs
+make dev-serve          # Run Edge Function locally (streams logs)
 make dev-deploy         # Deploy Edge Function locally
 make dev-db-push        # Push migrations locally
 make dev-db-reset       # Reset local database
 make dev-test-start     # Test /start via curl
-make dev-test-despesa  # Test /despesa via curl
+make dev-test-gasto     # Test /gasto via curl
+make dev-test-saldo     # Test /saldo via curl
+make dev-test-receita   # Test /receita via curl
+make dev-test-detalhes  # Test /detalhes via curl
+make dev-test-callback  # Test a callback via curl
 ```
 
 ### Production
 ```bash
-make prod-deploy        # Deploy Edge Function
+make prod-deploy        # Push migrations + deploy Edge Function
+make prod-deploy-fn     # Deploy Edge Function only
 make prod-db-push       # Push migrations to production
 make prod-webhook-set   # Set Telegram webhook URL
 make prod-webhook-info  # Check webhook status
@@ -592,8 +598,9 @@ make open               # Open Supabase Dashboard
 ```bash
 make check              # Type-check (deno check)
 make lint               # Lint (deno lint)
+make unit               # Run unit tests (26 tests)
 make test-boot          # Verify function boots without error
-make test               # check + lint + test-boot
+make test               # check + lint + unit + test-boot
 ```
 
 ## Environment Variables

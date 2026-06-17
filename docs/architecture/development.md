@@ -13,17 +13,22 @@ make install-link       # Link to project zjcfjqtlijktrikgvwrv
 ```bash
 make dev                # Start local Supabase (port 54321)
 make dev-stop           # Stop local Supabase
+make dev-serve          # Run Edge Function locally (streams logs)
 make dev-deploy         # Deploy Edge Function locally
 make dev-db-push        # Push migrations locally
 make dev-db-reset       # Reset local database
-make dev-logs           # Tail local function logs
 make dev-test-start     # Test /start via curl
-make dev-test-despesa   # Test /despesa via curl
+make dev-test-gasto     # Test /gasto via curl
+make dev-test-saldo     # Test /saldo via curl
+make dev-test-receita   # Test /receita via curl
+make dev-test-detalhes  # Test /detalhes via curl
+make dev-test-callback  # Test a callback via curl
 ```
 
 ### Production
 ```bash
-make prod-deploy        # Push migrations + deploy function (CLI)
+make prod-deploy        # Push migrations + deploy function
+make prod-deploy-fn     # Deploy Edge Function only
 make prod-db-push       # Push migrations only
 make prod-webhook-set   # Set Telegram webhook URL
 make prod-webhook-info  # Check webhook status
@@ -35,8 +40,9 @@ make prod-logs          # Show recent deployment logs
 ```bash
 make check              # Type-check (deno check)
 make lint               # Lint (deno lint)
+make unit               # Run unit tests
 make test-boot          # Verify function boots
-make test               # check + lint + test-boot
+make test               # check + lint + unit + test-boot
 ```
 
 ### Other
@@ -53,7 +59,7 @@ make open               # Open Supabase Dashboard
 ```bash
 make dev-deploy             # Deploy locally
 make dev-test-start         # Test
-make dev-test-despesa       # Test more
+make dev-test-gasto         # Test more
 # Only then:
 make prod-deploy            # Deploy to production
 ```
