@@ -236,8 +236,15 @@ export async function handleTransaction(
     const msg = type === "expense"
       ? "💸 Quanto você gastou? Informe o valor:"
       : "💰 Quanto você recebeu? Informe o valor:";
-    await sendTelegramMessage(chatId, msg);
-    await setWizardState(supabase, user.id, `${type === "expense" ? "gasto" : "receita"}_amount`, { type });
+    const sentMsgId = await sendTelegramMessage(chatId, msg);
+    const step = `${type === "expense" ? "gasto" : "receita"}_amount`;
+    await setWizardState(supabase, user.id, step, { type });
+    if (sentMsgId) {
+      await supabase.from("wizard_states").update({
+        data: { type, _amountPromptMessageId: sentMsgId },
+        expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+      }).eq("user_id", user.id);
+    }
     return;
   }
 

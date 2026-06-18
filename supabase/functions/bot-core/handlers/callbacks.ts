@@ -1024,13 +1024,16 @@ export async function handleCallbackQuery(
       const recId = parseInt(rest.substring(underscoreIdx + 1), 10);
       if (!isNaN(recId) && field) {
         if (field === "amount" || field === "description" || field === "start_date") {
-          await setWizardState(supabase, user.id, `rec_edit_${field}`, { recurrence_id: recId });
           const prompts: Record<string, string> = {
             amount: "💰 Digite o novo valor:",
             description: "📝 Digite a nova descrição:",
             start_date: "📅 Digite a nova data de início (DD/MM/YYYY):",
           };
-          await sendTelegramMessage(chatId, prompts[field]);
+          const msgId = await sendTelegramMessage(chatId, prompts[field]);
+          await setWizardState(supabase, user.id, `rec_edit_${field}`, {
+            recurrence_id: recId,
+            ...(field === "start_date" && msgId ? { _startDatePromptMessageId: msgId } : {}),
+          });
         } else if (field === "category" || field === "group" || field === "frequency" || field === "tags") {
           if (field === "category") {
             const cb = await buildCategoryKeyboard(supabase, user.id, sessionSeq, {
@@ -1136,7 +1139,11 @@ export async function handleCallbackQuery(
             annual: "📅 Qual dia e mês? (DD/MM)",
             every_x_days: "📅 A cada quantos dias?",
           };
-          await sendTelegramMessage(chatId, prompts[freqType] || "📅 Informe o detalhe da frequência:");
+          const msgId = await sendTelegramMessage(chatId, prompts[freqType] || "📅 Informe o detalhe da frequência:");
+          await supabase.from("wizard_states").update({
+            data: { recurrence_id: recId, frequency_type: freqType, _freqDetailPromptMessageId: msgId },
+            expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+          }).eq("user_id", user.id);
         }
       }
       return;

@@ -15,7 +15,7 @@ import { incrementSessionSeq, addSession, getSessionSeq } from "./utils/session.
 import { formatCurrencyBR, formatDateBR, parseDateBR } from "./utils/formatting.ts";
 import { parseNaturalLanguage } from "./services/deepseek.ts";
 import { resolveCommandPeriod } from "./utils/period-parser.ts";
-import { sendTelegramMessage, sendTelegramMessageWithKeyboard, deleteTelegramMessage } from "./services/telegram.ts";
+import { sendTelegramMessage, sendTelegramMessageWithKeyboard, editTelegramMessageWithKeyboard, deleteTelegramMessage } from "./services/telegram.ts";
 import { getCategories, sendSimilarityWarning, normalizeString, getAllUserTags, userOrNullFilter, updateRecurrence, getRecurrenceById } from "./services/database.ts";
 import { handleCreateCategory, handleSearch } from "./handlers/management.ts";
 import { handleCallbackQuery, handleCancelWizard } from "./handlers/callbacks.ts";
@@ -486,6 +486,13 @@ serve(async (req: Request): Promise<Response> => {
           await sendTelegramMessage(message.chat.id, "Formato inválido. Use DD/MM/YYYY (ex: 15/01/2024)");
           return new Response("OK", { status: 200 });
         }
+        const startDatePromptMessageId = wizardState.data?._startDatePromptMessageId as number | undefined;
+        if (startDatePromptMessageId) {
+          await editTelegramMessageWithKeyboard(message.chat.id, startDatePromptMessageId, `✅ 📅 Data de início: ${formatDateBR(parsed)}`, []);
+        }
+        if (message.message_id) {
+          await deleteTelegramMessage(message.chat.id, message.message_id);
+        }
         const recId = wizardState.data.recurrence_id;
         await updateRecurrence(supabase, existingUser.id, recId, { next_date: parsed });
         await clearWizardState(supabase, existingUser.id);
@@ -512,11 +519,19 @@ serve(async (req: Request): Promise<Response> => {
       } else if (wizardState.step === "rec_edit_freq_detail") {
         const freqType = wizardState.data.frequency_type;
         const recId = wizardState.data.recurrence_id;
+        const freqDetailPromptMessageId = wizardState.data?._freqDetailPromptMessageId as number | undefined;
+
         if (freqType === "every_x_days") {
           const interval = parseInt(text.trim(), 10);
           if (isNaN(interval) || interval < 1) {
             await sendTelegramMessage(message.chat.id, "Informe um número válido de dias (ex: 15).");
             return new Response("OK", { status: 200 });
+          }
+          if (freqDetailPromptMessageId) {
+            await editTelegramMessageWithKeyboard(message.chat.id, freqDetailPromptMessageId, `✅ 🔄 Frequência: A cada ${interval} dias`, []);
+          }
+          if (message.message_id) {
+            await deleteTelegramMessage(message.chat.id, message.message_id);
           }
           await updateRecurrence(supabase, existingUser.id, recId, { frequency_interval: interval });
         } else if (freqType === "monthly") {
@@ -524,6 +539,12 @@ serve(async (req: Request): Promise<Response> => {
           if (isNaN(day) || day < 1 || day > 31) {
             await sendTelegramMessage(message.chat.id, "Informe um dia válido (1 a 31).");
             return new Response("OK", { status: 200 });
+          }
+          if (freqDetailPromptMessageId) {
+            await editTelegramMessageWithKeyboard(message.chat.id, freqDetailPromptMessageId, `✅ 🔄 Frequência: Mensal (dia ${day})`, []);
+          }
+          if (message.message_id) {
+            await deleteTelegramMessage(message.chat.id, message.message_id);
           }
           await updateRecurrence(supabase, existingUser.id, recId, { frequency_interval: day });
         } else if (freqType === "annual") {
@@ -538,12 +559,26 @@ serve(async (req: Request): Promise<Response> => {
             await sendTelegramMessage(message.chat.id, "Informe um mês válido (1 a 12). Ex: 15/01");
             return new Response("OK", { status: 200 });
           }
+          const months = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
+          if (freqDetailPromptMessageId) {
+            await editTelegramMessageWithKeyboard(message.chat.id, freqDetailPromptMessageId, `✅ 🔄 Frequência: Anual (${day} de ${months[month - 1]})`, []);
+          }
+          if (message.message_id) {
+            await deleteTelegramMessage(message.chat.id, message.message_id);
+          }
           await updateRecurrence(supabase, existingUser.id, recId, { frequency_interval: day, frequency_month: month });
         } else if (freqType === "weekly") {
           const day = parseInt(text.trim(), 10);
           if (isNaN(day) || day < 0 || day > 6) {
             await sendTelegramMessage(message.chat.id, "Informe um dia válido (0=Dom a 6=Sáb).");
             return new Response("OK", { status: 200 });
+          }
+          const days = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+          if (freqDetailPromptMessageId) {
+            await editTelegramMessageWithKeyboard(message.chat.id, freqDetailPromptMessageId, `✅ 🔄 Frequência: Semanal (${days[day]})`, []);
+          }
+          if (message.message_id) {
+            await deleteTelegramMessage(message.chat.id, message.message_id);
           }
           await updateRecurrence(supabase, existingUser.id, recId, { frequency_interval: day });
         }
