@@ -1,6 +1,6 @@
 import type { InlineKeyboard, InlineKeyboardButton, ExtratoFilters, PeriodPreset } from "../types/index.ts";
 import { sendTelegramMessage, sendTelegramMessageWithKeyboard, editTelegramMessageWithKeyboard } from "../services/telegram.ts";
-import { getOrCreateUser, requireUser, getAllUserTags, deduplicateByNormalizedName } from "../services/database.ts";
+import { getOrCreateUser, requireUser, getAllUserTags, deduplicateByNormalizedName, userOrNullFilter } from "../services/database.ts";
 import { formatCurrencyBR, formatDateBR, getTodayISOBR, getMonthName, getNowBR } from "../utils/formatting.ts";
 import { addSession, getSessionSeq } from "../utils/session.ts";
 import { buildKeyboardGrid } from "../utils/keyboard.ts";
@@ -488,7 +488,7 @@ export async function showCategorySelector(
   const { data: categories } = await supabase
     .from("categories")
     .select("id, name, normalized_name")
-    .or(`user_id.eq.${userId},user_id.is.null`)
+    .or(userOrNullFilter(userId))
     .order("user_id", { ascending: false, nullsFirst: false })
     .order("name");
 

@@ -1,6 +1,6 @@
 import { InlineKeyboard, DeepSeekResponse, TelegramCallbackQuery } from "../types/index.ts";
 import { sendTelegramMessage, sendTelegramMessageWithKeyboard, editTelegramMessageWithKeyboard, answerCallbackQuery } from "../services/telegram.ts";
-import { getOrCreateUser, normalizeString, getAllUserTags, getOrCreateUncategorizedCategory, deleteTransactionById } from "../services/database.ts";
+import { getOrCreateUser, normalizeString, getAllUserTags, getOrCreateUncategorizedCategory, deleteTransactionById, userOrNullFilter } from "../services/database.ts";
 import { formatDateBR, getTodayISOBR, parseDateBR } from "../utils/formatting.ts";
 import { truncateCallbackData } from "../utils/rate-limiter.ts";
 import { getWizardState, setWizardState, clearWizardState, sendWizardStepMessage, getCurrentWizardStep, advanceWizardToNextStep } from "./wizard.ts";
@@ -200,7 +200,7 @@ async function handleEntitySelect(
 
   let query = supabase.from(table).select("id, " + flagColumn);
   if (isCategory) {
-    query = query.or(`user_id.eq.${userId},user_id.is.null`);
+    query = query.or(userOrNullFilter(userId));
   } else {
     query = query.eq("user_id", userId);
   }
@@ -583,7 +583,7 @@ export async function handleCallbackQuery(
       const parts = selectedValue.replace("edit_cat_select_", "").split("_");
       const transactionId = parts[0];
       const categoryName = parts.slice(1).join("_");
-        const { data: category } = await supabase.from("categories").select("id").or(`user_id.eq.${user.id},user_id.is.null`).ilike("name", categoryName).maybeSingle();
+        const { data: category } = await supabase.from("categories").select("id").or(userOrNullFilter(user.id)).ilike("name", categoryName).maybeSingle();
       if (category) {
         const { error } = await supabase.from("transactions").update({ category_id: category.id }).eq("id", transactionId).eq("user_id", user.id);
         if (error) {
@@ -787,7 +787,7 @@ export async function handleCallbackQuery(
         await sendTelegramMessage(chatId, "Informe a nova descrição:");
         await setWizardState(supabase, user.id, "edit_description", { transaction_id: transactionId });
       } else if (action === "category") {
-        const { data: categories } = await supabase.from("categories").select("name").or(`user_id.eq.${user.id},user_id.is.null`).order("name");
+        const { data: categories } = await supabase.from("categories").select("name").or(userOrNullFilter(user.id)).order("name");
         // Deduplicate: user's own overrides system
         const seen = new Set<string>();
         const unique = (categories || []).filter((c: any) => {

@@ -1,7 +1,7 @@
 import { WizardState } from "../types/index.ts";
 import { InlineKeyboard } from "../types/index.ts";
 import { sendTelegramMessage, sendTelegramMessageWithKeyboard, editTelegramMessageWithKeyboard } from "../services/telegram.ts";
-import { getOrCreateCategory, getOrCreateGroup, sendSimilarityWarning, getAllUserTags, deduplicateByNormalizedName } from "../services/database.ts";
+import { getOrCreateCategory, getOrCreateGroup, sendSimilarityWarning, getAllUserTags, deduplicateByNormalizedName, userOrNullFilter, typeOrNullFilter } from "../services/database.ts";
 import { parseDateBR, getTodayISOBR } from "../utils/formatting.ts";
 import { addSession, getSessionSeq } from "../utils/session.ts";
 import { sendTransactionSuccess } from "./queries.ts";
@@ -63,11 +63,11 @@ export async function sendWizardStepMessage(
     let catQuery = supabase
       .from("categories")
       .select("name, normalized_name")
-      .or(`user_id.eq.${userId},user_id.is.null`)
+      .or(userOrNullFilter(userId))
       .order("user_id", { ascending: false, nullsFirst: false })
       .order("name");
     if (wizardType) {
-      catQuery = catQuery.or(`transaction_type.eq.${wizardType},transaction_type.is.null`);
+      catQuery = catQuery.or(typeOrNullFilter(wizardType));
     }
     const { data: categories } = await catQuery;
     const unique = deduplicateByNormalizedName(categories || []);

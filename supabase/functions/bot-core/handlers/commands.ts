@@ -1,6 +1,6 @@
 import type { InlineKeyboard } from "../types/index.ts";
 import { sendTelegramMessage, sendTelegramMessageWithKeyboard, editTelegramMessageWithKeyboard } from "../services/telegram.ts";
-import { requireUser, getOrCreateCategory, getOrCreateGroup, normalizeString, suggestSimilarCategories, suggestSimilarGroups, sendSimilarityWarning, getAllUserTags, createTransaction, getTransactionById, findGroupByName } from "../services/database.ts";
+import { requireUser, getOrCreateCategory, getOrCreateGroup, normalizeString, suggestSimilarCategories, suggestSimilarGroups, sendSimilarityWarning, getAllUserTags, createTransaction, getTransactionById, findGroupByName, userOrNullFilter } from "../services/database.ts";
 import { formatCurrencyBR, formatDateBR, getTodayISOBR } from "../utils/formatting.ts";
 import { getDateRange } from "../utils/date-helpers.ts";
 import { parseCommand } from "../utils/command-parsing.ts";
@@ -487,7 +487,7 @@ export async function handleEntity(
     let orderQuery;
     if (isCategory) {
       orderQuery = supabase.from(table).select(selectFields)
-        .or(`user_id.eq.${user.id},user_id.is.null`);
+        .or(userOrNullFilter(user.id));
     } else {
       orderQuery = supabase.from(table).select(selectFields).eq("user_id", user.id);
     }
@@ -548,7 +548,7 @@ export async function handleEntity(
     .from(table)
     .select("id, name, " + flagColumn);
   if (isCategory) {
-    existsQuery = existsQuery.or(`user_id.eq.${user.id},user_id.is.null`);
+    existsQuery = existsQuery.or(userOrNullFilter(user.id));
   } else {
     existsQuery = existsQuery.eq("user_id", user.id);
   }

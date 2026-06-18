@@ -16,7 +16,7 @@ import { formatCurrencyBR, formatDateBR, parseDateBR } from "./utils/formatting.
 import { parseNaturalLanguage } from "./services/deepseek.ts";
 import { resolveCommandPeriod } from "./utils/period-parser.ts";
 import { sendTelegramMessage, sendTelegramMessageWithKeyboard, deleteTelegramMessage } from "./services/telegram.ts";
-import { getCategories, sendSimilarityWarning, normalizeString, getAllUserTags } from "./services/database.ts";
+import { getCategories, sendSimilarityWarning, normalizeString, getAllUserTags, userOrNullFilter } from "./services/database.ts";
 import { handleCreateCategory, handleSearch } from "./handlers/management.ts";
 import { handleCallbackQuery, handleCancelWizard } from "./handlers/callbacks.ts";
 import { handleNaturalLanguageWithFollowUp, executeNaturalLanguageAction, buildNLCategoryKeyboard } from "./handlers/nl-processing.ts";
@@ -48,7 +48,7 @@ async function fetchUserContext(supabase: any, userId: number): Promise<{
   tags: string[];
 }> {
   const [categoriesResult, groupsResult, tags] = await Promise.all([
-    supabase.from("categories").select("name, transaction_type").or(`user_id.eq.${userId},user_id.is.null`),
+    supabase.from("categories").select("name, transaction_type").or(userOrNullFilter(userId)),
     supabase.from("groups").select("name, is_default").eq("user_id", userId),
     getAllUserTags(supabase, userId),
   ]);

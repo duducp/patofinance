@@ -1,6 +1,21 @@
 import { sendTelegramMessage } from "./telegram.ts";
 import { getTodayISOBR } from "../utils/formatting.ts";
 
+/**
+ * Build a safe .or() filter string for "user_id = X OR user_id IS NULL".
+ * Uses explicit String() conversion to ensure type safety.
+ */
+export function userOrNullFilter(userId: number): string {
+  return "user_id.eq." + String(userId) + ",user_id.is.null";
+}
+
+/**
+ * Build a safe .or() filter string for "transaction_type = X OR transaction_type IS NULL".
+ */
+export function typeOrNullFilter(type: string): string {
+  return "transaction_type.eq." + type + ",transaction_type.is.null";
+}
+
 export function normalizeString(str: string): string {
   return str
     .toLowerCase()
@@ -32,9 +47,9 @@ export async function getCategories(supabase: any, userId: number, type?: "expen
   let query = supabase
     .from("categories")
     .select("name")
-    .or(`user_id.eq.${userId},user_id.is.null`);
+    .or(userOrNullFilter(userId));
   if (type) {
-    query = query.or(`transaction_type.eq.${type},transaction_type.is.null`);
+    query = query.or(typeOrNullFilter(type));
   }
   const { data } = await query.order("name");
   return data || [];
@@ -46,7 +61,7 @@ export async function getOrCreateCategory(supabase: any, userId: number, categor
   const { data: existing } = await supabase
     .from("categories")
     .select("id, transaction_type")
-    .or(`user_id.eq.${userId},user_id.is.null`)
+    .or(userOrNullFilter(userId))
     .eq("normalized_name", normalizedName)
     .order("user_id", { ascending: false, nullsFirst: false })
     .limit(1)
@@ -70,10 +85,10 @@ export async function resolveCategoryForNL(
   let exactQuery = supabase
     .from("categories")
     .select("id, name")
-    .or(`user_id.eq.${userId},user_id.is.null`)
+    .or(userOrNullFilter(userId))
     .eq("normalized_name", normalized);
   if (transactionType) {
-    exactQuery = exactQuery.or(`transaction_type.eq.${transactionType},transaction_type.is.null`);
+    exactQuery = exactQuery.or(typeOrNullFilter(transactionType));
   }
   const { data: exact } = await exactQuery.maybeSingle();
   if (exact) return exact;
@@ -84,10 +99,10 @@ export async function resolveCategoryForNL(
     let matchQuery = supabase
       .from("categories")
       .select("id, name")
-      .or(`user_id.eq.${userId},user_id.is.null`)
+      .or(userOrNullFilter(userId))
       .eq("normalized_name", normalizeString(candidate.name));
     if (transactionType) {
-      matchQuery = matchQuery.or(`transaction_type.eq.${transactionType},transaction_type.is.null`);
+      matchQuery = matchQuery.or(typeOrNullFilter(transactionType));
     }
     const { data: match } = await matchQuery.maybeSingle();
     if (match) return match;

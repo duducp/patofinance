@@ -2,7 +2,7 @@ import { InlineKeyboard } from "../types/index.ts";
 import { sendTelegramMessage, sendTelegramMessageWithKeyboard, editTelegramMessageWithKeyboard } from "../services/telegram.ts";
 import { truncateCallbackData } from "../utils/rate-limiter.ts";
 import { addSession, getSessionSeq } from "../utils/session.ts";
-import { requireUser, normalizeString, suggestSimilarCategories, suggestSimilarGroups, listTransactionsPaginated, TRANSACTION_DETAIL_FIELDS, deduplicateByNormalizedName } from "../services/database.ts";
+import { requireUser, normalizeString, suggestSimilarCategories, suggestSimilarGroups, listTransactionsPaginated, TRANSACTION_DETAIL_FIELDS, deduplicateByNormalizedName, userOrNullFilter } from "../services/database.ts";
 import { formatCurrencyBR, formatDateBR } from "../utils/formatting.ts";
 
 async function handleCreateEntity(
@@ -27,7 +27,7 @@ async function handleCreateEntity(
   // Check for exact match
   let existsQuery = supabase.from(table).select("id").eq("normalized_name", normalizedName);
   if (isCategory) {
-    existsQuery = existsQuery.or(`user_id.eq.${user.id},user_id.is.null`);
+    existsQuery = existsQuery.or(userOrNullFilter(user.id));
   } else {
     existsQuery = existsQuery.eq("user_id", user.id);
   }
@@ -84,7 +84,7 @@ export async function handleListCategories(supabase: any, userId: number, chatId
   const { data: categories } = await supabase
     .from("categories")
     .select("name, is_predefined, transaction_type, normalized_name, user_id")
-    .or(`user_id.eq.${user.id},user_id.is.null`)
+    .or(userOrNullFilter(user.id))
     .order("user_id", { ascending: false, nullsFirst: false })
     .order("name");
 
