@@ -180,22 +180,45 @@ Alias: `handleEntity("category", …)`
 ### `clearWizardState(supabase, userId)`
 - Deletes wizard state row
 
-### `sendWizardStepMessage(chatId, step, userId, supabase, messageId?)`
+### `sendWizardStepMessage(chatId, step, userId, supabase, sessionSeq, messageId?)`
 - Renders step UI: text input, category select, group select, tags, date picker
+- `sessionSeq` — session protection sequence for callback data
+- `messageId?` — if provided, **edits** existing message in-place instead of sending new
+- For text-input steps (amount, description, tags), stores the returned `message_id` in wizard state as `_<step>PromptMessageId` for later in-place editing
 
 ### `completeWizard(supabase, userId, chatId, data)`
 - Creates transaction from accumulated wizard data
 - Checks similarity for categories, groups, tags
 - Formats success message
 
-### `advanceWizardToNextStep(supabase, userId, chatId, currentStep, newStateData)`
-- Finds next step by `step_order`
-- Sends next step or completes wizard
+### `completeRecurrenceWizard(supabase, userId, chatId, data)`
+- Creates recurrence from accumulated wizard data (type, amount, description, category, group, frequency, tags, start_date)
+- Formats success message with frequency label and management buttons
 
-### `handleTransactionWizard(type, supabase, userId, chatId, state, input)`
+### `advanceWizardToNextStep(supabase, userId, chatId, currentStep, sessionSeq, newStateData, messageId?)`
+- Finds next step by `step_order`
+- If `messageId` provided, calls `buildStepConfirmation` to edit current prompt with confirmation before advancing
+- Sends next step or completes wizard (calls `completeRecurrenceWizard` for recorrencia, `completeWizard` otherwise)
+
+### `handleTransactionWizard(type, supabase, userId, chatId, state, input, userMessageId?)`
 - Routes wizard input by step key
-- Accumulates tags (multi-step text input)
-- Handles custom date parsing
+- `userMessageId?` — when provided, the user's typed message is **deleted** after processing
+- **Amount step:** edits prompt in-place to `✅ 💰 Valor: R$ XX,XX`, deletes user message, advances
+- **Description step:** edits prompt to `✅ 📝 Descrição: texto`, deletes user message, advances
+- **Category/Group text input:** edits prompt to `✅ 🏷️ Categoria: nome` / `✅ 📁 Grupo: nome`, deletes user message, advances
+- **Tags step:** accumulates tags (multi-step text input), re-renders tag keyboard in-place, deletes user message
+- **Custom date:** edits prompt to `✅ 📅 Data: DD/MM/AAAA`, deletes user message, advances
+- **Default:** sets `[stepKey]: value` in wizard state and advances
+
+### `handleRecurrenceWizard(supabase, userId, chatId, state, input, userMessageId?)`
+- Routes recurrence wizard input by step key
+- `userMessageId?` — when provided, the user's typed message is **deleted** after processing
+- **Frequency detail:**
+  - `every_x_days`: validates interval, edits prompt to `✅ 🔄 Frequência: A cada X dias`, deletes user message
+  - `monthly`: validates day (1–31), edits prompt to `✅ 🔄 Frequência: Mensal (dia X)`, deletes user message
+  - `annual`: validates day + month, edits prompt to `✅ 🔄 Frequência: Anual (X de Mês)`, deletes user message
+- **Start date:** edits prompt to `✅ 📅 Data de início: DD/MM/AAAA`, deletes user message, completes wizard
+- **Amount/Description/Category/Group/Tags:** same visual confirmation pattern as `handleTransactionWizard`
 
 ## Module: `handlers/nl-processing.ts` — NL Routing
 

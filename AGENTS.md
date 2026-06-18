@@ -342,6 +342,25 @@ Project ref: `zjcfjqtlijktrikgvwrv`
 
 > 📖 Schema completo, tabelas, stored procedures, migrations, extensões — em [`docs/architecture/database.md`](docs/architecture/database.md)
 
+## Wizard Visual Confirmation Pattern
+
+Every wizard step now follows a **visual confirmation pattern**:
+- When the user responds (types text or clicks a button), the **prompt message is edited in-place** to show `✅ Ícone: valor informado`
+- **Typed messages are deleted** — keeps the chat clean
+- New prompts always advance in **new messages**
+
+| Step | Confirmation |
+|------|-------------|
+| amount | `✅ 💰 Valor: R$ 50,00` |
+| description | `✅ 📝 Descrição: ...` / `Nenhuma descrição informada` |
+| category | `✅ 🏷️ Categoria: Alimentação` |
+| group | `✅ 📁 Grupo: Pessoal` |
+| date | `✅ 📅 Data: 15/07/2026` |
+| tags | `✅ 🔖 Tags: #tag1 #tag2` / `Nenhuma tag` |
+| frequency | `✅ 🔄 Frequência: A cada 15 dias` / `Mensal (dia 15)` / `Anual (15 de Jan)` |
+
+**Implementation:** Each text-input step stores a `_<step>PromptMessageId` in `wizard_states.data` when the prompt is sent. When the user responds, the handler reads this ID, calls `editTelegramMessageWithKeyboard` to show the confirmation, and `deleteTelegramMessage` to remove the user's message. See [`docs/architecture/wizard.md`](docs/architecture/wizard.md) for full details.
+
 ## Exported Functions Reference
 
 > 📖 Funções completas de `database.ts`, `telegram.ts`, `commands.ts`, `recurrences.ts`, `management.ts`, `queries.ts`, `wizard.ts`, `nl-processing.ts` — em [`docs/architecture/services.md`](docs/architecture/services.md) e [`docs/architecture/handlers.md`](docs/architecture/handlers.md)
@@ -384,7 +403,7 @@ supabase/
     │   ├── help-texts.ts       # commandHelpMap + findHelp() for /ajuda
     │   └── session.ts          # addSession, removeSession, validateCallbackSession
     ├── services/
-    │   ├── telegram.ts         # 5 Telegram API wrappers
+    │   ├── telegram.ts         # 5 Telegram API wrappers (send, edit, delete, answerCallbackQuery)
     │   ├── database.ts         # 24 functions: CRUD + filters + suggestSimilar* + recurrences
     │   ├── deepseek.ts         # callDeepSeek, parseNaturalLanguage
     │   └── deepseek.test.ts    # Unit tests for DeepSeek parsing
@@ -398,5 +417,5 @@ supabase/
         ├── nl-processing.ts        # NL routing + wizard initiation
         ├── recurrences.ts          # 10 recurrence handlers (list/detail/advance/skip/archive/activate/edit)
         ├── callbacks.ts            # ~55 callback prefix handlers
-        └── wizard.ts               # 7 wizard functions (state + step + advance)
+        └── wizard.ts               # 7 wizard functions (state + step + advance) + visual confirmation
 ```

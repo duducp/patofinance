@@ -2,7 +2,7 @@
 
 ## `services/telegram.ts` — Telegram API Wrapper
 
-4 exported functions wrapping the Telegram Bot API:
+5 exported functions wrapping the Telegram Bot API:
 
 | Function | API Method | Purpose |
 |----------|-----------|---------|
@@ -10,6 +10,7 @@
 | `sendTelegramMessageWithKeyboard(chatId, text, keyboard)` | `sendMessage` | With inline keyboard |
 | `editTelegramMessageWithKeyboard(chatId, msgId, text, keyboard)` | `editMessageText` | Edit existing message |
 | `answerCallbackQuery(callbackQueryId)` | `answerCallbackQuery` | Acknowledge button press |
+| `deleteTelegramMessage(chatId, messageId)` | `deleteMessage` | Delete a message (used to clean up user input in wizard) |
 
 Common behavior:
 - All use `parse_mode: "Markdown"` (except auto-retry on parse error)

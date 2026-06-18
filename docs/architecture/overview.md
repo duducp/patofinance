@@ -81,6 +81,18 @@ POST /bot-core
 
 5. **Wizard System**: Multi-step transactions use a `wizard_states` table with 10-minute TTL. State is persisted in JSONB. The wizard handles amount → category → group → date → tags in sequence. Recurrence creation wizard (8 steps) follows the same pattern with frequency sub-steps.
 
+   **Visual Confirmation Pattern:** Every step now follows a consistent pattern — when the user responds (types text or clicks a button), the **prompt message is edited in-place** to show `✅ Ícone: valor informado` (e.g., `✅ 💰 Valor: R$ 50,00`), and the user's typed message is **deleted** to keep the chat clean. Each text-input step stores a `_<step>PromptMessageId` in `wizard_states.data` when the prompt is first sent, so the handler can later edit that message with the confirmation. See [`wizard.md`](wizard.md#visual-confirmation-pattern) for full details.
+
+   | Step | Confirmation |
+   |------|-------------|
+   | amount | `✅ 💰 Valor: R$ 50,00` |
+   | description | `✅ 📝 Descrição: texto` / `Nenhuma descrição informada` |
+   | category | `✅ 🏷️ Categoria: Alimentação` |
+   | group | `✅ 📁 Grupo: Pessoal` |
+   | date | `✅ 📅 Data: 15/07/2026` |
+   | tags | `✅ 🔖 Tags: #tag1 #tag2` / `Nenhuma tag` |
+   | frequency | `✅ 🔄 Frequência: A cada 15 dias` / `Mensal (dia 15)` |
+
 6. **Recurring Transactions**: `recurrences` table with PL/pgSQL `process_recurrences()` running via `pg_cron` daily at 06:00 BRT. Creates transactions from due recurrences, enqueues errors in `notification_queue`. Errors are drained at the start of each user interaction. Users can also create, advance, skip, archive, and edit recurrences interactively via `/recorrencia` wizard.
 
 7. **Natural Language Fallback**: If `DEEPSEEK_API_KEY` is not set, the bot responds to slash commands only. NL uses a 3-tier approach: common phrases (no API), cache (per-user/5min TTL), DeepSeek API.

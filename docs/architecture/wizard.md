@@ -72,6 +72,79 @@ Each step type renders differently:
 | `date` | Buttons: "Hoje", "Ontem", "Outra data" |
 | `tags` | Toggle buttons for existing tags + text input + done/skip |
 
+## Visual Confirmation Pattern
+
+Every wizard step now follows a consistent **visual confirmation pattern** that keeps the chat clean:
+
+1. **Prompt sent** — The step's prompt message is sent. For text-input steps (amount, description, tags, custom date, frequency detail), the `message_id` of this prompt is **stored in `wizard_states.data`** as `_<step>PromptMessageId`
+2. **User responds** — When the user types text or clicks a button, the handler reads the stored `_<step>PromptMessageId`
+3. **Edit prompt in-place** — The **original prompt** is edited to show `✅ [Ícone]: [valor informado]` (e.g., `✅ 💰 Valor: R$ 50,00`)
+4. **Delete user message** — The user's typed message is removed via `deleteTelegramMessage()`
+5. **New prompt** — The **next wizard step** is sent as a new message
+
+This creates a clean conversation where each user response is confirmed in-place before the next question appears.
+
+### `_promptMessageId` Keys
+
+| Step | Key in `state.data` | Confirmation Example |
+|------|---------------------|---------------------|
+| amount | `_amountPromptMessageId` | `✅ 💰 Valor: R$ 50,00` |
+| description | `_descPromptMessageId` | `✅ 📝 Descrição: almoço` / `Nenhuma descrição informada` |
+| category (text) | `_categoryPromptMessageId` | `✅ 🏷️ Categoria: Transporte` |
+| group (text) | `_groupPromptMessageId` | `✅ 📁 Grupo: Nubank` |
+| custom date | `_customDatePromptMessageId` | `✅ 📅 Data: 15/07/2026` |
+| tags (Concluir) | `_tagsPromptMessageId` | `✅ 🔖 Tags: #tag1 #tag2` / `Nenhuma tag` |
+| frequency detail | `_freqDetailPromptMessageId` | `✅ 🔄 Frequência: A cada 15 dias` / `Mensal (dia 15)` |
+
+### Flow Diagram
+
+```text
+User types text         Handler reads _promptMessageId
+       │                         │
+       ▼                         ▼
+┌────────────────┐    ┌────────────────────────────┐
+│ User message   │    │ Edit prompt → "✅ ..."      │
+│ e.g. "50"      │    │ (editTelegramMessageWithKB) │
+└────────┬───────┘    └────────────┬───────────────┘
+         │                         │
+         ▼                         ▼
+┌────────────────┐    ┌────────────────────────────┐
+│ Delete message │    │ Send next step message     │
+│ (deleteMsg)    │    │ (sendTelegramMessage)       │
+└────────────────┘    └────────────────────────────┘
+```
+
+### Implementation
+
+In `sendWizardStepMessage`, after sending the prompt as a new message (`sentMessageId` is non-null), store the ID:
+
+```typescript
+if (step.step_key === "amount") {
+  // send prompt
+  if (sentMessageId) {
+    await supabase.from("wizard_states").update({
+      data: { ...state.data, _amountPromptMessageId: sentMessageId },
+    }).eq("user_id", userId);
+  }
+}
+```
+
+In the handler (`handleTransactionWizard` / `handleRecurrenceWizard`), read and apply:
+
+```typescript
+if (stepKey === "amount") {
+  const amountPromptMessageId = state.data?._amountPromptMessageId as number | undefined;
+  if (amountPromptMessageId && !isNaN(amountNum)) {
+    await editTelegramMessageWithKeyboard(chatId, amountPromptMessageId,
+      `✅ 💰 Valor: ${formatCurrencyBR(amountNum)}`, []);
+    if (userMessageId) await deleteTelegramMessage(chatId, userMessageId);
+  }
+  // advance to next step
+}
+```
+
+When the user clicks a button (select/keyboard) rather than typing, the `advanceWizardToNextStep` function handles the confirmation via `buildStepConfirmation`.
+
 ### Category Step Logic
 
 Categories are fetched from both user-owned and system-global (`user_id IS NULL`) rows, deduplicated:

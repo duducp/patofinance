@@ -160,17 +160,62 @@ Telegram limits `callback_data` to 64 bytes. Use `truncateCallbackData()` (trunc
 |--------|--------|---------|
 | `tag_sel_{tag}` | Show transactions with tag | Edits |
 
-### Wizard
+### Wizard — Transaction (gasto/receita)
 
-| Prefix | Action | Message |
-|--------|--------|---------|
-| `wizard_new_category` / `wizard_new_group` | Type custom name | Sends new |
-| `wiz_tag_{tag}` | Toggle tag in wizard | Edits |
-| `wiz_done_tags` | Confirm wizard tags | Delegates |
-| `wizard_skip_tags` | Skip wizard tags | Delegates |
-| `custom_date` | Custom date in wizard | Sends new |
-| `wiz_frequency_{freq}` | Select frequency (daily/advance, others→freq_detail) | Sends new |
-| `wiz_freq_detail_{day}` | Weekly day-of-week selection | Sends new |
+| Prefix | Action | Message | Detail |
+|--------|--------|---------|--------|
+| `wiz_category_{name}` | Select category by name | Delegates | Generic step handler at bottom of `handleCallbackQuery` |
+| `wiz_group_{name}` | Select group by name | Delegates | Generic step handler |
+| `wiz_date_{date}` | Select date (today/yesterday) | Delegates | Generic step handler |
+| `wiz_start_date_{date}` | Select start date for recurrence | Delegates | Generic step handler |
+| `wizard_new_category` | Type custom category name | Sends new | Keeps same step; typed name is picked up by handler |
+| `wizard_new_group` | Type custom group name | Sends new | Keeps same step; typed name is picked up by handler |
+| `wiz_tag_{tag}` | Toggle tag on/off | Edits | Reads/writes `wizard_states.data.tags` array |
+| `wiz_done_tags` | Confirm tag selection | Delegates | Calls `advanceWizardToNextStep` with current data |
+| `wizard_skip_tags` | Skip tags step | Delegates | Calls `handleWizardSkip` |
+| `wizard_skip_description` | Skip description step | Delegates | Calls `handleWizardSkip` |
+| `custom_date` | Custom date input | Sends new | Stores `_customDatePromptMessageId` in state data for later in-place editing |
+
+### Wizard — Recurrence (recorrencia)
+
+| Prefix | Action | Message | Detail |
+|--------|--------|---------|--------|
+| `wiz_type_expense` | Select "Despesa" type | Delegates | Generic `wiz_type_` handler |
+| `wiz_type_income` | Select "Receita" type | Delegates | Generic `wiz_type_` handler |
+| `wiz_category_{name}` | Select category | Delegates | Generic step handler |
+| `wiz_group_{name}` | Select group | Delegates | Generic step handler |
+| `wiz_frequency_{freq}` | Select frequency type | Sends new | `daily` → advances directly. `weekly` → shows day-of-week keyboard. `monthly`/`annual`/`every_x_days` → shows text prompt, stores `_freqDetailPromptMessageId` |
+| `wiz_freq_detail_{i}` | Weekly day-of-week (0–6) | Delegates | Calls `advanceWizardToNextStep` with `frequency_type: "weekly"` |
+| `wiz_start_date_{date}` | Select start date (today/yesterday) | Delegates | Generic step handler |
+| `wizard_new_category` | Typed new category name | Sends new | Same as transaction wizard |
+| `wizard_new_group` | Typed new group name | Sends new | Same as transaction wizard |
+| `wiz_tag_{tag}` | Toggle tag | Edits | Same as transaction wizard |
+| `wiz_done_tags` | Confirm tags | Delegates | Same as transaction wizard |
+| `wizard_skip_tags` | Skip tags | Delegates | Same as transaction wizard |
+| `wizard_skip_description` | Skip description | Delegates | Same as transaction wizard |
+| `custom_date` | Custom start date input | Sends new | Same as transaction wizard, stores `_customDatePromptMessageId` |
+
+**Note:** Recurrence frequency step options (`daily`, `weekly`, `monthly`, `annual`, `every_x_days`) come from `wizard_step_options` table and use prefix `wiz_frequency_`. The `wiz_frequency_daily` handler is intercepted before the generic wizard handler to store `frequency_type` and `frequency_interval` correctly.
+
+### Generic Wizard Step Handler
+
+At the bottom of `handleCallbackQuery`, a fallback catches any `wiz_{stepKey}_{value}` callback that wasn't caught by specific handlers above:
+
+```typescript
+const wizard = await getCurrentWizardStep(supabase, user.id);
+if (!wizard) return;
+const stepKey = wizard.currentStep.step_key;
+const prefix = `wiz_${stepKey}_`;
+if (selectedValue.startsWith(prefix)) {
+  const value = selectedValue.replace(prefix, "");
+  const newStateData = { ...wizard.state.data, [stepKey]: value };
+  await advanceWizardToNextStep(supabase, user.id, chatId, wizard.currentStep, sessionSeq, newStateData, message.message_id);
+}
+```
+
+This handles: category selection, group selection, date presets, type selection, and any other select-type wizard steps.
+
+**Important:** Every specific wizard callback handler (frequency, tags, skip, custom_date, new_category) MUST `return` before reaching this fallback.
 
 ### Recurrence Management
 

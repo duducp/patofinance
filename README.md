@@ -381,32 +381,102 @@ Com `DEEPSEEK_API_KEY` configurada, você pode digitar frases diretamente ou usa
 
 Sem a chave DeepSeek, apenas comandos `/` funcionam.
 
-### Comandos Rápidos
+### Flags Suportadas
+
+| Flag | Descrição | Exemplo |
+|------|-----------|---------|
+| `--grupo Nome` | Vincular a um grupo específico | `/despesa 50 --grupo Nubank` |
+| `--data DD/MM/AAAA` | Data personalizada | `/despesa 50 --data 15/01/2024` |
+| `#tag` | Adicionar tags (múltiplas) | `/despesa 50 #comida #lazer` |
+| Texto livre | Define a categoria | `/despesa 50 mercado` → categoria "mercado" |
+
+**Exemplos:**
 
 ```text
-/despesa 50 mercado --grupo Pessoal --tags #almoço
-/despesa 100 vestuário --data 15/01/2024 --tags #presente
-/despesa 50 --descricao "almoço no shopping"
+/despesa 50 mercado --grupo Pessoal #almoço
+/despesa 100 vestuário --data 15/01/2024 #presente
+/despesa 50 Nubank --grupo Nubank #transporte
 /receita 3000 salário --grupo Nubank
 ```
 
 ### Wizard Conversacional
 
-Envie uma mensagem livre e o bot guia você com botões interativos:
+Quando você digita apenas `/despesa` (sem argumentos), o bot guia passo a passo. Cada resposta sua é confirmada **editando a mensagem do prompt** com um ✅ e a mensagem digitada é removida — o chat fica limpo e organizado:
 
 ```text
-Usuário: "gastei 30 no almoço"
-Bot: "💸 Quanto você gastou?"
-Usuário: "30"
-Bot: "📝 Descrição:"  [⏭️ Pular]
+Usuário: /despesa
+Bot: 💸 Quanto você gastou? Informe o valor:
+Usuário: 50
+     (a mensagem do prompt muda para: ✅ 💰 Valor: R$ 50,00)
+     (a mensagem "50" é apagada)
+Bot: 📝 Descrição (opcional)?
+     [⏭️ Pular]
 Usuário: clica em "⏭️ Pular"
-Bot: "📁 Selecione o grupo:"  [Pessoal] [Nubank] [Inter]
-Usuário: clica em "Pessoal"
-Bot: "🏷️ Selecione a categoria:"  [Alimentação] [Transporte] [✏️ Nova]
+     (a mensagem muda para: ✅ 📝 Descrição: Nenhuma descrição informada)
+Bot: 🏷️ Qual categoria?
+     [Alimentação] [Transporte] [Saúde] [✏️ Nova]
 Usuário: clica em "Alimentação"
-Bot: "🔖 Selecione as tags:"  [#trabalho] [#almoço] [⏭️ Pular]
-Usuário: clica em [#almoço] + [✅ Concluir]
-Bot: ✅ Despesa registrada! R$ 30,00 · Alimentação · Pessoal  #almoço
+     (a mensagem muda para: ✅ 🏷️ Categoria: Alimentação)
+Bot: 📁 Qual grupo?
+     [Pessoal] [Nubank] [Inter]
+Usuário: clica em "Pessoal"
+     (a mensagem muda para: ✅ 📁 Grupo: Pessoal)
+Bot: 📅 Qual data?
+     [📅 Hoje] [📅 Ontem] [📆 Outra data]
+Usuário: clica em "📅 Hoje"
+     (a mensagem muda para: ✅ 📅 Data: 15/07/2026)
+Bot: 🔖 Tags? (ex: #trabalho)
+     [#comida] [#lazer] [✅ Concluir] [⏭️ Pular]
+Usuário: clica em "⏭️ Pular"
+     (a mensagem muda para: ✅ 🔖 Tags: Nenhuma tag)
+Bot: ✅ Despesa registrada com sucesso!
+
+     🆔 ID: #42
+     💰 Valor: R$ 50,00
+     🏷️ Categoria: Alimentação
+     📁 Grupo: Pessoal
+     📅 Data: 15/07/2026
+
+     [🔍 Ver detalhes] [🔄 Transformar em recorrência]
+```
+
+**Resumo das confirmações visuais por step:**
+
+| Step | Input | Confirmação |
+|------|-------|-------------|
+| **Valor** | digita número | `✅ 💰 Valor: R$ 50,00` |
+| **Descrição** | digita / Pular | `✅ 📝 Descrição: ...` / `Nenhuma descrição informada` |
+| **Categoria** | clica / digita nova | `✅ 🏷️ Categoria: Alimentação` |
+| **Grupo** | clica / digita novo | `✅ 📁 Grupo: Pessoal` |
+| **Data** | clica Hoje/Ontem / Outra | `✅ 📅 Data: 15/07/2026` |
+| **Tags** | digita / Concluir / Pular | re-render in-place / `✅ 🔖 Tags: #tag1 #tag2` / `Nenhuma tag` |
+
+> 💡 O mesmo padrão se aplica ao wizard de recorrências (`/recorrencia`), incluindo frequência: `✅ 🔄 Frequência: A cada 15 dias` / `Mensal (dia 15)` / `Anual (15 de Jan)`.
+
+### Linguagem Natural com Follow-up
+
+Se você usa uma frase como "gastei 50 no almoço", o bot extrai o que consegue e pergunta só o que falta:
+
+```text
+Usuário: "gastei 50 no almoço"
+Bot: (extrai amount=50, description="almoço")
+     🏷️ Em que categoria?
+     [Alimentação] [Transporte] [Saúde] [✏️ Nova]
+Usuário: clica em "Alimentação"
+Bot: 📁 Em que grupo? (só pergunta se houver mais de 1 grupo)
+     [Pessoal] [Nubank] [Inter]
+     [⏭️ Pular]
+Usuário: clica em "Pessoal"
+Bot: ✅ Despesa registrada com sucesso!
+
+     🆔 ID: #43
+     💰 Valor: R$ 50,00
+     📝 Descrição: almoço
+     🏷️ Categoria: Alimentação
+     📁 Grupo: Pessoal
+     📅 Data: 15/07/2026
+
+     [🔍 Ver detalhes] [🔄 Transformar em recorrência]
 ```
 
 ## Desenvolvimento Local
