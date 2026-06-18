@@ -3,7 +3,7 @@ import { sendTelegramMessage, sendTelegramMessageWithKeyboard, editTelegramMessa
 import { getOrCreateUser, normalizeString, getOrCreateUncategorizedCategory, deleteTransactionById, userOrNullFilter } from "../services/database.ts";
 import { formatDateBR, getTodayISOBR, parseDateBR } from "../utils/formatting.ts";
 import { truncateCallbackData } from "../utils/rate-limiter.ts";
-import { getWizardState, setWizardState, clearWizardState, sendWizardStepMessage, getCurrentWizardStep, advanceWizardToNextStep, toggleTagInWizardState, buildTagKeyboard } from "./wizard.ts";
+import { getWizardState, setWizardState, clearWizardState, sendWizardStepMessage, getCurrentWizardStep, advanceWizardToNextStep, toggleTagInWizardState, buildTagKeyboard, buildCategoryKeyboard, buildGroupKeyboard } from "./wizard.ts";
 import { executeNaturalLanguageAction } from "./nl-processing.ts";
 import { handleBalance, handleSummary, handleDetails, handleGroup, handleCategory, handleTransaction, showDetailsEditActions, showDetailsMainView } from "./commands.ts";
 import { handleListTransactions, handleListByTag, handleSearch, showDeleteConfirmation } from "./management.ts";
@@ -643,12 +643,10 @@ export async function handleCallbackQuery(
     // Handle edit group selection
     if (selectedValue.startsWith("edit_group_")) {
       const transactionId = selectedValue.replace("edit_group_", "");
-      const { data: groups } = await supabase.from("groups").select("name").eq("user_id", user.id).order("name");
-      if (groups && groups.length > 0) {
-        const keyboard = buildKeyboardGrid(groups, (g) => ({
-          text: g.name,
-          callback_data: truncateCallbackData(`edit_group_sel_${transactionId}_${g.name}`, sessionSeq),
-        }), 3);
+      const keyboard = await buildGroupKeyboard(supabase, user.id, sessionSeq, {
+        callbackPrefix: `edit_group_sel_${transactionId}_`,
+      });
+      if (keyboard.length > 0) {
         await sendTelegramMessageWithKeyboard(chatId, "📁 Selecione o novo grupo:", keyboard);
       } else {
         await sendTelegramMessage(chatId, "📁 Nenhum grupo disponível. Crie um com /grupo");
@@ -752,19 +750,10 @@ export async function handleCallbackQuery(
         await sendTelegramMessage(chatId, "Informe a nova descrição:");
         await setWizardState(supabase, user.id, "edit_description", { transaction_id: transactionId });
       } else if (action === "category") {
-        const { data: categories } = await supabase.from("categories").select("name").or(userOrNullFilter(user.id)).order("name");
-        // Deduplicate: user's own overrides system
-        const seen = new Set<string>();
-        const unique = (categories || []).filter((c: any) => {
-          if (seen.has(c.name.toLowerCase())) return false;
-          seen.add(c.name.toLowerCase());
-          return true;
+        const keyboard = await buildCategoryKeyboard(supabase, user.id, sessionSeq, {
+          callbackPrefix: `edit_cat_select_${transactionId}_`,
         });
-        if (unique.length > 0) {
-          const keyboard = buildKeyboardGrid(unique, (c) => ({
-            text: c.name,
-            callback_data: truncateCallbackData(`edit_cat_select_${transactionId}_${c.name}`, sessionSeq),
-          }), 3);
+        if (keyboard.length > 0) {
           await sendTelegramMessageWithKeyboard(chatId, "Escolha a nova categoria:", keyboard);
         } else {
           await sendTelegramMessage(chatId, "Nenhuma categoria disponível. Crie uma com /categoria");

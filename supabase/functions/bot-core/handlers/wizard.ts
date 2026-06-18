@@ -58,44 +58,18 @@ export async function sendWizardStepMessage(
   messageId?: number
 ): Promise<void> {
   if (step.step_key === "category") {
-    // Filter categories by transaction type based on wizard
     const wizardType = step.wizard_name === "receita" ? "income" : step.wizard_name === "gasto" ? "expense" : undefined;
-    let catQuery = supabase
-      .from("categories")
-      .select("name, normalized_name")
-      .or(userOrNullFilter(userId))
-      .order("user_id", { ascending: false, nullsFirst: false })
-      .order("name");
-    if (wizardType) {
-      catQuery = catQuery.or(typeOrNullFilter(wizardType));
-    }
-    const { data: categories } = await catQuery;
-    const unique = deduplicateByNormalizedName(categories || []);
-    const keyboard: InlineKeyboard = [];
-    if (unique.length > 0) {
-      const grid = buildKeyboardGrid(unique, (c) => ({
-        text: c.name,
-        callback_data: addSession(`wiz_cat_${c.name}`, sessionSeq),
-      }), 3);
-      keyboard.push(...grid);
-    }
-    keyboard.push([{ text: "✏️ Nova categoria", callback_data: addSession("wizard_new_category", sessionSeq) }]);
+    const keyboard = await buildCategoryKeyboard(supabase, userId, sessionSeq, {
+      callbackPrefix: "wiz_cat_",
+      wizardType,
+      extraButtons: [[{ text: "✏️ Nova categoria", callback_data: addSession("wizard_new_category", sessionSeq) }]],
+    });
     await sendTelegramMessageWithKeyboard(chatId, step.prompt, keyboard);
   } else if (step.step_key === "group") {
-    const { data: groups } = await supabase
-      .from("groups")
-      .select("name")
-      .eq("user_id", userId)
-      .order("name");
-    const keyboard: InlineKeyboard = [];
-    if (groups && groups.length > 0) {
-      const grid = buildKeyboardGrid(groups, (g) => ({
-        text: g.name,
-        callback_data: addSession(`wiz_grp_${g.name}`, sessionSeq),
-      }), 3);
-      keyboard.push(...grid);
-    }
-    keyboard.push([{ text: "✏️ Novo grupo", callback_data: addSession("wizard_new_group", sessionSeq) }]);
+    const keyboard = await buildGroupKeyboard(supabase, userId, sessionSeq, {
+      callbackPrefix: "wiz_grp_",
+      extraButtons: [[{ text: "✏️ Novo grupo", callback_data: addSession("wizard_new_group", sessionSeq) }]],
+    });
     await sendTelegramMessageWithKeyboard(chatId, step.prompt, keyboard);
   } else if (step.step_key === "tags") {
     const { keyboard, currentTags } = await buildTagKeyboard(supabase, userId, sessionSeq, {
@@ -293,6 +267,87 @@ export async function buildTagKeyboard(
   }
 
   return { keyboard, currentTags };
+}
+
+/**
+ * Build a category selection keyboard grid.
+ * Queries categories, deduplicates by normalized_name, optionally filters by type.
+ */
+export async function buildCategoryKeyboard(
+  supabase: any,
+  userId: number,
+  sessionSeq: number,
+  options: {
+    callbackPrefix: string;
+    extraButtons?: { text: string; callback_data: string }[][];
+    wizardType?: "expense" | "income";
+  },
+): Promise<InlineKeyboard> {
+  let catQuery = supabase
+    .from("categories")
+    .select("name, normalized_name")
+    .or(userOrNullFilter(userId))
+    .order("user_id", { ascending: false, nullsFirst: false })
+    .order("name");
+  if (options.wizardType) {
+    catQuery = catQuery.or(typeOrNullFilter(options.wizardType));
+  }
+  const { data: categories } = await catQuery;
+  const unique = deduplicateByNormalizedName(categories || []);
+
+  const keyboard: InlineKeyboard = [];
+  if (unique.length > 0) {
+    const grid = buildKeyboardGrid(unique, (c) => ({
+      text: c.name,
+      callback_data: addSession(`${options.callbackPrefix}${c.name}`, sessionSeq),
+    }), 3);
+    keyboard.push(...grid);
+  }
+
+  if (options.extraButtons) {
+    for (const row of options.extraButtons) {
+      keyboard.push(row);
+    }
+  }
+
+  return keyboard;
+}
+
+/**
+ * Build a group selection keyboard grid.
+ * Queries groups for the user, builds grid with callback prefix.
+ */
+export async function buildGroupKeyboard(
+  supabase: any,
+  userId: number,
+  sessionSeq: number,
+  options: {
+    callbackPrefix: string;
+    extraButtons?: { text: string; callback_data: string }[][];
+  },
+): Promise<InlineKeyboard> {
+  const { data: groups } = await supabase
+    .from("groups")
+    .select("name")
+    .eq("user_id", userId)
+    .order("name");
+
+  const keyboard: InlineKeyboard = [];
+  if (groups && groups.length > 0) {
+    const grid = buildKeyboardGrid(groups, (g) => ({
+      text: g.name,
+      callback_data: addSession(`${options.callbackPrefix}${g.name}`, sessionSeq),
+    }), 3);
+    keyboard.push(...grid);
+  }
+
+  if (options.extraButtons) {
+    for (const row of options.extraButtons) {
+      keyboard.push(row);
+    }
+  }
+
+  return keyboard;
 }
 
 export async function getCurrentWizardStep(
