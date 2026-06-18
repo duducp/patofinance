@@ -17,7 +17,7 @@ import { parseNaturalLanguage } from "./services/deepseek.ts";
 import { resolveCommandPeriod } from "./utils/period-parser.ts";
 import { sendTelegramMessage, sendTelegramMessageWithKeyboard, deleteTelegramMessage } from "./services/telegram.ts";
 import { getCategories, sendSimilarityWarning, normalizeString, getAllUserTags } from "./services/database.ts";
-import { handleCreateCategory } from "./handlers/management.ts";
+import { handleCreateCategory, handleSearch } from "./handlers/management.ts";
 import { handleCallbackQuery, handleCancelWizard } from "./handlers/callbacks.ts";
 import { handleNaturalLanguageWithFollowUp, executeNaturalLanguageAction, buildNLCategoryKeyboard } from "./handlers/nl-processing.ts";
 import {
@@ -589,6 +589,16 @@ serve(async (req: Request): Promise<Response> => {
 
         case "/cancelar": {
           await handleCancelWizard(supabase, existingUser.id, message.chat.id);
+          break;
+        }
+
+        case "/buscar": {
+          const searchTerm = args.join(" ");
+          if (!searchTerm) {
+            await sendTelegramMessage(message.chat.id, "🔍 Digite o termo de busca. Ex: \`/buscar mercado\`");
+            break;
+          }
+          await handleSearch(supabase, message.from.id, message.chat.id, searchTerm);
           break;
         }
 

@@ -2,7 +2,7 @@ export interface DeepSeekResponse {
   intent: "expense" | "income" | "query_balance" | "query_expenses_month" | 
           "query_expenses_last_month" | "query_expenses_date" | 
           "query_expenses_category" | "query_summary" | "query_extract" |
-          "query_future" |
+          "query_future" | "query_search" |
           "create_category" | "create_group" | "list_categories" | 
           "list_groups" | "list_tags" | "list_transactions" |
           "show_last_transaction" | "delete_last_transaction" |

@@ -304,3 +304,111 @@ export async function handleDeleteLastTransaction(supabase: any, userId: number,
 export async function handleListByTag(supabase: any, userId: number, chatId: number, tag: string, page: number = 0, messageId?: number): Promise<void> {
   await handleListTransactions(supabase, userId, chatId, 10, tag, page, messageId);
 }
+
+export async function handleSearch(
+  supabase: any,
+  userId: number,
+  chatId: number,
+  term: string,
+  page: number = 0,
+  messageId?: number
+): Promise<void> {
+  const user = await requireUser(supabase, userId, chatId);
+  if (!user) return;
+
+  const searchLimit = 10;
+  const offset = page * searchLimit;
+  const fetchLimit = searchLimit + 1;
+
+  const normalized = normalizeString(term);
+
+  // Build search conditions dynamically: description ILIKE + amount + tag
+  const searchConditions: string[] = [
+    `description.ilike.%${term}%`,
+    `description.ilike.%${normalized}%`,
+  ];
+
+  // Search by amount if term is numeric
+  const searchAmount = parseFloat(term.replace(",", "."));
+  if (!isNaN(searchAmount)) {
+    searchConditions.push(`amount.eq.${searchAmount}`);
+  }
+
+  // Search by tag if term starts with #
+  const searchTag = term.startsWith("#") ? term.slice(1) : null;
+  if (searchTag) {
+    searchConditions.push(`tags.cs.{${searchTag}}`);
+    searchConditions.push(`tags.cs.{#${searchTag}}`);
+  }
+
+  const { data: transactions, count: totalCount } = await supabase
+    .from("transactions")
+    .select(`
+      id,
+      type,
+      amount,
+      description,
+      tags,
+      transaction_date,
+      categories (name),
+      groups (name)
+    `, { count: "exact" })
+    .eq("user_id", user.id)
+    .or(searchConditions.join(","))
+    .order("transaction_date", { ascending: false })
+    .order("created_at", { ascending: false })
+    .range(offset, offset + fetchLimit - 1);
+
+  const txList = (transactions || []);
+  const hasMore = txList.length > searchLimit;
+  const displayItems = hasMore ? txList.slice(0, searchLimit) : txList;
+
+  if (displayItems.length === 0) {
+    await sendTelegramMessage(chatId, `🔍 Nenhuma transação encontrada para "*${term}*".`);
+    return;
+  }
+
+  const totalPages = Math.ceil((totalCount || 0) / searchLimit);
+  const startItem = offset + 1;
+  const endItem = offset + displayItems.length;
+
+  let message = `🔍 *Busca: "${term}"*   📄 ${page + 1}/${totalPages} (${startItem}–${endItem} de ${totalCount})\n\n`;
+
+  for (const t of displayItems) {
+    const emoji = t.type === "income" ? "📈" : "📉";
+    const catName = t.categories?.name || "—";
+    const grpName = t.groups?.name || "Pessoal";
+    const dateStr = t.transaction_date?.slice(5, 10) || "";
+    const tags = t.tags && t.tags.length > 0 ? ` ${t.tags.join(" ")}` : "";
+    message += `${emoji} #${t.id}  ${dateStr}  *${formatCurrencyBR(Number(t.amount))}*  - ${grpName} - ${catName}${tags}\n`;
+    if (t.description) {
+      const truncated = t.description.length > 40 ? t.description.slice(0, 40) + "…" : t.description;
+      message += `   └ ${truncated}\n`;
+    }
+  }
+
+  const sessionSeq = await getSessionSeq(supabase, user.id);
+  const keyboard: InlineKeyboard = [];
+
+  // Preserve # prefix in callback key so pagination re-detects tag search
+  const callbackKey = searchTag ? `#${searchTag}` : normalized;
+
+  const navRow: { text: string; callback_data: string }[] = [];
+  if (page > 0) {
+    navRow.push({ text: "◀️ Anterior", callback_data: truncateCallbackData(`search_${callbackKey}_p${page - 1}`, sessionSeq) });
+  }
+  if (hasMore) {
+    navRow.push({ text: "▶️ Próximo", callback_data: truncateCallbackData(`search_${callbackKey}_p${page + 1}`, sessionSeq) });
+  }
+  if (navRow.length > 0) {
+    keyboard.push(navRow);
+  }
+
+  if (messageId) {
+    await editTelegramMessageWithKeyboard(chatId, messageId, message, keyboard);
+  } else if (keyboard.length > 0) {
+    await sendTelegramMessageWithKeyboard(chatId, message, keyboard);
+  } else {
+    await sendTelegramMessage(chatId, message);
+  }
+}

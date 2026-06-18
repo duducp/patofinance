@@ -165,6 +165,20 @@ const COMMAND_HELP: Record<string, { keys: string[]; text: string }> = {
       `\`/cancelar\` — cancela o wizard atual\n\n` +
       `💡 Use quando estiver no meio de um registro e quiser sair.`,
   },
+  buscar: {
+    keys: ["buscar", "search"],
+    text:
+      `📖 *Ajuda — /buscar*\n\n` +
+      `Busca transações por palavra-chave na descrição.\n\n` +
+      `*Como usar:*\n` +
+      `\`/buscar mercado\` — busca transações com "mercado" na descrição\n` +
+      `\`/buscar ifood\` — busca transações com "ifood"\n` +
+      `\`/buscar 150\` — busca transações com "150"\n\n` +
+      `*Comandos relacionados:*\n` +
+      `/extrato — Extrato completo com filtros\n` +
+      `/tag — Listar tags\n` +
+      `/agendadas — Listar transações futuras`,
+  },
   agendadas: {
     keys: ["agendadas", "futuras"],
     text:

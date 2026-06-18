@@ -49,7 +49,8 @@ export async function handleHelp(chatId: number, args: string[] = []): Promise<v
     `/saldo - Ver saldo (ex: \`/saldo mes passado\` ou \`/saldo --grupo Pessoal\`)\n` +
     `/extrato - Ver extrato (ex: \`/extrato janeiro 2025\` ou \`/extrato --grupo Pessoal\`)\n` +
     `/resumo - Resumo por categoria (ex: \`/resumo ultimo mes\` ou \`/resumo --grupo Pessoal\`)\n` +
-    `/agendadas - Listar transações futuras agendadas\n\n` +
+    `/agendadas - Listar transações futuras agendadas\n` +
+    `/buscar - Buscar transações por palavra-chave (ex: \`/buscar mercado\`)\n\n` +
     `📁 *Organização:*\n` +
     `/grupo - Gerenciar grupos\n` +
     `/categoria - Gerenciar categorias\n` +

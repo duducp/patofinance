@@ -21,7 +21,7 @@ Single Edge Function (`supabase/functions/bot-core/`) handles all Telegram webho
 ```text
 Telegram -> Edge Function (webhook) -> Supabase DB -> Bot API response
                               |
-                    handleCallbackQuery routes ~25 prefixes
+                    handleCallbackQuery routes ~40 prefixes
                     (pagination, filters, wizards, CRUD)
 ```
 
@@ -357,7 +357,7 @@ Tag é **opcional** para expense/income. Se DeepSeek retornar `tag`:
 
 ### Supported intents
 
-`expense`, `income`, `query_balance`, `query_expenses_month`, `query_expenses_last_month`, `query_expenses_date`, `query_expenses_category`, `query_summary`, `query_extract`, `query_future`, `create_category`, `create_group`, `list_categories`, `list_groups`, `list_tags`, `list_transactions`, `show_last_transaction`, `delete_last_transaction`, `list_by_tag`, `cleanup`
+`expense`, `income`, `query_balance`, `query_expenses_month`, `query_expenses_last_month`, `query_expenses_date`, `query_expenses_category`, `query_summary`, `query_extract`, `query_future`, `query_search`, `create_category`, `create_group`, `list_categories`, `list_groups`, `list_tags`, `list_transactions`, `show_last_transaction`, `delete_last_transaction`, `list_by_tag`, `cleanup`
 
 ### Pagination via NL
 
@@ -365,6 +365,13 @@ Tag é **opcional** para expense/income. Se DeepSeek retornar `tag`:
 - `txlist_p{page}` callback
 - `txlist_t{tag}_p{page}` callback (tag-filtered)
 - `Pagina X de Y` com parallel COUNT query
+
+### NL routing for future and search
+
+- `query_future` → `handleStatement(0, "future")` — lista transações agendadas via `/agendadas`
+- `query_search` → extrai termo de `description` (ou `category`), chama `handleSearch()` — busca textual via `/buscar`
+
+Both intents are supported as common phrases (`"agendadas"`, `"futuras"`) and via DeepSeek when the API is configured.
 
 Se `DEEPSEEK_API_KEY` não configurada, fallback para comandos apenas.
 
@@ -502,13 +509,39 @@ deno check supabase/functions/bot-core/index.ts
 # Check the nlCache (5min TTL): same query within 5min uses cached response
 ```
 
-### 8. Supabase Dashboard
+### 8. Generic Filter Selector Pattern
 
-```bash
-make open  # Opens Supabase dashboard in browser
+When multiple inline keyboard selectors follow the same pattern (read wizard state → build grid with ✅ selection indicators → extra buttons → Voltar), extract a shared function:
+
+```typescript
+// Generic selector helper in statement.ts
+async function showFilterSelector(
+  supabase: any,
+  userId: number,
+  chatId: number,
+  messageId: number | undefined,
+  sessionSeq: number,
+  config: SelectorConfig,  // { title, options, isSelected, columns, extraButtons, messageSuffix }
+): Promise<void>
 ```
 
-Useful dashboard pages for debugging:
+Each concrete selector keeps only its unique logic (fetching data, defining options/`isSelected`/extra buttons) and delegates to `showFilterSelector`. Saves ~70 lines of boilerplate across 6 selectors.
+
+### 9. Generic Filter Field Update Pattern
+
+When multiple callback handlers follow the same pattern (extract value → read wizard state → set filter field → update DB → re-render), extract a shared helper:
+
+```typescript
+async function updateFilterField(
+  supabase: any, userId: number, chatId: number,
+  messageId: number | undefined, sessionSeq: number,
+  selectedValue: string, prefix: string,
+  setter: (filters: ExtratoFilters, value: any) => void,
+  transform?: (v: string) => any,
+): Promise<void>
+```
+
+Replaces 5 duplicated `stmt_f_*` blocks (category, group, type, status, period) with 1-liner calls. Saves ~30 lines.
 - **Edge Functions** -> `bot-core` -> Logs: see function invocations and errors
 - **SQL Editor**: run ad-hoc queries to inspect data:
   ```sql
@@ -578,11 +611,12 @@ make install-link       # Link to project zjcfjqtlijktrikgvwrv
 make dev                # Start local Supabase
 make dev-stop           # Stop local Supabase
 make dev-serve          # Run Edge Function locally (streams logs)
+make dev-logs           # Tail local function logs (alias for dev-serve)
 make dev-deploy         # Deploy Edge Function locally
 make dev-db-push        # Push migrations locally
 make dev-db-reset       # Reset local database
 make dev-test-start     # Test /start via curl
-make dev-test-gasto     # Test /gasto via curl
+make dev-test-gasto     # Test /despesa via curl
 make dev-test-saldo     # Test /saldo via curl
 make dev-test-receita   # Test /receita via curl
 make dev-test-detalhes  # Test /detalhes via curl
@@ -607,12 +641,19 @@ make status             # Show Supabase project status
 make open               # Open Supabase Dashboard
 ```
 
+### Landing
+
+```bash
+make landing-open       # Open landing page locally (serves landing/ on port 8080)
+```
+
 ### Quality
 ```bash
 make check              # Type-check (deno check)
 make lint               # Lint (deno lint)
 make unit               # Run unit tests (26 tests)
 make test-boot          # Verify function boots without error
+make help              # Show all available commands
 make test               # check + lint + unit + test-boot
 ```
 
@@ -669,6 +710,7 @@ Project ref: `zjcfjqtlijktrikgvwrv`
 20260616000002_add_description_step.sql         # Description step in wizard
 20260616000003_fix_description_prompt_newlines.sql
 20260616000004_separate_telegram_accounts.sql   # telegram_accounts table, decouple from users
+20260616000005_add_search_index.sql               # GIN trigram index on transactions.description
 ```
 
 ### Predefined Categories
@@ -725,7 +767,7 @@ In the wizard:
 | `handleHelp(chatId)` | `/ajuda` | |
 | `/agendadas` / `/futuras` | Calls `handleStatement` with `"future"` filter | Reuses extrato infrastructure |
 | `handleBalance(supabase, userId, chatId, args?)` | `/saldo` | Period via DeepSeek (ex: `mes passado`, `janeiro`). `--grupo` flag for group filter |
-| `handleTransaction(type, supabase, userId, chatId, args, descriptionOverride?)` | `/despesa`, `/receita` | Unified handler, `type: "expense"|"income"` |
+| `handleTransaction(type, supabase, userId, chatId, args, descriptionOverride?)` | `/despesa`, `/receita` | Unified handler, `type: "expense"|"income"`. Flags: `--descricao`, `--grupo`, `--tags`, `--data` |
 | `handleStatement(supabase, userId, chatId, page?, filter?, filters?)` | `/extrato` | Pagination + `ExtratoFilters`. Period via DeepSeek (ex: `janeiro 2025`). `--grupo` flag for group filter |
 | `handleSummary(supabase, userId, chatId, args?)` | `/resumo` | Delegates to `getSummaryData` + `formatSummaryMessage`. Period via DeepSeek (ex: `ultimo mes`). `--grupo` flag for group filter |
 | `handleDetails(supabase, userId, chatId, args)` | `/detalhes` | Shows all transaction details with edit keyboard |
@@ -748,6 +790,7 @@ In the wizard:
 | `handleShowLastTransaction(supabase, userId, chatId)` | Detail + edit/delete buttons |
 | `handleDeleteLastTransaction(supabase, userId, chatId)` | Confirm dialog |
 | `handleListByTag(supabase, userId, chatId, tag, page?, messageId?)` | Tag-filtered list with pagination |
+| `handleSearch(supabase, userId, chatId, term, page?, messageId?)` | `/buscar` | Search transactions by description, amount or tag (ILIKE), paginated |
 
 ### `handlers/queries.ts` -- Query/aggregation
 
@@ -780,7 +823,7 @@ In the wizard:
 
 ### `handlers/callbacks.ts` -- Inline keyboard routing
 
-Routes ~42 callback prefixes via `handleCallbackQuery`. Key callbacks:
+Routes ~40 callback prefixes via `handleCallbackQuery`. Key callbacks:
 
 | Prefix | Purpose | Sends vs Edits |
 |--------|---------|----------------|
@@ -799,6 +842,8 @@ Routes ~42 callback prefixes via `handleCallbackQuery`. Key callbacks:
 | `stmt_f_tag_clr` | Clear tag selection | Edits msg |
 | `stmt_f_type` | Open type selector | Edits msg |
 | `stmt_f_type_{type}` | Select type (all/income/expense) | Edits msg |
+| `stmt_f_status` | Open status selector | Edits msg |
+| `stmt_f_status_{status}` | Select status (future) | Edits msg |
 | `stmt_f_period` | Open period selector | Edits msg |
 | `stmt_f_period_{key}` | Select period preset | Edits msg |
 | `stmt_f_period_custom` | Custom date range via wizard (2-step: start + end) | Sends new msg |
@@ -807,6 +852,7 @@ Routes ~42 callback prefixes via `handleCallbackQuery`. Key callbacks:
 | `statement_` | Statement quick-filter (type) + page nav | Sends new msg |
 | `txlist_p` | List transactions page nav | Edits msg |
 | `txlist_t` | Tag-filtered list page nav | Edits msg |
+| `search_` | Search results page nav: `search_{normalized}_p{page}` | Edits msg |
 | `nl_cat_` | NL category selection | Sends new msg |
 | `nl_period_` | NL period selection | Sends new msg |
 | `edit_show_` | Show edit dialog | Sends new msg |
@@ -837,7 +883,7 @@ Routes ~42 callback prefixes via `handleCallbackQuery`. Key callbacks:
 ```text
 supabase/
 ├── config.toml               # verify_jwt=false for local
-├── migrations/               # 14 SQL migrations
+├── migrations/               # 16 SQL migrations
 │   ├── 20260614000000_*.sql
 │   ├── 20260614000001_*.sql
 │   ├── 20260614000002_*.sql
@@ -852,7 +898,8 @@ supabase/
 │   ├── 20260616000001_*.sql  # User sessions
 │   ├── 20260616000002_*.sql  # Description step
 │   ├── 20260616000003_*.sql  # Fix prompts
-│   └── 20260616000004_*.sql  # telegram_accounts
+│   ├── 20260616000004_*.sql  # telegram_accounts
+│   └── 20260616000005_*.sql  # search index on transactions.description
 └── functions/bot-core/
     ├── index.ts              # Entry point (serve handler + wizard step routing)
     ├── config.ts             # Env vars, commonPhrases map, nlCache, periodCache

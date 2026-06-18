@@ -6,7 +6,7 @@ import { truncateCallbackData } from "../utils/rate-limiter.ts";
 import { getWizardState, setWizardState, clearWizardState, sendWizardStepMessage, getCurrentWizardStep, advanceWizardToNextStep } from "./wizard.ts";
 import { executeNaturalLanguageAction } from "./nl-processing.ts";
 import { handleBalance, handleSummary, handleDetails, handleGroup, handleCategory, handleTransaction, showDetailsEditActions, showDetailsMainView } from "./commands.ts";
-import { handleListTransactions, handleListByTag, showDeleteConfirmation } from "./management.ts";
+import { handleListTransactions, handleListByTag, handleSearch, showDeleteConfirmation } from "./management.ts";
 import { handleStatement, handleFilterCallback } from "./statement.ts";
 import { addSession, removeSession, validateCallbackSession, getSessionSeq, incrementSessionSeq } from "../utils/session.ts";
 import { buildKeyboardGrid } from "../utils/keyboard.ts";
@@ -449,6 +449,20 @@ export async function handleCallbackQuery(
         const tag = selectedValue.substring(8, lastPIndex); // after "txlist_t"
         if (!isNaN(page)) {
           await handleListByTag(supabase, telegramId, chatId, tag, page, message.message_id);
+        }
+      }
+      return;
+    }
+
+    // Handle search pagination
+    if (selectedValue.startsWith("search_")) {
+      // Format: search_{normalizedTerm}_p{page}
+      const lastPIndex = selectedValue.lastIndexOf("_p");
+      if (lastPIndex > 0) {
+        const page = parseInt(selectedValue.substring(lastPIndex + 2), 10);
+        const term = selectedValue.substring(7, lastPIndex); // after "search_"
+        if (!isNaN(page)) {
+          await handleSearch(supabase, telegramId, chatId, term, page, message.message_id);
         }
       }
       return;

@@ -18,7 +18,7 @@
   <img src="https://img.shields.io/badge/DB-Supabase-3ECF8E?style=flat-square&logo=supabase" alt="Supabase">
   <img src="https://img.shields.io/badge/AI-DeepSeek-4F6BED?style=flat-square" alt="DeepSeek">
   <img src="https://img.shields.io/badge/License-MIT-brightgreen?style=flat-square" alt="MIT">
-  <a href="CI_WORKFLOW_URL"><img src="https://img.shields.io/badge/CI-Passing-success?style=flat-square&logo=githubactions" alt="CI"></a>
+  <img src="https://img.shields.io/badge/CI-Passing-success?style=flat-square&logo=githubactions" alt="CI">
 </p>
 
 ---
@@ -34,10 +34,12 @@
 - **📊 Saldo do período** — `/saldo`, `/saldo mes passado`, `/saldo janeiro`
 - **📋 Extrato interativo** — `/extrato` com painel de filtros (categoria, grupo, tags, tipo, período), paginação e visualização otimizada
 - **⏳ Transações agendadas** — `/agendadas` lista todas as transações futuras
+- **🔍 Busca textual** — `/buscar mercado` encontra transações pela descrição, valor ou tag
 - **📈 Resumo por categoria** — `/resumo` com totais agrupados
 - **📁 Grupos (contas)** — Organize por conta bancária, cartão de crédito, etc.
 - **🏷️ Categorias** — Pré-definidas + personalizadas
 - **🔖 Tags livres** — Adicione tags a transações (`#trabalho #presente`)
+- **🗣️ Wizard conversacional** — O bot guia você passo a passo com botões interativos
 - **🧹 Limpeza automática** — Remova categorias/grupos sem uso
 - **🌐 Linguagem natural** — Digite frases como "quanto gastei esse mês?" ou "últimas 10 transações"
 
@@ -62,7 +64,7 @@ Telegram → Edge Function (webhook) → Supabase DB → Resposta via Bot API
 ## Estrutura do Projeto
 
 ```text
-fincance/
+finance/
 ├── Makefile                 # Comandos de desenvolvimento
 ├── AGENTS.md                # Guia de desenvolvimento + callbacks
 ├── CLAUDE.md                # Memory para IA
@@ -70,7 +72,7 @@ fincance/
 ├── supabase/
 │   ├── config.toml          # Config local (verify_jwt=false)
 │   ├── .env.example         # Template de variáveis de ambiente
-│   ├── migrations/          # 14 migrations SQL
+│   ├── migrations/          # 16 migrations SQL
 │   │   ├── 20260614000000_initial_schema.sql
 │   │   ├── 20260614000001_add_wizard_steps.sql
 │   │   ├── 20260614000002_add_wizard_steps_index_and_timestamps.sql
@@ -85,8 +87,9 @@ fincance/
 │   │   ├── 20260616000001_create_user_sessions.sql
 │   │   ├── 20260616000002_add_description_step.sql
 │   │   ├── 20260616000003_fix_description_prompt_newlines.sql
-│   │   └── 20260616000004_separate_telegram_accounts.sql
-│   └── functions/bot-core/
+│   │   ├── 20260616000004_separate_telegram_accounts.sql
+│   │   └── 20260616000005_add_search_index.sql
+└── functions/bot-core/
 │       ├── index.ts         # Entry point + roteamento
 │       ├── config.ts        # Env vars + cache NL
 │       ├── types/index.ts   # Interfaces TypeScript
@@ -256,12 +259,13 @@ Resposta esperada:
 3. Selecione seu bot
 4. Cole:
 
-```
+```text
 despesa - Registrar despesa (ex: /despesa 50 mercado)
 receita - Registrar receita (ex: /receita 3000 salario)
 saldo - Ver saldo (ex: /saldo mes passado)
 extrato - Ver extrato (ex: /extrato janeiro 2025)
 agendadas - Listar transacoes futuras agendadas
+buscar - Buscar transacoes por palavra-chave
 resumo - Resumo por categoria (ex: /resumo ultimo mes)
 detalhes - Detalhes, edicao e exclusao de transacao
 categoria - Gerenciar categorias
@@ -269,16 +273,17 @@ grupo - Gerenciar grupos
 tag - Gerenciar tags
 limpar - Remover categorias/grupos sem transacoes
 cancelar - Cancelar operacao em andamento
+resetar - Resetar conta (apaga todos os dados)
 ajuda - Ajuda completa
 ```
 
 ### Description (info do bot)
 
-> Gerencie suas finan\u00E7as pessoais diretamente no Telegram. Registre gastos e receitas, veja extratos, saldo e resumo por categoria com comandos simples ou linguagem natural. Suporta grupos personalizados, categorias e tags para organizar tudo.
+> Gerencie suas finanças pessoais diretamente no Telegram. Registre gastos e receitas, veja extratos, saldo e resumo por categoria com comandos simples ou linguagem natural. Suporta grupos personalizados, categorias e tags para organizar tudo.
 
 ### About (texto inicial do chat)
 
-> Assistente de finan\u00E7as pessoais \u2014 registre gastos e receitas com comandos ou linguagem natural.
+> Assistente de finanças pessoais — registre gastos e receitas com comandos ou linguagem natural.
 
 ## Comandos
 
@@ -291,6 +296,7 @@ ajuda - Ajuda completa
 | `/saldo` | Saldo do per\u00EDodo | `/saldo`, `/saldo mes passado`, `/saldo janeiro` |
 | `/extrato` | Extrato interativo — painel de filtros + paginação | `/extrato`, `/extrato janeiro 2025`, `/extrato --grupo Pessoal` |
 | `/agendadas` | Listar transações futuras agendadas | `/agendadas` |
+| `/buscar` | Buscar transações por palavra-chave na descrição | `/buscar mercado` |
 | `/resumo` | Resumo por categoria | `/resumo`, `/resumo ultimo mes`, `/resumo --grupo Trabalho` |
 | `/detalhes` | Detalhes, edição e exclusão da transação pelo ID | `/detalhes 42` |
 
@@ -298,10 +304,8 @@ ajuda - Ajuda completa
 
 | Comando | Descrição | Exemplo |
 |---------|-----------|---------|
-| `/categoria` | Listar categorias (botões clicáveis) | `/categoria` |
-| `/categoria nome` | Criar categoria | `/categoria Transporte` |
-| `/grupo` | Listar grupos (botões clicáveis) | `/grupo` |
-| `/grupo nome` | Criar grupo | `/grupo Nubank` |
+| `/categoria` | Listar ou criar categorias | `/categoria`, `/categoria Transporte` |
+| `/grupo` | Listar ou criar grupos | `/grupo`, `/grupo Nubank` |
 | `/tag` | Listar tags com contagens + botões | `/tag` |
 
 ### ⚙️ Utilitários
@@ -312,7 +316,7 @@ ajuda - Ajuda completa
 | `/resetar` | Resetar conta (apaga todas as transações, categorias, grupos e tags) |
 | `/cancelar` | Cancelar operação em andamento |
 | `/ajuda` | Ajuda completa. Use `/ajuda <comando>` para detalhes (ex: `/ajuda saldo`) |
-| `/agendadas` | Listar transações agendadas (alias: `/futuras`) |
+| `/futuras` | Listar transações agendadas (alias: `/agendadas`) |
 
 ### 🌐 Linguagem Natural
 
@@ -325,6 +329,7 @@ Com `DEEPSEEK_API_KEY` configurada, você pode digitar frases diretamente ou usa
 - `"resumo do mês"` — resumo agrupado
 - `"últimas 10 transações"` — extrato
 - `"agendadas"` — lista transações futuras
+- `"busque por mercado"` — busca transações pela descrição
 - `"crie a categoria transporte"` — criar categoria
 - `"transações com #alimentação"` — filtrar por tag
 - `"quais tags uso?"` — listar tags
@@ -342,6 +347,10 @@ Com `DEEPSEEK_API_KEY` configurada, você pode digitar frases diretamente ou usa
 | `/extrato --grupo Pessoal` | Extrato filtrado por grupo |
 | `/resumo ultimo mes` | Resumo do mês passado |
 | `/resumo --grupo Trabalho` | Resumo filtrado por grupo |
+| `/agendadas` | Lista transações futuras agendadas |
+| `/buscar mercado` | Busca transações com "mercado" na descrição |
+| `/buscar #ifood` | Busca transações com a tag #ifood |
+| `/buscar 150` | Busca transações com valor R$ 150 |
 
 Sem a chave DeepSeek, apenas comandos `/` funcionam.
 
@@ -350,6 +359,7 @@ Sem a chave DeepSeek, apenas comandos `/` funcionam.
 ```text
 /despesa 50 mercado --grupo Pessoal --tags #almoço
 /despesa 100 vestuário --data 15/01/2024 --tags #presente
+/despesa 50 --descricao "almoço no shopping"
 /receita 3000 salário --grupo Nubank
 ```
 
@@ -361,6 +371,8 @@ Envie uma mensagem livre e o bot guia você com botões interativos:
 Usuário: "gastei 30 no almoço"
 Bot: "💸 Quanto você gastou?"
 Usuário: "30"
+Bot: "📝 Descrição:"  [⏭️ Pular]
+Usuário: clica em "⏭️ Pular"
 Bot: "📁 Selecione o grupo:"  [Pessoal] [Nubank] [Inter]
 Usuário: clica em "Pessoal"
 Bot: "🏷️ Selecione a categoria:"  [Alimentação] [Transporte] [✏️ Nova]

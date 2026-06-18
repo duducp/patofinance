@@ -23,6 +23,7 @@ Intents:
 - "query_expenses_category": gastos por categoria
 - "query_summary": resumo por categoria
 - "query_future": listar transações futuras/agendadas
+- "query_search": buscar transações por termo
 - "query_extract": extrato detalhado
 - "create_category": criar nova categoria
 - "create_group": criar novo grupo

@@ -13,6 +13,7 @@ import {
   handleTag,
 } from "./commands.ts";
 import { handleStatement } from "./statement.ts";
+import { handleSearch } from "./management.ts";
 import {
   handleCreateCategory,
   handleCreateGroup,
@@ -261,6 +262,14 @@ export async function executeNaturalLanguageAction(
 
   if (natural.intent === "query_future") {
     await handleStatement(supabase, userId, chatId, 0, "future");
+    return;
+  }
+
+  if (natural.intent === "query_search") {
+    const term = natural.description || natural.category || "";
+    if (term) {
+      await handleSearch(supabase, userId, chatId, term);
+    }
     return;
   }
 
