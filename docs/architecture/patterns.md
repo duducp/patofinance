@@ -57,7 +57,42 @@ if (selectedValue.startsWith("edit_tags_")) { }     // catches everything
 if (selectedValue.startsWith("edit_tags_done_")) { } // DEAD CODE
 ```
 
-**Testing:** For each pair where prefix A is a prefix of prefix B:
+**Full ordering example** (from `callbacks.ts`):
+
+```text
+MOST SPECIFIC (order first):
+  edit_show_         → exact prefix match
+  edit_cat_select_   → specific confirm
+  edit_date_select_  → specific confirm
+  edit_date_custom_  → specific confirm
+  edit_group_sel_    → specific confirm (before edit_group_)
+  edit_group_        → broader group prefix
+  edit_tags_done_    → before edit_tags_ (both start with "edit_tags_")
+  edit_tags_clr_     → before edit_tags_
+  edit_tags_         → initial tag edit
+  edit_tag_tog_      → distinct prefix (differs at pos 7)
+LEAST SPECIFIC:
+  edit_              → generic amount/category/date
+```
+
+Recurrence callbacks follow the same rule:
+```text
+MOST SPECIFIC:
+  rec_advance_yes_   → before rec_advance_
+  rec_skip_yes_      → before rec_skip_
+  rec_edit_field_    → before rec_edit_
+  rec_edit_set_cat_  → before rec_edit_
+  rec_edit_set_grp_  → before rec_edit_
+  rec_edit_set_tag_  → before rec_edit_
+  rec_edit_set_freqtype_ → before rec_edit_
+  rec_edit_          → generic edit menu
+  rec_advance_       → after rec_advance_yes_
+  rec_skip_          → after rec_skip_yes_
+LEAST SPECIFIC:
+  rec_               → catches rec_new, rec_manage, rec_show_, rec_close, rec_back, rec_archive_, rec_activate_, rec_transform_
+```
+
+**How to test:** For each pair where prefix A is a prefix of prefix B:
 - `"B_value".startsWith("A_")` → TRUE → B must come before A
 - `"A_value".startsWith("B_")` → FALSE → fine after B
 
@@ -225,3 +260,37 @@ import { ... } from "./wizard.ts";
 ```
 
 No third-party libraries beyond Deno std and esm.sh.
+
+## 15. Generic Filter Selector Pattern
+
+When multiple inline keyboard selectors follow the same pattern (read wizard state → build grid with ✅ selection indicators → extra buttons → Voltar), extract a shared function:
+
+```typescript
+// Generic selector helper in statement.ts
+async function showFilterSelector(
+  supabase: any,
+  userId: number,
+  chatId: number,
+  messageId: number | undefined,
+  sessionSeq: number,
+  config: SelectorConfig,  // { title, options, isSelected, columns, extraButtons, messageSuffix }
+): Promise<void>
+```
+
+Each concrete selector keeps only its unique logic (fetching data, defining options/`isSelected`/extra buttons) and delegates to `showFilterSelector`. Saves ~70 lines of boilerplate across 6 selectors.
+
+## 16. Generic Filter Field Update Pattern
+
+When multiple callback handlers follow the same pattern (extract value → read wizard state → set filter field → update DB → re-render), extract a shared helper:
+
+```typescript
+async function updateFilterField(
+  supabase: any, userId: number, chatId: number,
+  messageId: number | undefined, sessionSeq: number,
+  selectedValue: string, prefix: string,
+  setter: (filters: ExtratoFilters, value: any) => void,
+  transform?: (v: string) => any,
+): Promise<void>
+```
+
+Replaces 5 duplicated `stmt_f_*` blocks (category, group, type, status, period) with 1-liner calls. Saves ~30 lines.

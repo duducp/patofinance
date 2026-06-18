@@ -258,6 +258,7 @@ All tables have RLS enabled, but the bot uses the **service_role key** which byp
 | `20260617000004` | GRANT on link_codes to authenticated role |
 | `20260618000000` | Remove link_codes direction column |
 | `20260618000001` | Add recurrences table, process_recurrences cron, notification_queue |
+| `20260618000002` | Add recorrencia wizard type step options (expense/income buttons) |
 
 ## Category Resolution by Transaction Type
 

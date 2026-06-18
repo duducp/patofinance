@@ -76,7 +76,7 @@ finance/
 ├── supabase/
 │   ├── config.toml          # Config local (verify_jwt=false)
 │   ├── .env.example         # Template de variáveis de ambiente
-│   ├── migrations/          # 23 migrations SQL
+│   ├── migrations/          # 24 migrations SQL
 │   │   ├── 20260614000000_initial_schema.sql
 │   │   ├── 20260614000001_add_wizard_steps.sql
 │   │   ├── 20260614000002_add_wizard_steps_index_and_timestamps.sql
@@ -99,7 +99,8 @@ finance/
 │   │   ├── 20260617000003_add_link_codes_cleanup_cron.sql
 │   │   ├── 20260617000004_grant_link_codes_to_authenticated.sql
 │   │   ├── 20260618000000_remove_link_codes_direction.sql
-│   │   └── 20260618000001_add_recurrences.sql
+│   │   ├── 20260618000001_add_recurrences.sql
+│   │   └── 20260618000002_add_recorrencia_type_options.sql
 ├── functions/bot-core/
 │   ├── index.ts            # Entry point + roteamento
 │   ├── config.ts           # Env vars + cache NL

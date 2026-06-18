@@ -14,6 +14,7 @@ Telegram finance bot using Supabase Edge Functions + PostgreSQL.
 | [Utils](utils.md) | Formatting, rate limiting, session protection, date helpers |
 | [Natural Language](natural-language.md) | NL pipeline, DeepSeek integration, intent routing |
 | [Callbacks](callbacks.md) | Inline keyboard callback routing system |
+| [Session](session.md) | Callback session protection: addSession, validation, increment rules |
 | [Wizard](wizard.md) | Multi-step wizard system for transaction creation |
 | [Patterns](patterns.md) | Coding patterns, conventions, rules |
 | [Development](development.md) | Makefile commands, debugging, deploy workflow |
@@ -33,7 +34,7 @@ make prod-deploy      # Deploy to production
 ```
 supabase/
 ├── config.toml                  # verify_jwt=false for local
-├── migrations/                  # 10 SQL migrations
+├── migrations/                  # 24 SQL migrations
 └── functions/bot-core/
     ├── index.ts                 # Entry point (serve handler)
     ├── config.ts                # Env vars, commonPhrases, nlCache
