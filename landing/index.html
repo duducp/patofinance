@@ -26,6 +26,8 @@
   <meta property="og:site_name" content="Pato Finance">
   <meta name="twitter:site" content="@patofinancebot">
   <link rel="icon" href="favicon.ico" type="image/x-icon">
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="picture.webp" sizes="512x512">
   <link rel="preload" href="logo.webp" as="image" type="image/webp" width="140" height="140">
   <link rel="preload" href="picture.webp" as="image" type="image/webp">
   <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
@@ -311,5 +313,12 @@
     });
   </script>
   <script src="main.js" defer></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js').catch(function(err) {
+        console.warn('SW registration failed:', err);
+      });
+    }
+  </script>
 </body>
 </html>

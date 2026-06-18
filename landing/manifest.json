@@ -1,0 +1,27 @@
+{
+  "name": "Pato Finance",
+  "short_name": "Pato Finance",
+  "description": "Assistente de finan\u00E7as pessoais no Telegram. Registre gastos e receitas com comandos ou linguagem natural.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0a1628",
+  "theme_color": "#1e4d7b",
+  "categories": ["finance", "productivity"],
+  "lang": "pt-BR",
+  "icons": [
+    {
+      "src": "picture.webp",
+      "sizes": "512x512",
+      "type": "image/webp",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "logo.webp",
+      "sizes": "140x140",
+      "type": "image/webp",
+      "purpose": "any"
+    }
+  ]
+}

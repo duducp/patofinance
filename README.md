@@ -439,6 +439,14 @@ Verifique se as migrations foram aplicadas:
 supabase db push
 ```
 
+## Roadmap
+
+> 🗺️ Veja o [`ROADMAP.md`](ROADMAP.md) para a visão completa do que já foi implementado e dos próximos passos.
+
+**✅ Já implementado:** CRUD financeiro, NL com DeepSeek, busca por descrição/valor/tag, extrato com filtros, paginação, wizard conversacional, categorias/grupos/tags, `/agendadas`, edição/exclusão.
+
+**📋 Próximos:** Exportação CSV, transações recorrentes, orçamentos mensais, gráficos por categoria, web dashboard.
+
 ## Licença
 
 MIT

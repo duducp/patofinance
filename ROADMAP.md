@@ -1,239 +1,118 @@
-# ROADMAP — Pato Finance
+# Roadmap — Pato Finance
 
-Features futuras organizadas por prioridade e esforço estimado.
-
----
-
-## 🚀 Prioridade Alta
-
-### 1. Gráficos visuais (`/grafico`)
-
-Gerar imagens PNG com gráficos de pizza (despesas por categoria) e barras (receita vs despesa ao longo do tempo).
-
-**Abordagens:**
-- **QuickChart.io** — API gratuita, implementação rápida (minutos), ~100 chamadas/dia free
-- **Satori + resvg-wasm** — 0 dependência externa, mais complexo, roda 100% na Edge Function
-
-**Arquivos:**
-- `handlers/graph.ts` — handler do comando
-- `services/chart.ts` — engine de renderização
-- `utils/chart-template.tsx` — templates visuais (pizza, barras)
-- `services/telegram.ts` — adicionar `sendTelegramPhoto()`
-
-**Esforço:** 2–4h (QuickChart) / 6–10h (Satori+WASM)
+> 📊 Visão geral do desenvolvimento, entregas e próximos passos.
 
 ---
 
-### 2. Exportar dados (`/exportar`)
+## ✅ Já Implementado
 
-Gerar arquivo CSV com todas as transações do usuário.
+### Core Financeiro
 
-**Fluxo:**
-1. Query: `SELECT * FROM transactions WHERE user_id = ? ORDER BY transaction_date DESC`
-2. Converter pra CSV (cabeçalho + linhas)
-3. Enviar como arquivo via `sendDocument` da API do Telegram
+- [x] **CRUD de transações** — `/despesa`, `/receita`, `/extrato`, `/detalhes`
+- [x] **Edição e exclusão** — Editar valor, categoria, grupo, data, tags; excluir com confirmação
+- [x] **Transações futuras/agendadas** — `/agendadas` com suporte a `status: "future"` no filtro
+- [x] **Saldo do período** — `/saldo` com projeção de agendados e filtro por grupo
+- [x] **Busca textual** — `/buscar` por descrição, valor (`/buscar 150`) ou tag (`/buscar #ifood`)
+- [x] **Resumo por categoria** — `/resumo` com agrupamento + projeção de agendados
+- [x] **Painel de filtros** — Categoria, grupo, tags, tipo, status (realizada/agendada), período (presets + custom)
 
-**Detalhes:**
-- Incluir nome da categoria e grupo (joins)
-- Opção de filtro por período: `/exportar`, `/exportar 2025`, `/exportar janeiro 2025`
-- Suporte a `--grupo` flag
+### Paginação
 
-**Esforço:** 1–2h
+- [x] Navegação com ◀️ Anterior / ▶️ Próximo
+- [x] Indicador "Página X de Y"
+- [x] Proteção de sessão via `session_seq` + `truncateCallbackData`
 
----
+### Organização
 
-### 3. Testes automatizados
+- [x] **Categorias** — Pré-definidas (12 globais) + personalizadas, com tipo (expense/income/both)
+- [x] **Grupos** — Contas personalizáveis com `is_default`
+- [x] **Tags** — Suporte completo com multiselect nos wizards
 
-Cobertura de testes para as áreas críticas sem teste:
+### Linguagem Natural (DeepSeek)
 
-| Arquivo | O que testar | Testes existentes |
-|---------|-------------|-------------------|
-| `services/database.ts` | `getOrCreateUser`, `createTransaction`, `resolveCategoryForNL`, `normalizeString` | 0 |
-| `handlers/callbacks.ts` | Roteamento de callbacks (cada prefixo) | 0 |
-| `handlers/wizard.ts` | `advanceWizardToNextStep`, `completeWizard` | 0 |
-| `handlers/statement.ts` | `resolvePeriod`, `applyFiltersToQuery` | 0 |
-| `utils/formatting.ts` | `formatCurrencyBR`, `formatDateBR`, `parseDateBR` | 0 |
-| `utils/date-helpers.ts` | `getDateRange`, `getNowBR` | 0 |
+- [x] **Common phrases** — 12+ frases mapeadas sem chamada de API
+- [x] **Cache por usuário** — `nlCache` com TTL de 5min
+- [x] **Wizard de campos faltantes** — Amount → descrição → grupo → categoria → tags
+- [x] **Desambiguação de tipo** — Keyboard 💸 Despesa / 💰 Receita quando ambíguo
 
-**Esforço:** 4–8h (completo) / 1–2h (só database.ts)
+### Experiência do Usuário
 
----
+- [x] **Wizard conversacional** — Passo a passo com botões para amount, descrição, grupo, categoria, tags
+- [x] **Proteção de sessão** — Callbacks expiram após novo comando
+- [x] **Rate limiting** — Previne spam
+- [x] **Ajuda contextual** — `/ajuda <comando>` com detalhes de uso
+- [x] **Mensagens de erro variadas** — Fallbacks aleatórios para NL não compreendida
 
-## 📊 Prioridade Média
+### Infraestrutura
 
-### 4. Transações recorrentes
+- [x] **Separação de contas** — `telegram_accounts` desacoplado de `users`
+- [x] **Busca fuzzy** — `pg_trgm` para similaridade em categorias/grupos/tags
+- [x] **Índice GIN trigram** — Busca rápida em `transactions.description`
+- [x] **Deploy via CLI** — `supabase functions deploy` com `--no-verify-jwt`
 
-Permite criar transações que se repetem automaticamente (aluguel, salário, assinaturas).
+### Documentação
 
-**Migration SQL:**
-```sql
-ALTER TABLE transactions ADD COLUMN is_recurring BOOLEAN DEFAULT FALSE;
-ALTER TABLE transactions ADD COLUMN recurring_interval TEXT;  -- 'monthly', 'weekly', 'yearly'
-ALTER TABLE transactions ADD COLUMN recurring_end_date DATE;
-ALTER TABLE transactions ADD COLUMN recurring_parent_id BIGINT REFERENCES transactions(id);
-```
-
-**Implementação:**
-- Flag `--recorrente` no `/despesa` e `/receita`
-- Edge Function cron (Supabase Cron) rodando todo dia 1º que duplica transações com `is_recurring = true` e `transaction_date` no mês passado
-- Tratar fim da recorrência (não duplicar se passou `recurring_end_date`)
-- Exibir ícone 🔄 nas transações recorrentes no extrato
-
-**Esforço:** 4–6h (incluindo cron)
+- [x] **README.md** — Configuração, comandos, BotFather, linguagem natural, wizard
+- [x] **AGENTS.md** — Patterns de código, callbacks, handlers, arquitetura
+- [x] **Landing page** — `landing/index.html` com hero, features, comandos, FAQ, CTA
+- [x] **Migrações** — 16 migrations com descrições
 
 ---
 
-### 5. Orçamento mensal
+## 🔄 Em Andamento
 
-Definir limites de gasto por categoria e receber alertas.
-
-**Migration SQL:**
-```sql
-CREATE TABLE budgets (
-  id BIGSERIAL PRIMARY KEY,
-  user_id BIGINT REFERENCES users(id) ON DELETE CASCADE,
-  category_id BIGINT REFERENCES categories(id) ON DELETE CASCADE,
-  month DATE NOT NULL,  -- primeiro dia do mês (ex: 2026-06-01)
-  limit_amount DECIMAL(12,2) NOT NULL,
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  UNIQUE(user_id, category_id, month)
-);
-```
-
-**Comandos:**
-- `/orcamento` — lista orçamentos do mês
-- `/orcamento alimentacao 800` — define orçamento de R$ 800 para Alimentação
-- `/orcamento alimentacao --limpar` — remove orçamento
-
-**Alertas:**
-- Quando gasto atingir 80% do limite → notificação no Telegram
-- Quando gasto atingir 100% → notificação "⚠️ Você estourou o orçamento de Alimentação!"
-
-**Esforço:** 6–8h
+- [ ] **Refatoração contínua** — Extração de patterns genéricos (showFilterSelector, updateFilterField)
+- [ ] **Testes** — Cobertura de testes unitários para handlers e services
+- [ ] **Landing page** — Revisão de conteúdo e melhorias de acessibilidade
 
 ---
 
-### 6. Busca textual (`/buscar`)
+## 📋 Próximas Entregas
 
-Buscar transações por texto na descrição ou tags.
+### Curto Prazo (prioridade alta)
 
-**Fluxo:**
-```sql
-SELECT * FROM transactions
-WHERE user_id = ?
-  AND (description ILIKE '%termo%' OR tags::text ILIKE '%termo%')
-ORDER BY transaction_date DESC
-LIMIT 20;
-```
+| Feature | Descrição | Por que |
+|---------|-----------|--------|
+| **Exportar CSV** | `/exportar` baixa extrato como CSV | Útil para planilhas e declaração |
+| **Transações recorrentes** | Agendamento com repetição mensal/semanal | Contas fixas (aluguel, assinaturas) |
+| **Orçamentos** | Limite mensal por categoria com alerta | Controle de gastos |
 
-**Comando:** `/buscar ifood`, `/buscar #trabalho`
+### Médio Prazo
 
-**Melhoria futura:** Usar pg_trgm + GIN index na `description` para busca fuzzy.
+| Feature | Descrição |
+|---------|-----------|
+| **Gráficos** | `/grafico` com pizza de categorias, barras de evolução mensal |
+| **Múltiplas contas por usuário** | Vincular mais de um Telegram ao mesmo perfil |
+| **Split de transação** | Ratear um valor entre múltiplas categorias |
+| **Anexar recibo** | Associar imagem à transação |
+| **Notificações** | Lembrete diário/semanal para registrar gastos |
 
-**Esforço:** 1–2h
+### Longo Prazo
 
----
-
-### 7. Dashboard web
-
-Transformar a landing page estática em um dashboard funcional conectado ao mesmo banco.
-
-**Componentes:**
-- Login via Telegram (deep link com `start` parameter)
-- Visualização de extrato com os mesmos filtros do bot
-- Gráficos interativos (Chart.js no frontend)
-- Edição de transações
-
-**Arquitetura:**
-```
-Frontend (HTML/JS) → Supabase REST API → Dados do usuário
-```
-Usar o `telegram_id` como chave de autenticação (passado via URL: `?user=123`).
-
-**Esforço:** 10–20h
+| Feature | Descrição |
+|---------|-----------|
+| **Web Dashboard** | Interface web para visualização, além do Telegram |
+| **Importação bancária** | OFX/OFD para importar extratos automaticamente |
+| **Compartilhamento** | Orçamento familiar compartilhado entre usuários |
+| **Multi-moeda** | Suporte a USD, EUR com conversão automática |
+| **Metas financeiras** | Definir objetivos de economia com acompanhamento |
 
 ---
 
-## 🔮 Prioridade Baixa (Ideias Futuras)
+## 📈 Métricas
 
-### 8. Múltiplas moedas
-
-Suporte a USD, EUR, etc. com conversão automática.
-
-**Migration:** Adicionar `currency TEXT DEFAULT 'BRL'` na `transactions`.
-**Comando:** `/despesa 50 --usd`, `/despesa 50 --eur`
-**API de câmbio:** AwesomeAPI (bruta, gratuita).
-
-**Esforço:** 3–4h
+| Indicador | Atual | Meta |
+|-----------|-------|------|
+| Handlers TypeScript | ~15 comandos + ~40 callbacks | — |
+| Migrations SQL | 16 | — |
+| Testes unitários | 26 | 50+ |
+| Cobertura de handlers testados | ~30% | 80%+ |
+| Common phrases NL | 12+ | 20+ |
 
 ---
 
-### 9. Backup e restauração
+## 💡 Como Contribuir
 
-Exportar tudo (transações + categorias + grupos) em JSON e importar de volta.
+Veja [`AGENTS.md`](AGENTS.md) para guia de desenvolvimento e [`README.md`](README.md) para setup do projeto.
 
-**Comandos:**
-- `/backup` — gera JSON com todos os dados do usuário
-- `/restore` — anexa o arquivo JSON para restaurar
-
-**Esforço:** 2–3h
-
----
-
-### 10. Notificações push mensais
-
-Resumo automático no início de cada mês: "📊 Fechamento de Maio: R$ 4.200 de receita, R$ 3.100 de despesa."
-
-**Implementação:** Edge Function cron (Supabase Cron) no dia 1º de cada mês.
-
-**Esforço:** 2h (+ custo de execução do cron)
-
----
-
-### 11. Suporte a grupos/compartilhamento
-
-Permitir que dois usuários compartilhem um grupo (ex: casal dividindo contas).
-
-**Migration:**
-```sql
-CREATE TABLE group_members (
-  group_id BIGINT REFERENCES groups(id) ON DELETE CASCADE,
-  user_id BIGINT REFERENCES users(id) ON DELETE CASCADE,
-  role TEXT DEFAULT 'member',
-  PRIMARY KEY (group_id, user_id)
-);
-```
-
-**Esforço:** 8–12h
-
----
-
-### 12. Fotos/comprovantes em transações
-
-Anexar foto do comprovante a uma transação.
-
-- Usar `sendPhoto` + `caption` com o ID da transação
-- O bot salva o `file_id` do Telegram na transação
-
-**Migration:** `ALTER TABLE transactions ADD COLUMN photo_file_id TEXT;`
-
-**Esforço:** 3–4h
-
----
-
-## 📋 Resumo
-
-| # | Feature | Esforço | Impacto |
-|---|---------|---------|---------|
-| 1 | Gráficos | 2–10h | ⭐⭐⭐ |
-| 2 | Exportar CSV | 1–2h | ⭐⭐ |
-| 3 | Testes | 4–8h | ⭐⭐⭐ (qualidade) |
-| 4 | Transações recorrentes | 4–6h | ⭐⭐⭐ |
-| 5 | Orçamento mensal | 6–8h | ⭐⭐⭐ |
-| 6 | Busca textual | 1–2h | ⭐⭐ |
-| 7 | Dashboard web | 10–20h | ⭐⭐⭐⭐⭐ |
-| 8 | Múltiplas moedas | 3–4h | ⭐ |
-| 9 | Backup/restore | 2–3h | ⭐⭐ |
-| 10 | Notificações mensais | 2h | ⭐⭐ |
-| 11 | Compartilhamento | 8–12h | ⭐⭐⭐ |
-| 12 | Fotos comprovantes | 3–4h | ⭐ |
+> Última atualização: Junho 2026
