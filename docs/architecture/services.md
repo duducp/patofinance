@@ -56,12 +56,26 @@ suggestSimilarCategories(userId, query, limit=3)
 
 ## `handlers/wizard.ts` — Wizard Helpers (Internal)
 
-Two internal (non-exported) helpers shared across wizard handlers to reduce code duplication:
+Three internal (non-exported) helpers shared across wizard handlers to reduce code duplication:
 
 | Function | Params | Purpose |
 |----------|--------|---------|
 | `storePromptMessageId(supabase, userId, key, messageId)` | `(any, number, string, number)` | Reads existing wizard state data, spreads it, and stores the given `key: messageId`. Used by `sendWizardStepMessage` in 5 places (category, group, tags, description, amount) to save the prompt `message_id` for later in-place editing |
 | `getNextWizardStep(supabase, wizardName, currentStepOrder)` | `(any, string, number)` | Queries `wizard_steps` for the next step after `currentStepOrder` within the given wizard. Uses `.maybeSingle()` — returns `undefined` if this is the last step. Used 10 times across `handleTransactionWizard` and `handleRecurrenceWizard` |
+| `buildStepConfirmation(step, newStateData)` | `(any, Record<string, any>)` | Builds confirmation text for a completed step (e.g., `"✅ 🔖 Tags: #mercado"`, `"✅ 🔄 Frequência: Mensal (dia 15)"`). Returns `null` if no confirmation should be shown. Called by `advanceWizardToNextStep` |
+
+### `advanceWizardToNextStep` (exported)
+
+| Function | Params | Purpose |
+|----------|--------|---------|
+| `advanceWizardToNextStep(supabase, userId, chatId, currentStep, sessionSeq, newStateData, messageId?)` | `(any, number, number, any, number, Record<string, any>, number?)` | Moves to the next wizard step or completes the wizard. Key behavior: the confirmation edit via `buildStepConfirmation` runs **before** querying the next step, so it always executes even when the current step is the last one |
+
+**Execution order:**
+1. **Confirmation edit** — If `messageId` is provided, edits the prompt in-place with `buildStepConfirmation(currentStep, newStateData)`. This always happens first, regardless of whether there's a next step
+2. **Find next step** — Queries `wizard_steps` for the step with the next `step_order` within the same wizard
+3. **Advance or complete** — If a next step exists: updates wizard state (`setWizardState`) and sends the next step via `sendWizardStepMessage`. If no next step: calls `completeWizard` (for gasto/receita) or `completeRecurrenceWizard` (for recorrencia)
+
+This ensures that when the user clicks "⏭️ Pular" or "✅ Concluir" on the **last step** (e.g., tags in gasto/receita), the prompt is still edited with the confirmation text (e.g., `"✅ 🔖 Tags: Nenhuma tag"`) before the wizard is completed.
 
 ### Usage Pattern
 
@@ -83,6 +97,10 @@ if (nextStep) {
 } else {
   await completeWizard(supabase, userId, chatId, { ...state.data, amount: value });
 }
+
+// advanceWizardToNextStep — called by callback handlers (e.g., wiz_done_tags, wiz_freq_detail)
+// Confirmation edit runs FIRST, then next step query:
+await advanceWizardToNextStep(supabase, user.id, chatId, wizard.currentStep, sessionSeq, newStateData, message.message_id);
 ```
 
 ## `services/deepseek.ts` — Natural Language Processing
