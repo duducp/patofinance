@@ -73,8 +73,8 @@ Telegram limits `callback_data` to 64 bytes. Use `truncateCallbackData()` (trunc
 
 | Prefix | Action | Message |
 |--------|--------|---------|
-| `confirm_delete_{id}` | Delete transaction | Sends new |
-| `cancel_delete` | Cancel deletion | Sends new |
+| `confirm_delete_{id}` | Delete transaction (confirmed) | Sends new |
+| `cancel_delete_{id}` | Cancel deletion | Sends new |
 | `confirm_cleanup` | Execute cleanup | Sends new |
 | `cancel_cleanup` | Cancel cleanup | Sends new |
 
