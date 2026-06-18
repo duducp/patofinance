@@ -116,18 +116,26 @@ User types text         Handler reads _promptMessageId
 
 ### Implementation
 
-In `sendWizardStepMessage`, after sending the prompt as a new message (`sentMessageId` is non-null), store the ID:
+In `sendWizardStepMessage`, after sending the prompt as a new message (`sentMessageId` is non-null), the shared `storePromptMessageId` helper stores the message ID:
 
 ```typescript
-if (step.step_key === "amount") {
-  // send prompt
-  if (sentMessageId) {
-    await supabase.from("wizard_states").update({
-      data: { ...state.data, _amountPromptMessageId: sentMessageId },
-    }).eq("user_id", userId);
-  }
+if (sentMessageId) {
+  await storePromptMessageId(supabase, userId, "_amountPromptMessageId", sentMessageId);
 }
 ```
+
+This helper is used for all 5 text-input steps (amount, description, tags, category, group). Similarly, `getNextWizardStep` replaces inline next-step queries:
+
+```typescript
+const nextStep = await getNextWizardStep(supabase, wizardName, currentStep.step_order);
+if (nextStep) {
+  // advance to next step
+} else {
+  // complete wizard
+}
+```
+
+Both helpers are defined as internal (non-exported) functions in `wizard.ts`. See [`services.md`](services.md#handlerswizardts--wizard-helpers-internal) for full documentation.
 
 In the handler (`handleTransactionWizard` / `handleRecurrenceWizard`), read and apply:
 
