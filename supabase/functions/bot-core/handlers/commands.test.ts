@@ -143,6 +143,44 @@ Deno.test("handleLogin (no args) sets correct expires_at (2 min from now)", asyn
   assertEquals(diffMs < 200_000, true, `Expiry too long: ${diffMs}ms`);
 });
 
+Deno.test("handleLogin (no args) invalidates previous pending codes", async () => {
+  const traces: CallTrace[] = [];
+  const supabase = createMockSupabase(
+    { telegram_accounts: { user_id: 42 } },
+    traces,
+  );
+
+  await handleLogin(supabase, 123, 456);
+
+  // Should update pending codes first (set used=true)
+  const updates = traces.filter((t) => t.method === "update");
+  assertEquals(updates.length >= 1, true, "Should update existing pending codes to invalidate");
+  const updateArgs = updates[0].args[0] as Record<string, unknown>;
+  assertEquals(updateArgs.used, true, "Should set used=true to invalidate");
+
+  const eqCalls = traces.filter((t) => t.method === "eq");
+  const userEq = eqCalls.find((c) => c.args[0] === "user_id");
+  assertEquals(userEq !== undefined, true, "Should filter by user_id");
+  assertEquals(userEq!.args[1], 42, "Should filter by current user");
+
+  const dirEq = eqCalls.find((c) => c.args[0] === "direction");
+  assertEquals(dirEq !== undefined, true, "Should filter by direction");
+  assertEquals(dirEq!.args[1], "telegram_to_web", "Should only invalidate telegram_to_web codes");
+
+  const usedEq = eqCalls.find((c) => c.args[0] === "used");
+  assertEquals(usedEq !== undefined, true, "Should filter by used=false");
+  assertEquals(usedEq!.args[1], false, "Should only invalidate unused codes");
+
+  // Should still insert the new code
+  const inserts = traces.filter((t) => t.method === "insert");
+  assertEquals(inserts.length >= 1, true, "Should have inserted a new code");
+
+  // Update should come before insert
+  const updateIndex = traces.findIndex((t) => t.method === "update");
+  const insertIndex = traces.findIndex((t) => t.method === "insert");
+  assertEquals(updateIndex < insertIndex, true, "Update should come before insert");
+});
+
 Deno.test("handleLogin (no args) smoke test", async () => {
   const traces: CallTrace[] = [];
   const supabase = createMockSupabase(

@@ -786,6 +786,15 @@ export async function handleLogin(supabase: any, userId: number, chatId: number,
   }
 
   // No code: generate a new login code (telegram → web flow)
+
+  // Invalidate all pending codes for this user (security: only one active code at a time)
+  await supabase
+    .from("link_codes")
+    .update({ used: true })
+    .eq("user_id", user.id)
+    .eq("direction", "telegram_to_web")
+    .eq("used", false);
+
   const codeChars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   let loginCode = "";
   for (let i = 0; i < 6; i++) {
