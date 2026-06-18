@@ -16,7 +16,7 @@ import { formatCurrencyBR, formatDateBR, parseDateBR } from "./utils/formatting.
 import { parseNaturalLanguage } from "./services/deepseek.ts";
 import { resolveCommandPeriod } from "./utils/period-parser.ts";
 import { sendTelegramMessage, sendTelegramMessageWithKeyboard, deleteTelegramMessage } from "./services/telegram.ts";
-import { getCategories, sendSimilarityWarning, normalizeString, getAllUserTags, userOrNullFilter, updateRecurrence } from "./services/database.ts";
+import { getCategories, sendSimilarityWarning, normalizeString, getAllUserTags, userOrNullFilter, updateRecurrence, getRecurrenceById } from "./services/database.ts";
 import { handleCreateCategory, handleSearch } from "./handlers/management.ts";
 import { handleCallbackQuery, handleCancelWizard } from "./handlers/callbacks.ts";
 import { handleNaturalLanguageWithFollowUp, executeNaturalLanguageAction, buildNLCategoryKeyboard } from "./handlers/nl-processing.ts";
@@ -192,11 +192,37 @@ serve(async (req: Request): Promise<Response> => {
     const wizardState = await getWizardState(supabase, existingUser.id);
     if (wizardState && !text.startsWith("/")) {
       if (wizardState.step.startsWith("recorrencia_")) {
-        await handleRecurrenceWizard(supabase, existingUser.id, message.chat.id, wizardState, text);
+        await handleRecurrenceWizard(supabase, existingUser.id, message.chat.id, wizardState, text, message.message_id);
       } else if (wizardState.step.startsWith("gasto_")) {
-        await handleTransactionWizard("expense", supabase, existingUser.id, message.chat.id, wizardState, text);
+        await handleTransactionWizard("expense", supabase, existingUser.id, message.chat.id, wizardState, text, message.message_id);
       } else if (wizardState.step.startsWith("receita_")) {
-        await handleTransactionWizard("income", supabase, existingUser.id, message.chat.id, wizardState, text);
+        await handleTransactionWizard("income", supabase, existingUser.id, message.chat.id, wizardState, text, message.message_id);
+      } else if (wizardState.step.startsWith("tx_await_desc_")) {
+        const txId = wizardState.step.replace("tx_await_desc_", "");
+        const description = text.trim();
+        if (!description) {
+          await sendTelegramMessage(message.chat.id, "✏️ A descrição não pode estar vazia. Digite um texto ou use /cancelar para cancelar.");
+          return new Response("OK", { status: 200 });
+        }
+        const { error } = await supabase.from("transactions").update({ description }).eq("id", txId).eq("user_id", existingUser.id);
+        if (error) {
+          await sendTelegramMessage(message.chat.id, "❌ Ops! Algo deu errado ao salvar a descrição.");
+          await clearWizardState(supabase, existingUser.id);
+          return new Response("OK", { status: 200 });
+        }
+        await clearWizardState(supabase, existingUser.id);
+        await incrementSessionSeq(supabase, existingUser.id);
+        const { sendTransactionSuccess } = await import("./handlers/queries.ts");
+        const data = wizardState.data;
+        await sendTransactionSuccess(supabase, message.chat.id, existingUser.id, data.type, {
+          amount: data.amount,
+          category: data.category,
+          group: data.group,
+          date: data.date,
+          description,
+          tags: data.tags,
+          transactionId: parseInt(txId, 10),
+        });
       } else if (wizardState.step === "edit_amount") {
         const amount = parseFloat(text.replace(",", "."));
         if (isNaN(amount) || amount <= 0) {
@@ -465,6 +491,24 @@ serve(async (req: Request): Promise<Response> => {
         await clearWizardState(supabase, existingUser.id);
         await incrementSessionSeq(supabase, existingUser.id);
         await sendTelegramMessage(message.chat.id, `✅ Data de início atualizada para ${formatDateBR(parsed)}!`);
+      } else if (wizardState.step === "rec_manage_ask_id") {
+        const id = text.trim();
+        if (!/^\d+$/.test(id)) {
+          await sendTelegramMessage(message.chat.id, "❌ ID inválido. Digite apenas o número da recorrência (ex: 42).");
+          return new Response("OK", { status: 200 });
+        }
+        const recId = parseInt(id, 10);
+        const rec = await getRecurrenceById(supabase, existingUser.id, recId);
+        if (!rec) {
+          await sendTelegramMessage(
+            message.chat.id,
+            `❌ Recorrência #${recId} não encontrada. Digite outro ID ou use /cancelar para cancelar.`
+          );
+          return new Response("OK", { status: 200 });
+        }
+        await clearWizardState(supabase, existingUser.id);
+        const { handleEditRecurrence } = await import("./handlers/recurrences.ts");
+        await handleEditRecurrence(supabase, message.from.id, message.chat.id, recId);
       } else if (wizardState.step === "rec_edit_freq_detail") {
         const freqType = wizardState.data.frequency_type;
         const recId = wizardState.data.recurrence_id;

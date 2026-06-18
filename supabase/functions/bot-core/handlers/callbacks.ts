@@ -294,6 +294,34 @@ export async function handleCallbackQuery(
       return;
     }
 
+    // Handle description prompt for transactions
+    if (selectedValue.startsWith("tx_desc_sim_")) {
+      const txId = selectedValue.replace("tx_desc_sim_", "");
+      const state = await getWizardState(supabase, user.id);
+      if (!state || state.step !== "tx_ask_desc") return;
+      await setWizardState(supabase, user.id, `tx_await_desc_${txId}`, state.data);
+      await sendTelegramMessage(chatId, "✏️ Digite a descrição:");
+      return;
+    }
+
+    if (selectedValue.startsWith("tx_desc_nao_")) {
+      const txId = selectedValue.replace("tx_desc_nao_", "");
+      const state = await getWizardState(supabase, user.id);
+      if (!state || state.step !== "tx_ask_desc") return;
+      await clearWizardState(supabase, user.id);
+      const { sendTransactionSuccess } = await import("./queries.ts");
+      await sendTransactionSuccess(supabase, chatId, user.id, state.data.type, {
+        amount: state.data.amount,
+        category: state.data.category,
+        group: state.data.group,
+        date: state.data.date,
+        description: "",
+        tags: state.data.tags,
+        transactionId: parseInt(txId, 10),
+      });
+      return;
+    }
+
     // ========== Statement filter panel ==========
     if (selectedValue.startsWith("stmt_")) {
       const handled = await handleFilterCallback(supabase, telegramId, chatId, selectedValue, sessionSeq, message.message_id);
@@ -316,6 +344,15 @@ export async function handleCallbackQuery(
             : "all" as const;
           await handleStatement(supabase, telegramId, chatId, page, filter, undefined, message.message_id);
         }
+      }
+      return;
+    }
+
+    // Handle recurrence list pagination
+    if (selectedValue.startsWith("rec_page_")) {
+      const page = parseInt(selectedValue.replace("rec_page_", ""), 10);
+      if (!isNaN(page)) {
+        await handleRecurrences(supabase, telegramId, chatId, page, message.message_id);
       }
       return;
     }
@@ -578,15 +615,20 @@ export async function handleCallbackQuery(
       // Store working state for toggle handler
       await setWizardState(supabase, user.id, `edit_tags_${transactionId}`, { tags: currentTags, transaction_id: transactionId });
 
-      const { keyboard } = await buildTagKeyboard(supabase, user.id, sessionSeq, {
+      const { keyboard, hasExistingTags } = await buildTagKeyboard(supabase, user.id, sessionSeq, {
         togglePrefix: `edit_tag_tog_${transactionId}_`,
-        extraButtons: [
-          [
-            { text: "✅ Concluir", callback_data: truncateCallbackData(`edit_tags_done_${transactionId}`, sessionSeq) },
-            { text: "⏭️ Limpar", callback_data: truncateCallbackData(`edit_tags_clr_${transactionId}`, sessionSeq) },
-          ],
-        ],
       });
+
+      if (hasExistingTags) {
+        keyboard.push([
+          { text: "✅ Concluir", callback_data: truncateCallbackData(`edit_tags_done_${transactionId}`, sessionSeq) },
+          { text: "⏭️ Limpar", callback_data: truncateCallbackData(`edit_tags_clr_${transactionId}`, sessionSeq) },
+        ]);
+      } else {
+        keyboard.push([
+          { text: "✅ Concluir", callback_data: truncateCallbackData(`edit_tags_done_${transactionId}`, sessionSeq) },
+        ]);
+      }
 
       let prompt = `🔖 *Editar tags* (transação #${transactionId})\n`;
       if (currentTags.length > 0) {
@@ -608,15 +650,20 @@ export async function handleCallbackQuery(
 
         const newTags = await toggleTagInWizardState(supabase, user.id, tag);
 
-        const { keyboard } = await buildTagKeyboard(supabase, user.id, sessionSeq, {
+        const { keyboard, hasExistingTags } = await buildTagKeyboard(supabase, user.id, sessionSeq, {
           togglePrefix: `edit_tag_tog_${transactionId}_`,
-          extraButtons: [
-            [
-              { text: "✅ Concluir", callback_data: truncateCallbackData(`edit_tags_done_${transactionId}`, sessionSeq) },
-              { text: "⏭️ Limpar", callback_data: truncateCallbackData(`edit_tags_clr_${transactionId}`, sessionSeq) },
-            ],
-          ],
         });
+
+        if (hasExistingTags) {
+          keyboard.push([
+            { text: "✅ Concluir", callback_data: truncateCallbackData(`edit_tags_done_${transactionId}`, sessionSeq) },
+            { text: "⏭️ Limpar", callback_data: truncateCallbackData(`edit_tags_clr_${transactionId}`, sessionSeq) },
+          ]);
+        } else {
+          keyboard.push([
+            { text: "✅ Concluir", callback_data: truncateCallbackData(`edit_tags_done_${transactionId}`, sessionSeq) },
+          ]);
+        }
 
         let prompt = `🔖 *Editar tags* (transação #${transactionId})\n`;
         if (newTags.length > 0) {
@@ -694,13 +741,13 @@ export async function handleCallbackQuery(
       const wizard = await getCurrentWizardStep(supabase, user.id);
       if (!wizard) return;
       const newStateData = { ...wizard.state.data };
-      await advanceWizardToNextStep(supabase, user.id, chatId, wizard.currentStep, sessionSeq, newStateData);
+      await advanceWizardToNextStep(supabase, user.id, chatId, wizard.currentStep, sessionSeq, newStateData, message.message_id);
       return;
     }
 
     // Handle wizard skip (description or tags)
     if (selectedValue === "wizard_skip_description" || selectedValue === "wizard_skip_tags") {
-      await handleWizardSkip(supabase, user.id, chatId, sessionSeq);
+      await handleWizardSkip(supabase, user.id, chatId, sessionSeq, message.message_id);
       return;
     }
 
@@ -795,8 +842,11 @@ export async function handleCallbackQuery(
       if (!state) return;
       const underscoreIndex = state.step.indexOf("_");
       const currentWizardName = state.step.substring(0, underscoreIndex);
-      await sendTelegramMessage(chatId, "Informe a data (formato: DD/MM/YYYY):");
-      await setWizardState(supabase, user.id, `${currentWizardName}_custom_date`, state.data);
+      const msgId = await sendTelegramMessage(chatId, "📅 Informe a data (formato: DD/MM/YYYY):");
+      await setWizardState(supabase, user.id, `${currentWizardName}_custom_date`, {
+        ...state.data,
+        _customDatePromptMessageId: msgId,
+      });
       return;
     }
 
@@ -838,10 +888,6 @@ export async function handleCallbackQuery(
       return;
     }
 
-    if (selectedValue === "rec_close") {
-      return;
-    }
-
     if (selectedValue === "rec_new") {
       await setWizardState(supabase, user.id, "recorrencia_type", {});
       const { data: nextStep } = await supabase
@@ -861,6 +907,25 @@ export async function handleCallbackQuery(
     if (selectedValue === "rec_manage") {
       const { handleManageRecurrences } = await import("./recurrences.ts");
       await handleManageRecurrences(supabase, telegramId, chatId);
+      return;
+    }
+
+    if (selectedValue.startsWith("rec_txlist_")) {
+      const rest = selectedValue.replace("rec_txlist_", "");
+      // Format: rec_txlist_{id} or rec_txlist_{id}_p{page}
+      const pIdx = rest.lastIndexOf("_p");
+      let recId: number, page: number;
+      if (pIdx > 0) {
+        recId = parseInt(rest.substring(0, pIdx), 10);
+        page = parseInt(rest.substring(pIdx + 2), 10) || 0;
+      } else {
+        recId = parseInt(rest, 10);
+        page = 0;
+      }
+      if (!isNaN(recId)) {
+        const { handleRecurrenceTransactions } = await import("./recurrences.ts");
+        await handleRecurrenceTransactions(supabase, telegramId, chatId, recId, page, message.message_id);
+      }
       return;
     }
 
@@ -1001,13 +1066,19 @@ export async function handleCallbackQuery(
               await sendTelegramMessageWithKeyboard(chatId, "🔄 Selecione a nova frequência:", freqKeyboard);
             }
           } else if (field === "tags") {
-            const { keyboard } = await buildTagKeyboard(supabase, user.id, sessionSeq, {
+            const { keyboard, hasExistingTags } = await buildTagKeyboard(supabase, user.id, sessionSeq, {
               togglePrefix: `rec_edit_set_tag_${recId}_`,
-              extraButtons: [
-                [{ text: "✅ Concluir", callback_data: addSession(`rec_edit_set_tag_${recId}_done`, sessionSeq) }],
-                [{ text: "🗑️ Limpar tags", callback_data: addSession(`rec_edit_set_tag_${recId}_clr`, sessionSeq) }],
-              ],
             });
+            if (hasExistingTags) {
+              keyboard.push([
+                { text: "✅ Concluir", callback_data: addSession(`rec_edit_set_tag_${recId}_done`, sessionSeq) },
+                { text: "🗑️ Limpar tags", callback_data: addSession(`rec_edit_set_tag_${recId}_clr`, sessionSeq) },
+              ]);
+            } else {
+              keyboard.push([
+                { text: "✅ Concluir", callback_data: addSession(`rec_edit_set_tag_${recId}_done`, sessionSeq) },
+              ]);
+            }
             await sendTelegramMessageWithKeyboard(chatId, "🔖 Selecione as tags:", keyboard);
           }
         }
@@ -1106,13 +1177,19 @@ export async function handleCallbackQuery(
           : [...currentTags, tag];
         await updateRecurrence(supabase, user.id, recId, { tags: newTags });
         // Re-render the tag keyboard
-        const { keyboard } = await buildTagKeyboard(supabase, user.id, sessionSeq, {
+        const { keyboard, hasExistingTags } = await buildTagKeyboard(supabase, user.id, sessionSeq, {
           togglePrefix: `rec_edit_set_tag_${recId}_`,
-          extraButtons: [
-            [{ text: "✅ Concluir", callback_data: addSession(`rec_edit_set_tag_${recId}_done`, sessionSeq) }],
-            [{ text: "🗑️ Limpar tags", callback_data: addSession(`rec_edit_set_tag_${recId}_clr`, sessionSeq) }],
-          ],
         });
+        if (hasExistingTags) {
+          keyboard.push([
+            { text: "✅ Concluir", callback_data: addSession(`rec_edit_set_tag_${recId}_done`, sessionSeq) },
+            { text: "🗑️ Limpar tags", callback_data: addSession(`rec_edit_set_tag_${recId}_clr`, sessionSeq) },
+          ]);
+        } else {
+          keyboard.push([
+            { text: "✅ Concluir", callback_data: addSession(`rec_edit_set_tag_${recId}_done`, sessionSeq) },
+          ]);
+        }
         await editTelegramMessageWithKeyboard(chatId, message.message_id, "🔖 Selecione as tags:", keyboard);
       }
       return;
@@ -1136,7 +1213,7 @@ export async function handleCallbackQuery(
       const freq = selectedValue.replace("wiz_frequency_", "");
       if (freq === "daily") {
         const newStateData = { ...freqWizard.state.data, frequency_type: "daily", frequency_interval: 1 };
-        await advanceWizardToNextStep(supabase, user.id, chatId, freqWizard.currentStep, sessionSeq, newStateData);
+        await advanceWizardToNextStep(supabase, user.id, chatId, freqWizard.currentStep, sessionSeq, newStateData, message.message_id);
       } else {
         await setWizardState(supabase, user.id, "recorrencia_freq_detail", {
           ...freqWizard.state.data,
@@ -1156,7 +1233,13 @@ export async function handleCallbackQuery(
           }))];
           await sendTelegramMessageWithKeyboard(chatId, prompts[freq]!, kb);
         } else {
-          await sendTelegramMessage(chatId, prompts[freq]!);
+          const msgId = await sendTelegramMessage(chatId, prompts[freq]!);
+          if (msgId) {
+            await supabase.from("wizard_states").update({
+              data: { ...freqWizard.state.data, frequency_type: freq, _freqDetailPromptMessageId: msgId },
+              expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+            }).eq("user_id", user.id);
+          }
         }
       }
       return;
@@ -1180,7 +1263,7 @@ export async function handleCallbackQuery(
             ...freqWizard.state.data,
             frequency_type: "weekly",
             frequency_interval: day,
-          });
+          }, message.message_id);
         }
       }
       return;
@@ -1194,7 +1277,7 @@ export async function handleCallbackQuery(
     if (selectedValue.startsWith(prefix)) {
       const value = selectedValue.replace(prefix, "");
       const newStateData = { ...wizard.state.data, [stepKey]: value };
-      await advanceWizardToNextStep(supabase, user.id, chatId, wizard.currentStep, sessionSeq, newStateData);
+      await advanceWizardToNextStep(supabase, user.id, chatId, wizard.currentStep, sessionSeq, newStateData, message.message_id);
     }
   } catch (error) {
     console.error("Error handling callback query:", error);
