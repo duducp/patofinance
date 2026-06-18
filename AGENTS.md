@@ -363,7 +363,7 @@ Every wizard step now follows a **visual confirmation pattern**:
 
 ## Exported Functions Reference
 
-> 📖 Funções completas de `database.ts`, `telegram.ts`, `commands.ts`, `recurrences.ts`, `management.ts`, `queries.ts`, `wizard.ts`, `nl-processing.ts` — em [`docs/architecture/services.md`](docs/architecture/services.md) e [`docs/architecture/handlers.md`](docs/architecture/handlers.md)
+> 📖 Funções completas de `database.ts`, `telegram.ts`, `commands.ts`, `recurrences.ts`, `management.ts`, `queries.ts`, `wizard.ts`, `nl-processing.ts`, `statement.ts` — em [`docs/architecture/services.md`](docs/architecture/services.md) e [`docs/architecture/handlers.md`](docs/architecture/handlers.md)
 
 ### `handlers/callbacks.ts` -- Inline keyboard routing
 
@@ -408,14 +408,14 @@ supabase/
     │   ├── deepseek.ts         # callDeepSeek, parseNaturalLanguage
     │   └── deepseek.test.ts    # Unit tests for DeepSeek parsing
     └── handlers/
-        ├── commands.ts             # 15 slash command handlers + shared handleEntity
+        ├── commands.ts             # 14 slash command handlers (handleCategory, handleGroup, etc.)
         ├── commands.test.ts        # 5 unit tests for handleLogin, code generation
-        ├── management.ts           # 8 entity management functions with pagination
-        ├── queries.ts              # getSummaryData, formatSummaryMessage, query handlers
+        ├── management.ts           # 10 entity management functions (CRUD + search + list + delete)
+        ├── queries.ts              # getSummaryData, formatSummaryMessage, query handlers + sendTransactionSuccess
         ├── queries.test.ts         # Unit tests for query functions
         ├── statement.ts            # Statement filter panel, generic filter selectors
         ├── nl-processing.ts        # NL routing + wizard initiation
-        ├── recurrences.ts          # 10 recurrence handlers (list/detail/advance/skip/archive/activate/edit)
+        ├── recurrences.ts          # 13 recurrence handlers (list/manage/detail/advance+confirm/skip+confirm/archive+confirm/activate+confirm/edit/transactions)
         ├── callbacks.ts            # ~55 callback prefix handlers
         └── wizard.ts               # 7 wizard functions (state + step + advance) + visual confirmation + internal helpers (storePromptMessageId, getNextWizardStep) + entity management (rename, delete prompt, delete execute)
 ```
