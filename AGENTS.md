@@ -417,5 +417,5 @@ supabase/
         ├── nl-processing.ts        # NL routing + wizard initiation
         ├── recurrences.ts          # 10 recurrence handlers (list/detail/advance/skip/archive/activate/edit)
         ├── callbacks.ts            # ~55 callback prefix handlers
-        └── wizard.ts               # 7 wizard functions (state + step + advance) + visual confirmation + internal helpers (storePromptMessageId, getNextWizardStep)
+        └── wizard.ts               # 7 wizard functions (state + step + advance) + visual confirmation + internal helpers (storePromptMessageId, getNextWizardStep) + entity management (rename, delete prompt, delete execute)
 ```
