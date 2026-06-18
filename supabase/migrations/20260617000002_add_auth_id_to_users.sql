@@ -1,20 +1,14 @@
--- Add auth_id column to users table for linking Telegram users to Supabase Auth
--- This enables the Telegram→Web login flow and Web→Telegram vinculação
+-- NO-OP: auth_id column was already added by 20260617000000_add_rls_policies.sql
+--
+-- Migration 20260617000000_add_rls_policies.sql already:
+--   1. Added auth_id UUID REFERENCES auth.users(id) ON DELETE SET NULL to users
+--   2. Created UNIQUE INDEX idx_users_auth_id ON users(auth_id) WHERE auth_id IS NOT NULL
+--   3. Added COMMENT ON COLUMN users.auth_id
+--
+-- This migration is kept as a no-op to avoid changing migration numbering.
+-- Logically, this migration number (17000002) has been superseded by 17000000
+-- which was created later in commit order but has an earlier migration number.
 
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_name = 'users' AND column_name = 'auth_id'
-  ) THEN
-    ALTER TABLE users ADD COLUMN auth_id UUID REFERENCES auth.users(id) ON DELETE SET NULL;
-  END IF;
-END $$;
-
--- Index for fast lookup by auth_id (IF NOT EXISTS handles re-runs)
-CREATE INDEX IF NOT EXISTS idx_users_auth_id ON users(auth_id);
-
--- Grant permissions
-GRANT UPDATE(auth_id) ON users TO service_role;
-
-COMMENT ON COLUMN users.auth_id IS 'Supabase Auth user UUID. Set when linking Telegram account to Web account via /login flows.';
+-- Migrations that depend on auth_id existing: none (they check IF NOT EXISTS or read the current schema)
+-- The service_role GRANT for auth_id is unnecessary (service_role bypasses RLS).
+-- The COMMENT was already added by 17000000.

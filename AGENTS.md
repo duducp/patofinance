@@ -280,6 +280,40 @@ When building user-facing strings with conditional plurals in Portuguese, **alwa
 
 **Note:** Keep the numeric value (`${count}`) **outside** the ternary to avoid duplication and ensure it interpolates correctly at the template literal level (nested `${}` inside double-quoted strings does not interpolate).
 
+### 8. Generic Filter Selector Pattern
+
+When multiple inline keyboard selectors follow the same pattern (read wizard state → build grid with ✅ selection indicators → extra buttons → Voltar), extract a shared function:
+
+```typescript
+// Generic selector helper in statement.ts
+async function showFilterSelector(
+  supabase: any,
+  userId: number,
+  chatId: number,
+  messageId: number | undefined,
+  sessionSeq: number,
+  config: SelectorConfig,  // { title, options, isSelected, columns, extraButtons, messageSuffix }
+): Promise<void>
+```
+
+Each concrete selector keeps only its unique logic (fetching data, defining options/`isSelected`/extra buttons) and delegates to `showFilterSelector`. Saves ~70 lines of boilerplate across 6 selectors.
+
+### 9. Generic Filter Field Update Pattern
+
+When multiple callback handlers follow the same pattern (extract value → read wizard state → set filter field → update DB → re-render), extract a shared helper:
+
+```typescript
+async function updateFilterField(
+  supabase: any, userId: number, chatId: number,
+  messageId: number | undefined, sessionSeq: number,
+  selectedValue: string, prefix: string,
+  setter: (filters: ExtratoFilters, value: any) => void,
+  transform?: (v: string) => any,
+): Promise<void>
+```
+
+Replaces 5 duplicated `stmt_f_*` blocks (category, group, type, status, period) with 1-liner calls. Saves ~30 lines.
+
 ## NL Processing
 
 Natural language via DeepSeek API. Also used to parse period/date expressions in commands (`/saldo mes passado`, `/extrato janeiro 2025`, `/resumo ultimo mes`).
@@ -530,39 +564,9 @@ deno check supabase/functions/bot-core/index.ts
 # Check the nlCache (5min TTL): same query within 5min uses cached response
 ```
 
-### 8. Generic Filter Selector Pattern
+### 8. Supabase Dashboard
 
-When multiple inline keyboard selectors follow the same pattern (read wizard state → build grid with ✅ selection indicators → extra buttons → Voltar), extract a shared function:
-
-```typescript
-// Generic selector helper in statement.ts
-async function showFilterSelector(
-  supabase: any,
-  userId: number,
-  chatId: number,
-  messageId: number | undefined,
-  sessionSeq: number,
-  config: SelectorConfig,  // { title, options, isSelected, columns, extraButtons, messageSuffix }
-): Promise<void>
-```
-
-Each concrete selector keeps only its unique logic (fetching data, defining options/`isSelected`/extra buttons) and delegates to `showFilterSelector`. Saves ~70 lines of boilerplate across 6 selectors.
-
-### 9. Generic Filter Field Update Pattern
-
-When multiple callback handlers follow the same pattern (extract value → read wizard state → set filter field → update DB → re-render), extract a shared helper:
-
-```typescript
-async function updateFilterField(
-  supabase: any, userId: number, chatId: number,
-  messageId: number | undefined, sessionSeq: number,
-  selectedValue: string, prefix: string,
-  setter: (filters: ExtratoFilters, value: any) => void,
-  transform?: (v: string) => any,
-): Promise<void>
-```
-
-Replaces 5 duplicated `stmt_f_*` blocks (category, group, type, status, period) with 1-liner calls. Saves ~30 lines.
+Useful dashboard pages for debugging:
 - **Edge Functions** -> `bot-core` -> Logs: see function invocations and errors
 - **SQL Editor**: run ad-hoc queries to inspect data:
   ```sql
@@ -678,7 +682,7 @@ make landing-open       # Open landing page locally (serves landing/ on port 808
 ```bash
 make check              # Type-check (deno check)
 make lint               # Lint (deno lint)
-make unit               # Run unit tests (26 tests)
+make unit               # Run unit tests (33+ tests)
 make test-boot          # Verify function boots without error
 make help              # Show all available commands
 make test               # check + lint + unit + test-boot
@@ -739,8 +743,11 @@ Project ref: `zjcfjqtlijktrikgvwrv`
 20260616000003_fix_description_prompt_newlines.sql
 20260616000004_separate_telegram_accounts.sql   # telegram_accounts table, decouple from users
 20260616000005_add_search_index.sql               # GIN trigram index on transactions.description
+20260617000000_add_rls_policies.sql               # RLS policies for web + auth_id (FK→auth.users) on users
 20260617000001_add_link_codes.sql                  # link_codes table for Telegram↔Web auth codes
-20260617000002_add_auth_id_to_users.sql            # auth_id (FK→auth.users) on users
+20260617000002_add_auth_id_to_users.sql            # (no-op — auth_id already added by 17000000)
+20260617000003_add_link_codes_cleanup_cron.sql     # pg_cron job to clean expired link_codes daily
+20260617000004_grant_link_codes_to_authenticated.sql  # GRANT SELECT/INSERT/UPDATE on link_codes to authenticated role
 ```
 
 ### Predefined Categories
@@ -781,6 +788,14 @@ In the wizard:
 | `sendSimilarityWarning(supabase, userId, chatId, type, query)` | `void` | `handleTransaction` |
 | `getAllUserTags(supabase, userId)` | `string[]` | Tag editors |
 | `transferUserData(supabase, oldUserId, newUserId, telegramId)` | `{success, error?}` | `/login CODIGO` — transfers transactions/categories/groups, deletes old user |
+| `userOrNullFilter(userId)` | `string` | Build `.or()` filter: `"user_id.eq.X,user_id.is.null"` |
+| `typeOrNullFilter(type)` | `string` | Build `.or()` filter: `"transaction_type.eq.X,transaction_type.is.null"` |
+| `deduplicateByNormalizedName(items)` | `any[]` | Remove duplicate items with same `normalized_name` (user-owned overrides system) |
+| `createTransaction(supabase, data)` | `{error, id?}` | Insert a transaction with all fields |
+| `deleteTransactionById(supabase, userId, transactionId)` | `{success, error?}` | Delete a transaction by ID (scoped to user) |
+| `getTransactionById(supabase, userId, transactionId, selectFields?)` | `any \| null` | Fetch transaction with category + group joins |
+| `findGroupByName(supabase, userId, name)` | `{id, name} \| null` | Look up a group by name (case-insensitive) |
+| `listTransactionsPaginated(supabase, userId, limit, page, tag?)` | `{transactions[], totalCount, hasMore}` | Paginated list with COUNT query (shared by list and tag views) |
 
 ### `services/telegram.ts` -- Telegram API wrapper
 
@@ -790,17 +805,17 @@ In the wizard:
 | `sendTelegramMessageWithKeyboard(chatId, text, keyboard)` | Send with inline keyboard, returns `message_id \| null` |
 | `editTelegramMessageWithKeyboard(chatId, messageId, text, keyboard)` | Edit existing message, returns `message_id \| null` |
 | `answerCallbackQuery(callbackQueryId)` | Acknowledge callback (required by Telegram) |
+| `deleteTelegramMessage(chatId, messageId)` | Delete a message by chat + message ID |
 
 ### `handlers/commands.ts` -- Slash command handlers
 
 | Function | Command | Notes |
 |----------|---------|-------|
 | `handleStart(chatId, firstName)` | `/start` | |
-| `handleHelp(chatId)` | `/ajuda` | |
-| `/agendadas` / `/futuras` | Calls `handleStatement` with `"future"` filter | Reuses extrato infrastructure |
+| `handleHelp(chatId, args?)` | `/ajuda` | `/ajuda <comando>` shows detailed help for that command |
 | `handleBalance(supabase, userId, chatId, args?)` | `/saldo` | Period via DeepSeek (ex: `mes passado`, `janeiro`). `--grupo` flag for group filter |
 | `handleTransaction(type, supabase, userId, chatId, args, descriptionOverride?)` | `/despesa`, `/receita` | Unified handler, `type: "expense"|"income"`. Flags: `--descricao`, `--grupo`, `--tags`, `--data` |
-| `handleStatement(supabase, userId, chatId, page?, filter?, filters?)` | `/extrato` | Pagination + `ExtratoFilters`. Period via DeepSeek (ex: `janeiro 2025`). `--grupo` flag for group filter |
+| `handleStatement(supabase, userId, chatId, page?, filter?, filters?)` | `/extrato`, `/agendadas`, `/futuras` | Pagination + `ExtratoFilters`. Period via DeepSeek (ex: `janeiro 2025`). `--grupo` flag for group filter. Filter `"future"` lists scheduled transactions |
 | `handleSummary(supabase, userId, chatId, args?)` | `/resumo` | Delegates to `getSummaryData` + `formatSummaryMessage`. Period via DeepSeek (ex: `ultimo mes`). `--grupo` flag for group filter |
 | `handleDetails(supabase, userId, chatId, args)` | `/detalhes` | Shows all transaction details with edit keyboard |
 | `handleEntity(type, supabase, userId, chatId, args)` | (shared) | `type: "category"|"group"` -- list, create, suggest |
@@ -809,8 +824,9 @@ In the wizard:
 | `handleTag(supabase, userId, chatId, args)` | `/tag` | Lists all tags with transaction counts + clickable buttons |
 | `handleCleanup(supabase, userId, chatId)` | `/limpar` | Removes unused categories (excluding `is_predefined`) + groups (excluding `is_default`). Tags are NOT shown — they're metadata on transactions, not deletable entities. |
 | `handleReset(supabase, userId, chatId)` | `/resetar` | Shows stats, sets `reset_confirm` wizard state. User types `RESETAR` to confirm → deletes wizard_states → transactions → categories → groups → users (cascade). |
-| `handleLogin(supabase, userId, chatId)` | `/login` | Generates 6-char code, saves to `link_codes` with `telegram_to_web` direction, sends to user |
-| `handleLogin(supabase, userId, chatId, args)` | `/login` | No args: generates 6-char code (`telegram_to_web`). With code: validates code from dashboard (`web_to_telegram`), calls `transferUserData` to merge accounts |
+| `handleLogin(supabase, userId, chatId, args?)` | `/login` | No args: generates 6-char code (`telegram_to_web`), saves to `link_codes`. With code: validates `web_to_telegram` code, calls `transferUserData` to merge accounts |
+| `showDetailsMainView(supabase, userId, chatId, transactionId, messageId?)` | `void` | Show transaction detail with 📝 Editar + 🗑️ Excluir buttons |
+| `showDetailsEditActions(supabase, userId, chatId, transactionId, messageId)` | `void` | Show edit action buttons (amount, category, date, group, tags, description) |
 
 ### `handlers/management.ts` -- Entity management
 
@@ -857,7 +873,7 @@ In the wizard:
 
 ### `handlers/callbacks.ts` -- Inline keyboard routing
 
-Routes ~42 callback prefixes via `handleCallbackQuery`. Key callbacks:
+Routes ~50 callback prefixes via `handleCallbackQuery`. Key callbacks:
 
 | Prefix | Purpose | Sends vs Edits |
 |--------|---------|----------------|
@@ -917,7 +933,7 @@ Routes ~42 callback prefixes via `handleCallbackQuery`. Key callbacks:
 ```text
 supabase/
 ├── config.toml               # verify_jwt=false for local
-├── migrations/               # 16 SQL migrations
+├── migrations/               # 21 SQL migrations
 │   ├── 20260614000000_*.sql
 │   ├── 20260614000001_*.sql
 │   ├── 20260614000002_*.sql
@@ -933,29 +949,44 @@ supabase/
 │   ├── 20260616000002_*.sql  # Description step
 │   ├── 20260616000003_*.sql  # Fix prompts
 │   ├── 20260616000004_*.sql  # telegram_accounts
-│   └── 20260616000005_*.sql  # search index on transactions.description
+│   ├── 20260616000005_*.sql  # search index on transactions.description
+│   ├── 20260617000000_*.sql  # RLS policies for web + auth_id on users
+│   ├── 20260617000001_*.sql  # link_codes for Telegram↔Web auth
+│   ├── 20260617000002_*.sql  # (no-op — auth_id already in 17000000)
+│   ├── 20260617000003_*.sql  # pg_cron cleanup of expired link_codes
+│   └── 20260617000004_*.sql  # GRANT link_codes to authenticated role
+├── functions/auth-telegram/
+│   ├── index.ts              # Webhook: validates login codes, creates Auth sessions
+│   ├── config.ts             # Env vars, rate limit constants, cleanup interval
+│   └── index.test.ts         # 24 unit tests (CORS, validation, lookup, Auth creation, rate limit)
 └── functions/bot-core/
     ├── index.ts              # Entry point (serve handler + wizard step routing)
     ├── config.ts             # Env vars, commonPhrases map, nlCache, periodCache
     ├── types/
     │   └── index.ts          # DeepSeekResponse, Telegram types, InlineKeyboard, WizardState
     ├── utils/
-    │   ├── formatting.ts     # formatCurrencyBR, formatDateBR, getTodayISOBR, parseDateBR
-    │   ├── rate-limiter.ts   # isRateLimited, truncateCallbackData (60 chars)
-    │   ├── date-helpers.ts   # getDateRange, getMonthName, getNowBR
-    │   ├── command-parsing.ts # parseCommand
-    │   ├── period-parser.ts  # resolveCommandPeriod (NL period via DeepSeek for commands)
-    │   ├── help-texts.ts     # commandHelpMap + findHelp() for /ajuda <comando>
-    │   └── session.ts        # addSession, removeSession, incrementSessionSeq, getSessionSeq, validateCallbackSession
+    │   ├── formatting.ts       # formatCurrencyBR, formatDateBR, getTodayISOBR, parseDateBR
+    │   ├── rate-limiter.ts     # isRateLimited, cleanupRateLimit, truncateCallbackData (60 chars)
+    │   ├── date-helpers.ts     # getDateRange, getMonthName, getNowBR
+    │   ├── keyboard.ts         # buildKeyboardGrid, buildEditKeyboard
+    │   ├── command-parsing.ts  # parseCommand
+    │   ├── command-parsing.test.ts
+    │   ├── period-parser.ts    # resolveCommandPeriod (NL period via DeepSeek for commands)
+    │   ├── help-texts.ts       # commandHelpMap + findHelp() for /ajuda <comando>
+    │   └── session.ts          # addSession, removeSession, incrementSessionSeq, getSessionSeq, validateCallbackSession
     ├── services/
-    │   ├── telegram.ts       # 4 Telegram API wrappers (send, sendWithKeyboard, edit, answer)
-    │   ├── database.ts       # 11 functions: CRUD + suggestSimilar* + getAllUserTags
-    │   └── deepseek.ts       # callDeepSeek, parseNaturalLanguage, parseCommandPeriod, chat history
+    │   ├── telegram.ts         # 5 Telegram API wrappers (send, sendWithKeyboard, edit, answer, delete)
+    │   ├── database.ts         # 19 functions: CRUD + filters + suggestSimilar* + transferUserData
+    │   ├── deepseek.ts         # callDeepSeek, parseNaturalLanguage, parseCommandPeriod, chat history
+    │   └── deepseek.test.ts    # Unit tests for DeepSeek parsing
     └── handlers/
-        ├── commands.ts       # 15 slash command handlers + shared handleEntity
-        ├── management.ts     # 8 entity management functions with pagination
-        ├── queries.ts        # getSummaryData, formatSummaryMessage, query handlers
-        ├── nl-processing.ts  # NL routing + wizard initiation
-        ├── callbacks.ts      # ~25 callback prefix handlers + handleGroupFilterCallback
-        └── wizard.ts         # 7 wizard functions (state + step + advance)
+        ├── commands.ts             # 15 slash command handlers + shared handleEntity
+        ├── commands.test.ts        # 9 unit tests for handleLogin, code generation, transfer
+        ├── management.ts           # 8 entity management functions with pagination
+        ├── queries.ts              # getSummaryData, formatSummaryMessage, query handlers
+        ├── queries.test.ts         # Unit tests for query functions
+        ├── statement.ts            # Statement filter panel, generic filter selectors
+        ├── nl-processing.ts        # NL routing + wizard initiation
+        ├── callbacks.ts            # ~50 callback prefix handlers + handleGroupFilterCallback
+        └── wizard.ts               # 7 wizard functions (state + step + advance)
 ```
