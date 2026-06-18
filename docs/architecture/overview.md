@@ -81,11 +81,11 @@ POST /bot-core
 
 5. **Wizard System**: Multi-step transactions use a `wizard_states` table with 10-minute TTL. State is persisted in JSONB. The wizard handles amount → category → group → date → tags in sequence. Recurrence creation wizard (8 steps) follows the same pattern with frequency sub-steps.
 
-6. **Recurring Transactions**: `recurrences` table with PL/pgSQL `process_recurrences()` running via `pg_cron` daily at 06:00 BRT. Creates transactions from due recurrences, enqueues errors in `notification_queue`. Errors are drained at the start of each user interaction.
+6. **Recurring Transactions**: `recurrences` table with PL/pgSQL `process_recurrences()` running via `pg_cron` daily at 06:00 BRT. Creates transactions from due recurrences, enqueues errors in `notification_queue`. Errors are drained at the start of each user interaction. Users can also create, advance, skip, archive, and edit recurrences interactively via `/recorrencia` wizard.
 
-6. **Natural Language Fallback**: If `DEEPSEEK_API_KEY` is not set, the bot responds to slash commands only. NL uses a 3-tier approach: common phrases (no API), cache (per-user/5min TTL), DeepSeek API.
+7. **Natural Language Fallback**: If `DEEPSEEK_API_KEY` is not set, the bot responds to slash commands only. NL uses a 3-tier approach: common phrases (no API), cache (per-user/5min TTL), DeepSeek API.
 
-7. **No Web Framework**: Pure Deno `serve()` handler. No Oak, Hono, or Express-like middleware. Keeps bundle size small and boot time fast.
+8. **No Web Framework**: Pure Deno `serve()` handler. No Oak, Hono, or Express-like middleware. Keeps bundle size small and boot time fast.
 
 ## Internal URLs
 
@@ -117,7 +117,9 @@ bot-core/
     ├── commands.ts        # 14 slash command handlers + shared handleEntity
     ├── management.ts      # 8 entity management functions with pagination
     ├── queries.ts         # getSummaryData, formatSummaryMessage, query handlers
+    ├── recurrences.ts     # 12 handlers: list, detail, advance, skip, archive, activate, edit
+    ├── statement.ts       # Filter panel: category, group, tag, type, status, period selectors
     ├── nl-processing.ts   # NL routing + wizard initiation
-    ├── callbacks.ts       # ~45 callback prefixes + filter panel
+    ├── callbacks.ts       # ~55 callback prefixes + filter panel
     └── wizard.ts          # 7 wizard functions (state + step + advance)
 ```

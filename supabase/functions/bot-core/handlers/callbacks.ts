@@ -206,7 +206,7 @@ export async function handleCallbackQuery(
         await sendTelegramMessage(chatId, "✅ Transação excluída com sucesso!");
         if (recId) {
           const { handleSkipRecurrence } = await import("./recurrences.ts");
-          await handleSkipRecurrence(supabase, user.id, chatId, recId);
+          await handleSkipRecurrence(supabase, telegramId, chatId, recId);
         }
       } else {
         await sendTelegramMessage(chatId, "❌ Ops! Algo deu errado ao excluir. Tente novamente.");
@@ -766,7 +766,7 @@ export async function handleCallbackQuery(
     if (selectedValue === "cat_back" || selectedValue === "grp_back") {
       await handleEntityBack(
         selectedValue === "cat_back" ? "category" : "group",
-        supabase, user.id, chatId
+        supabase, telegramId, chatId
       );
       return;
     }
@@ -860,7 +860,7 @@ export async function handleCallbackQuery(
 
     if (selectedValue === "rec_manage") {
       const { handleManageRecurrences } = await import("./recurrences.ts");
-      await handleManageRecurrences(supabase, user.id, chatId);
+      await handleManageRecurrences(supabase, telegramId, chatId);
       return;
     }
 
@@ -873,7 +873,7 @@ export async function handleCallbackQuery(
       const recId = parseInt(selectedValue.replace("rec_show_", ""), 10);
       if (!isNaN(recId)) {
         const { handleRecurrenceDetail } = await import("./recurrences.ts");
-        await handleRecurrenceDetail(supabase, user.id, chatId, recId, message.message_id);
+        await handleRecurrenceDetail(supabase, telegramId, chatId, recId, message.message_id);
       }
       return;
     }
@@ -883,7 +883,7 @@ export async function handleCallbackQuery(
       const recId = parseInt(selectedValue.replace("rec_advance_yes_", ""), 10);
       if (!isNaN(recId)) {
         const { handleAdvanceRecurrenceConfirm } = await import("./recurrences.ts");
-        await handleAdvanceRecurrenceConfirm(supabase, user.id, chatId, recId);
+        await handleAdvanceRecurrenceConfirm(supabase, telegramId, chatId, recId);
       }
       return;
     }
@@ -892,7 +892,7 @@ export async function handleCallbackQuery(
       const recId = parseInt(selectedValue.replace("rec_advance_", ""), 10);
       if (!isNaN(recId)) {
         const { handleAdvanceRecurrence } = await import("./recurrences.ts");
-        await handleAdvanceRecurrence(supabase, user.id, chatId, recId);
+        await handleAdvanceRecurrence(supabase, telegramId, chatId, recId);
       }
       return;
     }
@@ -901,7 +901,7 @@ export async function handleCallbackQuery(
       const recId = parseInt(selectedValue.replace("rec_skip_yes_", ""), 10);
       if (!isNaN(recId)) {
         const { handleSkipRecurrenceConfirm } = await import("./recurrences.ts");
-        await handleSkipRecurrenceConfirm(supabase, user.id, chatId, recId);
+        await handleSkipRecurrenceConfirm(supabase, telegramId, chatId, recId);
       }
       return;
     }
@@ -910,7 +910,7 @@ export async function handleCallbackQuery(
       const recId = parseInt(selectedValue.replace("rec_skip_", ""), 10);
       if (!isNaN(recId)) {
         const { handleSkipRecurrence } = await import("./recurrences.ts");
-        await handleSkipRecurrence(supabase, user.id, chatId, recId);
+        await handleSkipRecurrence(supabase, telegramId, chatId, recId);
       }
       return;
     }
@@ -919,7 +919,7 @@ export async function handleCallbackQuery(
       const recId = parseInt(selectedValue.replace("rec_archive_yes_", ""), 10);
       if (!isNaN(recId)) {
         const { handleArchiveRecurrenceConfirm } = await import("./recurrences.ts");
-        await handleArchiveRecurrenceConfirm(supabase, user.id, chatId, recId);
+        await handleArchiveRecurrenceConfirm(supabase, telegramId, chatId, recId);
       }
       return;
     }
@@ -928,7 +928,7 @@ export async function handleCallbackQuery(
       const recId = parseInt(selectedValue.replace("rec_archive_", ""), 10);
       if (!isNaN(recId)) {
         const { handleArchiveRecurrence } = await import("./recurrences.ts");
-        await handleArchiveRecurrence(supabase, user.id, chatId, recId);
+        await handleArchiveRecurrence(supabase, telegramId, chatId, recId);
       }
       return;
     }
@@ -937,7 +937,7 @@ export async function handleCallbackQuery(
       const recId = parseInt(selectedValue.replace("rec_activate_yes_", ""), 10);
       if (!isNaN(recId)) {
         const { handleActivateRecurrenceConfirm } = await import("./recurrences.ts");
-        await handleActivateRecurrenceConfirm(supabase, user.id, chatId, recId);
+        await handleActivateRecurrenceConfirm(supabase, telegramId, chatId, recId);
       }
       return;
     }
@@ -946,7 +946,7 @@ export async function handleCallbackQuery(
       const recId = parseInt(selectedValue.replace("rec_activate_", ""), 10);
       if (!isNaN(recId)) {
         const { handleActivateRecurrence } = await import("./recurrences.ts");
-        await handleActivateRecurrence(supabase, user.id, chatId, recId);
+        await handleActivateRecurrence(supabase, telegramId, chatId, recId);
       }
       return;
     }
@@ -1123,7 +1123,7 @@ export async function handleCallbackQuery(
       const recId = parseInt(selectedValue.replace("rec_edit_", ""), 10);
       if (!isNaN(recId)) {
         const { handleEditRecurrence } = await import("./recurrences.ts");
-        await handleEditRecurrence(supabase, user.id, chatId, recId);
+        await handleEditRecurrence(supabase, telegramId, chatId, recId);
       }
       return;
     }

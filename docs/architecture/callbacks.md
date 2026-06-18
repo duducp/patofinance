@@ -60,7 +60,7 @@ MOST SPECIFIC (order first):
   rec_advance_       → after rec_advance_yes_
   rec_skip_          → after rec_skip_yes_
 LEAST SPECIFIC:
-  rec_               → catches rec_new, rec_show_, rec_close, rec_back, rec_archive_, rec_activate_, rec_transform_
+  rec_               → catches rec_new, rec_manage, rec_show_, rec_close, rec_back, rec_archive_, rec_activate_, rec_transform_
 ```
 
 ### 3. Under 64 Bytes
@@ -180,6 +180,7 @@ Telegram limits `callback_data` to 64 bytes. Use `truncateCallbackData()` (trunc
 | `rec_close` | Close recurrence detail view | Sends new |
 | `rec_back` | Back to recurrence list | Sends new |
 | `rec_new` | Start recurrence creation wizard | Sends new |
+| `rec_manage` | List recurrences with management buttons | Sends new |
 | `rec_show_{id}` | Show recurrence detail | Sends new |
 | `rec_advance_{id}` | Confirm advance prompt | Sends new |
 | `rec_advance_yes_{id}` | Execute advance (create transaction + recalculate) | Sends new |

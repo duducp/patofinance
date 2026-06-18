@@ -129,8 +129,13 @@ Alias: `handleEntity("category", …)`
 - Lists all active recurrences sorted by `next_date`
 - Shows amount, category, frequency, next_date per item
 - "Transformar em recorrência" button after `/despesa`/`/receita` calls this flow
+- Same view as `rec_manage` callback
 
-### `handleShowRecurrence(supabase, userId, chatId, recId, messageId?)`
+### `handleManageRecurrences(supabase, userId, chatId)`
+- Lists recurrences WITH clickable management buttons (show detail, archive)
+- Used by callback `rec_manage`
+
+### `handleRecurrenceDetail(supabase, userId, chatId, recId, messageId?)`
 - Full recurrence detail with management buttons:
   - 🚀 Adiantar — create next occurrence now
   - ⏭️ Pular — skip next occurrence

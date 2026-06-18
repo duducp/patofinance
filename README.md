@@ -1,7 +1,7 @@
 # Bot de Controle Financeiro via Telegram
 
 <p align="center">
-  <img src="picture.png" alt="Finanças Bot" width="128" height="128">
+  <img src="media/picture.png" alt="Finanças Bot" width="128" height="128">
 </p>
 
 <p align="center">
@@ -35,7 +35,7 @@
 - **📊 Saldo do período** — `/saldo`, `/saldo mes passado`, `/saldo janeiro`
 - **📋 Extrato interativo** — `/extrato` com painel de filtros (categoria, grupo, tags, tipo, período), paginação e visualização otimizada
 - **⏳ Transações agendadas** — `/agendadas` lista todas as transações futuras
-- **🔄 Recorrências** — `/recorrencia` cria e gerencia recorrências com geração automática via cron diário
+- **🔄 Recorrências** — `/recorrencia` cria, adianta, pula, arquiva e edita recorrências com wizard de 8 passos + geração automática via cron diário
 - **🔍 Busca textual** — `/buscar mercado` encontra transações pela descrição, valor ou tag
 - **📈 Resumo por categoria** — `/resumo` com totais agrupados
 - **📁 Grupos (contas)** — Organize por conta bancária, cartão de crédito, etc.
@@ -54,7 +54,7 @@ Telegram → Edge Function (webhook) → Supabase DB → Resposta via Bot API
 
 - **bot-core (Edge Function)** — Webhook principal que processa mensagens, callbacks e wizards do Telegram
 - **auth-telegram (Edge Function)** — Valida códigos de login do dashboard web e cria sessões no Supabase Auth
-- **Supabase DB** — PostgreSQL com 9 tabelas
+- **Supabase DB** — PostgreSQL com 11 tabelas
 - **Bot API** — Envia respostas com botões interativos
 
 ## Tecnologias
@@ -76,7 +76,7 @@ finance/
 ├── supabase/
 │   ├── config.toml          # Config local (verify_jwt=false)
 │   ├── .env.example         # Template de variáveis de ambiente
-│   ├── migrations/          # 18 migrations SQL
+│   ├── migrations/          # 23 migrations SQL
 │   │   ├── 20260614000000_initial_schema.sql
 │   │   ├── 20260614000001_add_wizard_steps.sql
 │   │   ├── 20260614000002_add_wizard_steps_index_and_timestamps.sql
@@ -93,15 +93,20 @@ finance/
 │   │   ├── 20260616000003_fix_description_prompt_newlines.sql
 │   │   ├── 20260616000004_separate_telegram_accounts.sql
 │   │   ├── 20260616000005_add_search_index.sql
+│   │   ├── 20260617000000_add_rls_policies.sql
 │   │   ├── 20260617000001_add_link_codes.sql
-│   │   └── 20260617000002_add_auth_id_to_users.sql
+│   │   ├── 20260617000002_add_auth_id_to_users.sql
+│   │   ├── 20260617000003_add_link_codes_cleanup_cron.sql
+│   │   ├── 20260617000004_grant_link_codes_to_authenticated.sql
+│   │   ├── 20260618000000_remove_link_codes_direction.sql
+│   │   └── 20260618000001_add_recurrences.sql
 ├── functions/bot-core/
 │   ├── index.ts            # Entry point + roteamento
 │   ├── config.ts           # Env vars + cache NL
 │   ├── types/index.ts      # Interfaces TypeScript
-│   ├── utils/              # formatting, rate-limiter, dates, command-parsing
+│   ├── utils/              # formatting, rate-limiter, dates, command-parsing, session, help-texts
 │   ├── services/           # database, telegram, deepseek
-│   └── handlers/           # commands, callbacks, management, wizard, nl-processing, queries
+│   └── handlers/           # commands, callbacks, recurrences, statement, management, wizard, nl-processing, queries
 ├── functions/auth-telegram/  # Edge Function for web login code validation
 │   ├── index.ts            # POST /code → valida código, cria sessão Supabase Auth
 │   └── config.ts           # Env vars
@@ -123,12 +128,17 @@ finance/
 | `transactions` | Receitas e despesas (`type`, `amount`, `tags TEXT[]`) |
 | `wizard_states` | Estado do wizard conversacional + session_seq (TTL 10min) |
 | `wizard_steps` | Steps configuráveis dos wizards |
+| `wizard_step_options` | Opções de seleção para cada step |
 | `predefined_categories` | Categorias padrão com tipo (expense/income/null=ambos) |
+| `recurrences` | Recorrências com tipo de frequência, intervalo, próxima data, arquivamento |
+| `notification_queue` | Erros enfileirados pelo cron de recorrências para notificar o usuário |
+| `user_sessions` | Sessões de callback (session_seq para proteção contra replay) |
 | `link_codes` | Códigos de 6 dígitos para autenticação Telegram→Web. Bot gera, dashboard valida |
 
 ### Extensões
 
 - `pg_trgm` — Similaridade fuzzy entre nomes via trigramas (usado em `suggest_categories`, `suggest_groups`, `suggest_tags`)
+- `pg_cron` — Agendador de tarefas (executa `process_recurrences()` diariamente às 06:00 BRT)
 
 ### Categorias Pré-definidas
 
@@ -275,6 +285,7 @@ receita - Registrar receita (ex: /receita 3000 salario)
 saldo - Ver saldo (ex: /saldo mes passado)
 extrato - Ver extrato (ex: /extrato janeiro 2025)
 agendadas - Listar transacoes futuras agendadas
+recorrencia - Gerenciar recorrencias (criar, adiantar, pular, arquivar)
 buscar - Buscar transacoes por palavra-chave
 resumo - Resumo por categoria (ex: /resumo ultimo mes)
 detalhes - Detalhes, edicao e exclusao de transacao
@@ -298,13 +309,13 @@ ajuda - Ajuda completa
 
 ## Comandos
 
-### \ud83d\udcb0 Financeiros
+### 💰 Financeiros
 
-| Comando | Descri\u00E7\u00E3o | Exemplo |
+| Comando | Descrição | Exemplo |
 |---------|-----------|---------|
 | `/despesa` | Registrar despesa | `/despesa 50 mercado` |
 | `/receita` | Registrar receita | `/receita 3000 salario` |
-| `/saldo` | Saldo do per\u00EDodo | `/saldo`, `/saldo mes passado`, `/saldo janeiro` |
+| `/saldo` | Saldo do período | `/saldo`, `/saldo mes passado`, `/saldo janeiro` |
 | `/extrato` | Extrato interativo — painel de filtros + paginação | `/extrato`, `/extrato janeiro 2025`, `/extrato --grupo Pessoal` |
 | `/agendadas` | Listar transações futuras agendadas | `/agendadas` |
 | `/recorrencia` | Gerenciar recorrências (criar, listar, adiantar, pular, arquivar) | `/recorrencia` |
@@ -347,6 +358,8 @@ Com `DEEPSEEK_API_KEY` configurada, você pode digitar frases diretamente ou usa
 - `"transações com #alimentação"` — filtrar por tag
 - `"quais tags uso?"` — listar tags
 - `"limpe categorias sem uso"` — limpeza
+- `"crie uma recorrência do aluguel"` — criar recorrência
+- `"mostre recorrências"` — listar recorrências
 
 **Período natural nos comandos:**
 
@@ -456,9 +469,9 @@ supabase db push
 
 > 🗺️ Veja o [`ROADMAP.md`](ROADMAP.md) para a visão completa do que já foi implementado e dos próximos passos.
 
-**✅ Já implementado:** CRUD financeiro, NL com DeepSeek, busca por descrição/valor/tag, extrato com filtros, paginação, wizard conversacional, categorias/grupos/tags, `/agendadas`, edição/exclusão.
+**✅ Já implementado:** CRUD financeiro, NL com DeepSeek, busca por descrição/valor/tag, extrato com filtros, paginação, wizard conversacional, categorias/grupos/tags, `/agendadas`, edição/exclusão, recorrências (wizard + advance/skip/archive/edit + cron automático), login no web dashboard.
 
-**📋 Próximos:** Exportação CSV, transações recorrentes, orçamentos mensais, gráficos por categoria, web dashboard.
+**📋 Próximos:** Exportação CSV, orçamentos mensais, gráficos por categoria, web dashboard.
 
 ## Licença
 
