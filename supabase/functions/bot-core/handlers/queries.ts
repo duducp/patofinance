@@ -225,7 +225,6 @@ export async function sendTransactionSuccess(
     tags: string[];
     transactionId?: number | null;
   },
-  extraKeyboard?: InlineKeyboard
 ): Promise<void> {
   const typeName = type === "expense" ? "Despesa" : "Receita";
   const seq = await getSessionSeq(supabase, userId);
@@ -236,24 +235,26 @@ export async function sendTransactionSuccess(
   const tagsStr = params.tags.length > 0 ? params.tags.map(sanitizeMarkdown).join(" ") : "";
 
   const keyboard: InlineKeyboard = [
-    [{ text: "📋 Ver detalhes", callback_data: addSession(`edit_show_${params.transactionId}`, seq) }],
+    [{ text: "🔍 Ver detalhes", callback_data: addSession(`edit_show_${params.transactionId}`, seq) }],
+    [{ text: "🔄 Transformar em recorrência", callback_data: addSession(`rec_transform_${params.transactionId}`, seq) }],
   ];
 
-  if (extraKeyboard) {
-    for (const row of extraKeyboard) {
-      keyboard.push(row);
-    }
+  let msg = `✅ *${typeName} registrada com sucesso!*\n\n` +
+    `🆔 *ID:* #${params.transactionId}\n` +
+    `💰 *Valor:* ${formatCurrencyBR(params.amount)}\n`;
+
+  if (desc) {
+    msg += `📝 *Descrição:* ${desc}\n`;
   }
 
-  await sendTelegramMessageWithKeyboard(
-    chatId,
-    `✅ *${typeName} registrada com sucesso!*\n\n` +
-    `💰 Valor: *${formatCurrencyBR(params.amount)}*\n` +
-    `🏷️ Categoria: ${catName}\n` +
-    `📁 Grupo: ${grpName}\n` +
-    `📅 Data: ${formatDateBR(params.date)}` +
-    (desc ? `\n📝 Descrição: ${desc}` : "") +
-    (tagsStr ? `\n🔖 Tags: ${tagsStr}` : ""),
-    keyboard
-  );
+  msg += `🏷️ *Categoria:* ${catName}\n` +
+    `📁 *Grupo:* ${grpName}\n`;
+
+  if (tagsStr) {
+    msg += `🔖 *Tags:* ${tagsStr}\n`;
+  }
+
+  msg += `📅 *Data:* ${formatDateBR(params.date)}`;
+
+  await sendTelegramMessageWithKeyboard(chatId, msg, keyboard);
 }

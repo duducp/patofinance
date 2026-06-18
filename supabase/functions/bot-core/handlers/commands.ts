@@ -51,6 +51,7 @@ export async function handleHelp(chatId: number, args: string[] = []): Promise<v
     `/extrato - Ver extrato (ex: \`/extrato janeiro 2025\` ou \`/extrato --grupo Pessoal\`)\n` +
     `/resumo - Resumo por categoria (ex: \`/resumo ultimo mes\` ou \`/resumo --grupo Pessoal\`)\n` +
     `/agendadas - Listar transações futuras agendadas\n` +
+    `/recorrencia - Criar e gerenciar transações recorrentes\n` +
     `/buscar - Buscar transações por palavra-chave (ex: \`/buscar mercado\`)\n\n` +
     `📁 *Organização:*\n` +
     `/grupo - Gerenciar grupos\n` +
@@ -273,7 +274,7 @@ export async function handleTransaction(
     amount: parsed.amount,
     categoryId,
     groupId,
-    description: descriptionOverride || parsed.category || "",
+    description: descriptionOverride || "",
     tags: parsed.tags,
     transactionDate: parsed.date || getTodayISOBR(),
   });
@@ -286,21 +287,39 @@ export async function handleTransaction(
     return;
   }
 
-  const sessionSeq = await getSessionSeq(supabase, user.id);
-  const recurKeyboard: InlineKeyboard = [
-    [{ text: "🔄 Transformar em recorrência", callback_data: addSession(`rec_transform_${id}`, sessionSeq) }],
-    [{ text: "Fechar", callback_data: addSession("rec_close", sessionSeq) }],
-  ];
+  // If user typed category text but no description override, ask about adding description
+  if (parsed.category && !descriptionOverride) {
+    const sessionSeq = await getSessionSeq(supabase, user.id);
+    await setWizardState(supabase, user.id, "tx_ask_desc", {
+      transactionId: id,
+      type,
+      amount: parsed.amount,
+      category: parsed.category,
+      group: parsed.group,
+      date: parsed.date || getTodayISOBR(),
+      tags: parsed.tags,
+    });
+    const keyboard: InlineKeyboard = [
+      [{ text: "✅ Sim, adicionar", callback_data: addSession(`tx_desc_sim_${id}`, sessionSeq) }],
+      [{ text: "⏭️ Não", callback_data: addSession(`tx_desc_nao_${id}`, sessionSeq) }],
+    ];
+    await sendTelegramMessageWithKeyboard(
+      chatId,
+      "📝 *Deseja adicionar uma descrição?*",
+      keyboard
+    );
+    return;
+  }
 
   await sendTransactionSuccess(supabase, chatId, user.id, type, {
     amount: parsed.amount,
     category: parsed.category,
     group: parsed.group,
     date: parsed.date || getTodayISOBR(),
-    description: descriptionOverride || parsed.category || "",
+    description: "",
     tags: parsed.tags,
     transactionId: id,
-  }, recurKeyboard);
+  });
 }
 
 export async function handleSummary(supabase: any, userId: number, chatId: number, args: string[] = []): Promise<void> {
@@ -409,6 +428,9 @@ function formatDetailMessage(transaction: any): string {
   const tags = transaction.tags?.length ? transaction.tags.map(sanitizeMarkdown).join(" ") : "—";
   const desc = sanitizeMarkdown(transaction.description || "—");
   const date = formatDateBR(transaction.transaction_date);
+  const recIndicator = transaction.recurrence_id
+    ? `\n🔄 *Recorrência:* #${transaction.recurrence_id}`
+    : "";
 
   return `${emoji} *${typeName} #${transaction.id}:*\n\n` +
     `💰 *Valor:* ${formatCurrencyBR(Number(transaction.amount))}\n` +
@@ -416,7 +438,8 @@ function formatDetailMessage(transaction: any): string {
     `📁 *Grupo:* ${grpName}\n` +
     `🔖 *Tags:* ${tags}\n` +
     `📅 *Data:* ${date}\n` +
-    `📝 *Descrição:* ${desc}`;
+    `📝 *Descrição:* ${desc}` +
+    recIndicator;
 }
 
 export async function showDetailsMainView(
@@ -430,12 +453,18 @@ export async function showDetailsMainView(
   if (!transaction) return;
 
   const sessionSeq = await getSessionSeq(supabase, userId);
-  const keyboard: InlineKeyboard = [
-    [
-      { text: "📝 Editar", callback_data: addSession(`edit_show_actions_${transaction.id}`, sessionSeq) },
-      { text: "🗑️ Excluir", callback_data: addSession(`del_prompt_${transaction.id}`, sessionSeq) },
-    ],
-  ];
+  const keyboard: InlineKeyboard = [];
+
+  if (transaction.recurrence_id) {
+    keyboard.push([
+      { text: "🔄 Ver recorrência", callback_data: addSession(`rec_show_${transaction.recurrence_id}`, sessionSeq) },
+    ]);
+  }
+
+  keyboard.push([
+    { text: "📝 Editar", callback_data: addSession(`edit_show_actions_${transaction.id}`, sessionSeq) },
+    { text: "🗑️ Excluir", callback_data: addSession(`del_prompt_${transaction.id}`, sessionSeq) },
+  ]);
 
   const message = formatDetailMessage(transaction);
 

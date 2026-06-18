@@ -181,6 +181,7 @@ export async function handleStatement(
       description,
       tags,
       transaction_date,
+      recurrence_id,
       categories (name),
       groups (name)
     `),
@@ -268,7 +269,8 @@ export async function handleStatement(
     const catName = t.categories?.name;
     const grpName = t.groups?.name || "Pessoal";
     const catPart = catName ? ` - ${sanitizeMarkdown(catName)}` : "";
-    const line = `   • #${t.id}  ${shortDate}  ${formatCurrencyBR(Number(t.amount))}  - ${sanitizeMarkdown(grpName)}${catPart}`;
+    const recIcon = t.recurrence_id ? " 🔄" : "";
+    const line = `   • #${t.id}  ${shortDate}  ${formatCurrencyBR(Number(t.amount))}${recIcon}  - ${sanitizeMarkdown(grpName)}${catPart}`;
     return isFuture ? `_${line}_\n` : `${line}\n`;
   }
 
