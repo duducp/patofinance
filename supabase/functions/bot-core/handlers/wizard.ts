@@ -235,6 +235,37 @@ export async function completeWizard(
   });
 }
 
+/**
+ * Toggle a tag in the wizard state and return the new tags array.
+ * Shared by both edit_tag_tog_ and wiz_tag_ handlers.
+ */
+export async function toggleTagInWizardState(
+  supabase: any,
+  userId: number,
+  tag: string
+): Promise<string[]> {
+  const { data: state } = await supabase
+    .from("wizard_states")
+    .select("data")
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  const currentTags: string[] = state?.data?.tags
+    ? (Array.isArray(state.data.tags) ? state.data.tags : [state.data.tags])
+    : [];
+
+  const newTags = currentTags.includes(tag)
+    ? currentTags.filter((t: string) => t !== tag)
+    : [...currentTags, tag];
+
+  await supabase.from("wizard_states").update({
+    data: { ...state?.data, tags: newTags },
+    expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+  }).eq("user_id", userId);
+
+  return newTags;
+}
+
 export async function getCurrentWizardStep(
   supabase: any,
   userId: number

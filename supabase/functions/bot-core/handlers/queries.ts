@@ -160,7 +160,7 @@ export async function handleQueryExpenses(
   for (const t of limited) {
     const catName = t.categories?.name || "Sem categoria";
     const desc = t.description ? ` — ${t.description}` : "";
-    const icon = t.type === "income" ? "📈" : "📉";      message += `${icon} ${formatDateBR(t.transaction_date)} - *${formatCurrencyBR(Number(t.amount))}* | ${sanitizeMarkdown(catName)}${sanitizeMarkdown(desc)}\n`;
+    message += `${formatDateBR(t.transaction_date)} - *${formatCurrencyBR(Number(t.amount))}* | ${sanitizeMarkdown(catName)}${sanitizeMarkdown(desc)}\n`;
     total += Number(t.amount);
   }
   message += `\n💰 Total: *${formatCurrencyBR(total)}*`;

@@ -1,4 +1,5 @@
 import type { InlineKeyboard } from "../types/index.ts";
+import { addSession } from "./session.ts";
 
 /**
  * Build an inline keyboard grid with N items per row.
@@ -32,16 +33,16 @@ export function buildEditKeyboard(
 ): InlineKeyboard {
   return [
     [
-      { text: "✏️ Editar valor", callback_data: `s${sessionSeq}_edit_amount_${transactionId}` },
-      { text: "🏷️ Editar categoria", callback_data: `s${sessionSeq}_edit_category_${transactionId}` },
+      { text: "✏️ Editar valor", callback_data: addSession(`edit_amount_${transactionId}`, sessionSeq) },
+      { text: "🏷️ Editar categoria", callback_data: addSession(`edit_category_${transactionId}`, sessionSeq) },
     ],
     [
-      { text: "📁 Editar grupo", callback_data: `s${sessionSeq}_edit_group_${transactionId}` },
-      { text: "🔖 Editar tags", callback_data: `s${sessionSeq}_edit_tags_${transactionId}` },
+      { text: "📁 Editar grupo", callback_data: addSession(`edit_group_${transactionId}`, sessionSeq) },
+      { text: "🔖 Editar tags", callback_data: addSession(`edit_tags_${transactionId}`, sessionSeq) },
     ],
     [
-      { text: "📝 Editar descrição", callback_data: `s${sessionSeq}_edit_desc_${transactionId}` },
-      { text: "📅 Editar data", callback_data: `s${sessionSeq}_edit_date_${transactionId}` },
+      { text: "📝 Editar descrição", callback_data: addSession(`edit_desc_${transactionId}`, sessionSeq) },
+      { text: "📅 Editar data", callback_data: addSession(`edit_date_${transactionId}`, sessionSeq) },
     ],
   ];
 }

@@ -322,9 +322,12 @@ export async function handleSearch(
   const normalized = normalizeString(term);
 
   // Build search conditions dynamically: description ILIKE + amount + tag
+  // Escape % and _ for PostgreSQL LIKE/ILIKE to prevent wildcard injection
+  const escapedTerm = term.replace(/[%_]/g, "\\$&");
+  const escapedNormalized = normalized.replace(/[%_]/g, "\\$&");
   const searchConditions: string[] = [
-    `description.ilike.%${term}%`,
-    `description.ilike.%${normalized}%`,
+    `description.ilike.%${escapedTerm}%`,
+    `description.ilike.%${escapedNormalized}%`,
   ];
 
   // Search by amount if term is numeric

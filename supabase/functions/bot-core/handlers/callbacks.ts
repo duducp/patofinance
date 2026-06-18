@@ -3,7 +3,7 @@ import { sendTelegramMessage, sendTelegramMessageWithKeyboard, editTelegramMessa
 import { getOrCreateUser, normalizeString, getAllUserTags, getOrCreateUncategorizedCategory, deleteTransactionById, userOrNullFilter } from "../services/database.ts";
 import { formatDateBR, getTodayISOBR, parseDateBR } from "../utils/formatting.ts";
 import { truncateCallbackData } from "../utils/rate-limiter.ts";
-import { getWizardState, setWizardState, clearWizardState, sendWizardStepMessage, getCurrentWizardStep, advanceWizardToNextStep } from "./wizard.ts";
+import { getWizardState, setWizardState, clearWizardState, sendWizardStepMessage, getCurrentWizardStep, advanceWizardToNextStep, toggleTagInWizardState } from "./wizard.ts";
 import { executeNaturalLanguageAction } from "./nl-processing.ts";
 import { handleBalance, handleSummary, handleDetails, handleGroup, handleCategory, handleTransaction, showDetailsEditActions, showDetailsMainView } from "./commands.ts";
 import { handleListTransactions, handleListByTag, handleSearch, showDeleteConfirmation } from "./management.ts";
@@ -729,23 +729,9 @@ export async function handleCallbackQuery(
         const transactionId = rest.substring(0, underscoreIdx);
         const tag = rest.substring(underscoreIdx + 1);
 
-        // Get current working tags from wizard state
-        const { data: state } = await supabase.from("wizard_states").select("data").eq("user_id", user.id).single();
-        const currentTags: string[] = state?.data?.tags
-          ? (Array.isArray(state.data.tags) ? state.data.tags : [state.data.tags])
-          : [];
+        const newTags = await toggleTagInWizardState(supabase, user.id, tag);
 
-        // Toggle
-        const newTags = currentTags.includes(tag)
-          ? currentTags.filter((t: string) => t !== tag)
-          : [...currentTags, tag];
-
-        await supabase.from("wizard_states").update({
-          data: { tags: newTags, transaction_id: transactionId },
-          expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
-        }).eq("user_id", user.id);
-
-        // Re-send the tag selection message by editing
+        // Re-render the tag selection UI
         const allTags = await getAllUserTags(supabase, user.id);
         const tagSet = new Set(allTags.map((t: string) => t.startsWith("#") ? t : `#${t}`));
 
@@ -832,31 +818,18 @@ export async function handleCallbackQuery(
     // Handle wizard tag toggle (multi-select)
     if (selectedValue.startsWith("wiz_tag_")) {
       const tag = selectedValue.replace("wiz_tag_", "");
-      const userId = user.id;
-      const { data: state } = await supabase.from("wizard_states").select("*").eq("user_id", userId).maybeSingle();
+
+      await toggleTagInWizardState(supabase, user.id, tag);
+
+      // Re-render the wizard step message to show updated selection
+      const { data: state } = await supabase.from("wizard_states").select("*").eq("user_id", user.id).maybeSingle();
       if (!state) return;
-
-      const currentTags: string[] = state.data?.tags
-        ? (Array.isArray(state.data.tags) ? state.data.tags : [state.data.tags])
-        : [];
-
-      // Toggle: remove if already selected, add otherwise
-      const newTags = currentTags.includes(tag)
-        ? currentTags.filter((t: string) => t !== tag)
-        : [...currentTags, tag];
-
-      await supabase.from("wizard_states").update({
-        data: { ...state.data, tags: newTags },
-        expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
-      }).eq("user_id", userId);
-
-      // Edit the existing message to show updated selection
       const underscoreIndex = state.step.indexOf("_");
       const wizardName = state.step.substring(0, underscoreIndex);
       const stepKey = state.step.substring(underscoreIndex + 1);
-      const { data: currentStep } = await supabase.from("wizard_steps").select("*").eq("wizard_name", wizardName).eq("step_key", stepKey).single();
+      const { data: currentStep } = await supabase.from("wizard_steps").select("*").eq("wizard_name", wizardName).eq("step_key", stepKey).maybeSingle();
       if (currentStep) {
-        await sendWizardStepMessage(chatId, currentStep, userId, supabase, sessionSeq, message.message_id);
+        await sendWizardStepMessage(chatId, currentStep, user.id, supabase, sessionSeq, message.message_id);
       }
       return;
     }

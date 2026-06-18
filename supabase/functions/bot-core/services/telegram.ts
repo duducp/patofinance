@@ -86,11 +86,14 @@ export async function answerCallbackQuery(callbackQueryId: string): Promise<void
 
 export async function deleteTelegramMessage(chatId: number, messageId: number): Promise<void> {
   try {
-    await fetch(`${TELEGRAM_API_BASE}/deleteMessage`, {
+    const response = await fetch(`${TELEGRAM_API_BASE}/deleteMessage`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ chat_id: chatId, message_id: messageId }),
     });
+    if (!response.ok) {
+      console.error("Telegram deleteMessage error:", await response.text());
+    }
   } catch (error) {
     console.error("Error calling deleteMessage:", error);
   }
