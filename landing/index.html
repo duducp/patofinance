@@ -6,15 +6,15 @@
   <meta name="color-scheme" content="light dark">
   <meta name="robots" content="index, follow">
   <meta name="theme-color" content="#1e4d7b">
-  <link rel="canonical" href="https://duducp.github.io/patofinance/">
-  <link rel="alternate" hreflang="pt-BR" href="https://duducp.github.io/patofinance/">
+  <link rel="canonical" href="https://patofinance.vercel.app/">
+  <link rel="alternate" hreflang="pt-BR" href="https://patofinance.vercel.app/">
   <title>Pato Finance — Controle financeiro no Telegram</title>
   <meta name="description" content="Registre gastos e receitas, veja extratos, saldo e resumo com comandos simples ou linguagem natural no Telegram.">
   <meta property="og:locale" content="pt_BR">
   <meta property="og:title" content="Pato Finance">
   <meta property="og:description" content="Seu assistente de finanças pessoais no Telegram">
   <meta property="og:type" content="website">
-  <meta property="og:url" content="https://duducp.github.io/patofinance/">
+  <meta property="og:url" content="https://patofinance.vercel.app/">
   <meta property="og:image" content="https://raw.githubusercontent.com/duducp/patofinance/main/landing/picture.webp">
   <meta property="og:image:width" content="512">
   <meta property="og:image:height" content="512">
@@ -32,6 +32,7 @@
   <link rel="preload" href="picture.webp" as="image" type="image/webp">
   <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+  <script defer src="/_vercel/insights/script.js"></script>
   <style>
     @font-face {
       font-family: "Font Awesome 6 Brands";
@@ -65,7 +66,7 @@
     "applicationCategory": "FinanceApplication",
     "operatingSystem": "Telegram",
     "description": "Assistente de finanças pessoais no Telegram. Registre gastos e receitas com comandos ou linguagem natural.",
-    "url": "https://duducp.github.io/patofinance/",
+    "url": "https://patofinance.vercel.app/",
     "offers": {
       "@type": "Offer",
       "price": "0",
@@ -319,6 +320,22 @@
         console.warn('SW registration failed:', err);
       });
     }
+  </script>
+  <script>
+    (function() {
+      var s = document.createElement('script');
+      s.src = 'https://unpkg.com/web-vitals@5/dist/web-vitals.iife.js';
+      s.onload = function () {
+        function logMetric(m) {
+          console.log('[Web Vitals]', m.name, ':', m.value, m.rating ? '(' + m.rating + ')' : '');
+        }
+        webVitals.onLCP(logMetric);
+        webVitals.onINP(logMetric);
+        webVitals.onCLS(logMetric);
+        webVitals.onTTFB(logMetric);
+      };
+      document.head.appendChild(s);
+    })();
   </script>
 </body>
 </html>
