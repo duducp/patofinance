@@ -43,6 +43,8 @@
 - **🗣️ Wizard conversacional** — O bot guia você passo a passo com botões interativos
 - **🧹 Limpeza automática** — Remova categorias/grupos sem uso
 - **🌐 Linguagem natural** — Digite frases como "quanto gastei esse mês?" ou "últimas 10 transações"
+- **🔑 Login no dashboard** — `/login` gera código temporário para acessar o web dashboard
+- **🔗 Login no Web** — `/login CODIGO` conecta sua conta do Telegram ao dashboard web (ou `/login` gera código para entrar no dashboard)
 
 ## Arquitetura
 
@@ -50,8 +52,9 @@
 Telegram → Edge Function (webhook) → Supabase DB → Resposta via Bot API
 ```
 
-- **Edge Function** — Processa mensagens do Telegram com handlers modulares
-- **Supabase DB** — PostgreSQL com 8 tabelas
+- **bot-core (Edge Function)** — Webhook principal que processa mensagens, callbacks e wizards do Telegram
+- **auth-telegram (Edge Function)** — Valida códigos de login do dashboard web e cria sessões no Supabase Auth
+- **Supabase DB** — PostgreSQL com 9 tabelas
 - **Bot API** — Envia respostas com botões interativos
 
 ## Tecnologias
@@ -73,7 +76,7 @@ finance/
 ├── supabase/
 │   ├── config.toml          # Config local (verify_jwt=false)
 │   ├── .env.example         # Template de variáveis de ambiente
-│   ├── migrations/          # 16 migrations SQL
+│   ├── migrations/          # 18 migrations SQL
 │   │   ├── 20260614000000_initial_schema.sql
 │   │   ├── 20260614000001_add_wizard_steps.sql
 │   │   ├── 20260614000002_add_wizard_steps_index_and_timestamps.sql
@@ -89,14 +92,19 @@ finance/
 │   │   ├── 20260616000002_add_description_step.sql
 │   │   ├── 20260616000003_fix_description_prompt_newlines.sql
 │   │   ├── 20260616000004_separate_telegram_accounts.sql
-│   │   └── 20260616000005_add_search_index.sql
-└── functions/bot-core/
-│       ├── index.ts         # Entry point + roteamento
-│       ├── config.ts        # Env vars + cache NL
-│       ├── types/index.ts   # Interfaces TypeScript
-│       ├── utils/           # formatting, rate-limiter, dates, command-parsing
-│       ├── services/        # database, telegram, deepseek
-│       └── handlers/        # commands, callbacks, management, wizard, nl-processing, queries
+│   │   ├── 20260616000005_add_search_index.sql
+│   │   ├── 20260617000001_add_link_codes.sql
+│   │   └── 20260617000002_add_auth_id_to_users.sql
+├── functions/bot-core/
+│   ├── index.ts            # Entry point + roteamento
+│   ├── config.ts           # Env vars + cache NL
+│   ├── types/index.ts      # Interfaces TypeScript
+│   ├── utils/              # formatting, rate-limiter, dates, command-parsing
+│   ├── services/           # database, telegram, deepseek
+│   └── handlers/           # commands, callbacks, management, wizard, nl-processing, queries
+├── functions/auth-telegram/  # Edge Function for web login code validation
+│   ├── index.ts            # POST /code → valida código, cria sessão Supabase Auth
+│   └── config.ts           # Env vars
 └── README.md
 ```
 
@@ -116,6 +124,7 @@ finance/
 | `wizard_states` | Estado do wizard conversacional + session_seq (TTL 10min) |
 | `wizard_steps` | Steps configuráveis dos wizards |
 | `predefined_categories` | Categorias padrão com tipo (expense/income/null=ambos) |
+| `link_codes` | Códigos de 6 dígitos para autenticação bidirecional Telegram↔Web (`web_to_telegram`, `telegram_to_web`) |
 
 ### Extensões
 
@@ -275,6 +284,7 @@ tag - Gerenciar tags
 limpar - Remover categorias/grupos sem transacoes
 cancelar - Cancelar operacao em andamento
 resetar - Resetar conta (apaga todos os dados)
+login - Gerar codigo para acessar o dashboard web
 ajuda - Ajuda completa
 ```
 
@@ -316,6 +326,7 @@ ajuda - Ajuda completa
 | `/limpar` | Remover categorias/grupos sem transações |
 | `/resetar` | Resetar conta (apaga todas as transações, categorias, grupos e tags) |
 | `/cancelar` | Cancelar operação em andamento |
+| `/login` | Gerar código OU vincular conta: `/login` gera código, `/login CODIGO` vincula ao dashboard web |
 | `/ajuda` | Ajuda completa. Use `/ajuda <comando>` para detalhes (ex: `/ajuda saldo`) |
 | `/futuras` | Listar transações agendadas (alias: `/agendadas`) |
 

@@ -56,9 +56,12 @@ function isRateLimited(ip: string): boolean {
   return false;
 }
 
-// ── Main handler ──────────────────────────────────────────
+// ── Main handler (exported for testing) ──────────────────
 
-serve(async (req: Request): Promise<Response> => {
+export async function handleAuthTelegram(
+  req: Request,
+  supabase: any,
+): Promise<Response> {
   // Handle CORS preflight
   if (req.method === "OPTIONS") {
     return new Response(null, {
@@ -92,8 +95,6 @@ serve(async (req: Request): Promise<Response> => {
     if (cleanCode.length !== 6 || !/^[A-Z0-9]{6}$/.test(cleanCode)) {
       return jsonResponse({ ok: false, error: "Código inválido. Deve ter 6 caracteres alfanuméricos." }, 400);
     }
-
-    const supabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
 
     // Look up the code (must be unused and not expired)
     const { data: link } = await supabase
@@ -193,4 +194,13 @@ serve(async (req: Request): Promise<Response> => {
     console.error("Error in auth-telegram:", error);
     return jsonResponse({ ok: false, error: "Erro interno do servidor." }, 500);
   }
-});
+}
+
+// ── Serve wrapper (only when run directly, not during tests) ─
+
+if (import.meta.main) {
+  serve(async (req: Request): Promise<Response> => {
+    const supabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
+    return handleAuthTelegram(req, supabase);
+  });
+}

@@ -38,6 +38,7 @@ import {
   handleTag,
   handleCleanup,
   handleReset,
+  handleLogin,
 } from "./handlers/commands.ts";
 import { handleStatement, handleFilterPanel } from "./handlers/statement.ts";
 
@@ -601,6 +602,10 @@ serve(async (req: Request): Promise<Response> => {
           await handleSearch(supabase, message.from.id, message.chat.id, searchTerm);
           break;
         }
+
+        case "/login":
+          await handleLogin(supabase, message.from.id, message.chat.id, args);
+          break;
 
         default:
           await sendTelegramMessage(

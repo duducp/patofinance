@@ -16,13 +16,20 @@ make help             # List all commands
 
 ## Architecture
 
-Single Edge Function (`supabase/functions/bot-core/`) handles all Telegram webhook processing:
+Two Edge Functions:
+
+| Function | Purpose |
+|----------|---------|
+| `bot-core` | Main webhook — processes Telegram messages, callbacks, wizards |
+| `auth-telegram` | Validates login codes from the web dashboard, creates Supabase Auth sessions |
 
 ```text
-Telegram -> Edge Function (webhook) -> Supabase DB -> Bot API response
-                              |
-                    handleCallbackQuery routes ~40 prefixes
-                    (pagination, filters, wizards, CRUD)
+Telegram -> bot-core (webhook) -> Supabase DB -> Bot API response
+                        |
+              handleCallbackQuery routes ~40 prefixes
+              (pagination, filters, wizards, CRUD)
+
+Web Dashboard -> auth-telegram (POST /code) -> Supabase Auth + DB
 ```
 
 Runtime: **Deno** (not Node.js). Imports use `https://deno.land/std`, `https://esm.sh`.
@@ -43,6 +50,7 @@ Two Telegram API patterns used for user interaction:
 **Important:** Always call `await answerCallbackQuery(callbackQuery.id)` at the very start of every callback handler. This dismisses the Telegram client loading spinner. Do not await any DB queries before it -- the user sees a frozen button otherwise.
 
 **Example -- Pagination (edit):**
+
 ```typescript
 // callbacks.ts - txlist_p handler
 if (selectedValue.startsWith("txlist_p")) {
@@ -56,6 +64,7 @@ if (selectedValue.startsWith("txlist_p")) {
 ```
 
 **Example -- Confirmation (send new):**
+
 ```typescript
 // callbacks.ts - confirm_delete_ handler
 if (selectedValue.startsWith("confirm_delete_")) {
@@ -119,6 +128,7 @@ Adding a new interaction requires three things:
 **CRITICAL:** When routing callbacks with `startsWith()`, **always order more specific prefixes before less specific ones.** A generic prefix like `"cat_del_"` matches `"cat_del_yes_Casa"`, causing the specific handler to never fire.
 
 **Wrong** -- `cat_del_` catches `cat_del_yes_Casa` first, extracts `"yes_Casa"` as the name, and generates `cat_del_yes_yes_Casa` in an infinite loop:
+
 ```typescript
 // ❌ Generic BEFORE specific -- cat_del_yes_Casa never reaches its handler
 if (selectedValue.startsWith("cat_del_")) { }
@@ -126,6 +136,7 @@ if (selectedValue.startsWith("cat_del_yes_")) { } // DEAD CODE
 ```
 
 **Correct** -- specific before generic:
+
 ```typescript
 // ✅ Specific BEFORE generic -- cat_del_yes_Casa hits the right handler
 if (selectedValue.startsWith("cat_del_yes_")) { }
@@ -133,6 +144,7 @@ if (selectedValue.startsWith("cat_del_")) { }
 ```
 
 **Full ordering example** (from `callbacks.ts`):
+
 ```text
 MOST SPECIFIC (order first):
   edit_show_         → exact prefix match
@@ -185,6 +197,7 @@ export async function handleCategory(supabase, userId, chatId, args) {
 Any list of items that can exceed one screen (10 items) should support pagination:
 
 1. **Fetch `limit + 1`** items to detect if there's a next page:
+
    ```typescript
    const fetchLimit = limit + 1;
    const { data: items } = await query.range(offset, offset + fetchLimit - 1);
@@ -193,6 +206,7 @@ Any list of items that can exceed one screen (10 items) should support paginatio
    ```
 
 2. **Parallel COUNT query** for total pages indicator (`Pagina X de Y`):
+
    ```typescript
    const [countResult, dataResult] = await Promise.all([
      supabase.from("table").select("*", { count: "exact", head: true }).eq("user_id", user.id),
@@ -299,7 +313,7 @@ parseNaturalLanguage(text, {userId?, context?})  → orquestrador
 2. **Cache check** (per-user): `nlCache` é `Map<userId, Map<text, response>>`, TTL 5 min
 3. **Context fetch**: `fetchUserContext()` no `index.ts` busca categorias (com `transaction_type`), grupos, tags em 3 queries paralelas
 4. **BuildSystemPrompt**: injeta dados reais no system prompt:
-   ```
+   ```text
    SUAS CATEGORIAS (use o nome EXATO):
    - Alimentação [despesa]
    - Salário [receita]
@@ -334,6 +348,7 @@ Quando DeepSeek retorna uma categoria (com nomes reais do contexto), `resolveCat
 ### Missing fields wizard
 
 Se DeepSeek response tiver campos faltantes:
+
 - `nl_{intent}_amount` → keyboard **com session protection**
 - `nl_{intent}_category` → keyboard **com session protection**
 - `nl_{intent}_group` → keyboard **com session protection** (já funcionava)
@@ -344,6 +359,7 @@ Se DeepSeek response tiver campos faltantes:
 ### Type disambiguation
 
 Se `intent: null` + número detectado, o bot:
+
 1. Chama `incrementSessionSeq()` (novo — antes não chamava)
 2. Mostra [💸 Despesa] [💰 Receita] com `addSession()` (novo — antes sem proteção)
 3. Keyword heuristics para input textual ("despesa", "gastei", etc.)
@@ -352,6 +368,7 @@ Se `intent: null` + número detectado, o bot:
 ### Tag support
 
 Tag é **opcional** para expense/income. Se DeepSeek retornar `tag`:
+
 - Passado como `#tagname` no array de args (formato que `parseCommand()` espera)
 - Se não retornar, segue sem — sem wizard de tag para NL
 
@@ -407,6 +424,7 @@ curl -X POST http://127.0.0.1:54321/functions/v1/bot-core \
 ```
 
 **To test callbacks**, change the payload to use `callback_query` instead of `message`:
+
 ```bash
 curl -X POST http://127.0.0.1:54321/functions/v1/bot-core \
   -H "Content-Type: application/json" \
@@ -445,6 +463,7 @@ make prod-webhook-info
 ```
 
 **If `last_error_message` is not null**, it will say why webhook calls are failing:
+
 - `"502 Bad Gateway"` -> Function crashed on boot (check `make check` + `make lint`)
 - `"401 Unauthorized"` -> `TELEGRAM_SECRET_TOKEN` mismatch between Supabase secrets and webhook config
 - `"Read timed out"` -> Function took >10s to respond (check for slow DB queries or infinite loops)
@@ -452,6 +471,7 @@ make prod-webhook-info
 ### 4. Diagnose Silent Callback Failures
 
 If clicking a button does nothing:
+
 1. Check the callback prefix in `handleCallbackQuery` -- typos in `startsWith()` are the #1 cause
 2. Verify the `callback_data` you generate matches the prefix you check:
    ```typescript
@@ -476,6 +496,7 @@ make test
 ```
 
 **Common type errors and fixes:**
+
 - `TS2304: Cannot find name 'X'` -> Missing import (check the import block at the top of the file)
 - `TS2345: Argument of type 'X' is not assignable to parameter of type 'Y'` -> Wrong parameter passed to a handler (e.g., passed DB `user.id` instead of Telegram ID)
 - `TS2322: Type 'string | null' is not assignable to type 'string'` -> Add null check or default value
@@ -589,6 +610,7 @@ make prod-deploy            # Deploy to production (uses CLI)
 ```
 
 **Deploy method:**
+
 ```bash
 # CORRECT - Use CLI
 npx supabase functions deploy bot-core --no-verify-jwt
@@ -600,6 +622,7 @@ npx supabase functions deploy bot-core --no-verify-jwt
 ## All Makefile Commands
 
 ### Setup
+
 ```bash
 make install            # Install Supabase CLI
 make install-login      # Login to Supabase (paste access token)
@@ -607,6 +630,7 @@ make install-link       # Link to project zjcfjqtlijktrikgvwrv
 ```
 
 ### Local
+
 ```bash
 make dev                # Start local Supabase
 make dev-stop           # Stop local Supabase
@@ -624,9 +648,11 @@ make dev-test-callback  # Test a callback via curl
 ```
 
 ### Production
+
 ```bash
-make prod-deploy        # Push migrations + deploy Edge Function
-make prod-deploy-fn     # Deploy Edge Function only
+make prod-deploy        # Push migrations + deploy both Edge Functions
+make prod-deploy-fn     # Deploy bot-core only
+make prod-deploy-auth   # Deploy auth-telegram only
 make prod-db-push       # Push migrations to production
 make prod-webhook-set   # Set Telegram webhook URL
 make prod-webhook-info  # Check webhook status
@@ -635,6 +661,7 @@ make prod-logs          # Show recent deployment logs
 ```
 
 ### Both
+
 ```bash
 make secrets            # Set TELEGRAM_BOT_TOKEN + TELEGRAM_SECRET_TOKEN
 make status             # Show Supabase project status
@@ -675,13 +702,14 @@ Project ref: `zjcfjqtlijktrikgvwrv`
 
 | Table | Key columns | Notes |
 |-------|-------------|-------|
-| `users` | `id`, `created_at` | Core account, no platform-specific data |
+| `users` | `id`, `auth_id` (FK→auth.users), `created_at` | Core account. `auth_id` links to Supabase Auth for web login |
 | `telegram_accounts` | `id`, `user_id` (FK→users), `telegram_id`, `username`, `first_name` | Telegram identity, `ON DELETE CASCADE` |
 | `groups` | `id`, `user_id`, `name`, `normalized_name`, `is_default` | `normalized_name` + pg_trgm index |
 | `categories` | `id`, `user_id` (NULL=global), `name`, `normalized_name`, `is_predefined`, `transaction_type` | System categories: `user_id=NULL` (single row shared by all users), partial unique indexes per type |
 | `transactions` | `id`, `user_id`, `group_id`, `category_id`, `type`, `amount`, `tags TEXT[]` | |
 | `wizard_states` | `user_id`, `step`, `data JSONB`, `session_seq`, `expires_at` | `session_seq` for callback protection | |
 | `predefined_categories` | `id`, `name`, `transaction_type` | Seeded with 12 default categories (expense/income/both) |
+| `link_codes` | `id`, `user_id` (FK→users), `auth_id`, `code`, `direction`, `expires_at`, `used` | One-time 6-char codes for Telegram↔Web authentication (directions: `web_to_telegram`, `telegram_to_web`) |
 
 ### Stored Procedures
 
@@ -711,6 +739,8 @@ Project ref: `zjcfjqtlijktrikgvwrv`
 20260616000003_fix_description_prompt_newlines.sql
 20260616000004_separate_telegram_accounts.sql   # telegram_accounts table, decouple from users
 20260616000005_add_search_index.sql               # GIN trigram index on transactions.description
+20260617000001_add_link_codes.sql                  # link_codes table for Telegram↔Web auth codes
+20260617000002_add_auth_id_to_users.sql            # auth_id (FK→auth.users) on users
 ```
 
 ### Predefined Categories
@@ -722,6 +752,7 @@ Separated by transaction type, stored globally in `categories` with `user_id = N
 - **🔄 Both (NULL):** Outros
 
 In the wizard:
+
 - `/despesa` shows expense + both categories (system + user-owned, deduplicated)
 - `/receita` shows income + both categories (system + user-owned, deduplicated)
 - User-created categories with NULL type appear for both
@@ -749,6 +780,7 @@ In the wizard:
 | `suggestSimilarTags(supabase, userId, query, limit?)` | `{tag, similarity}[]` | Handlers |
 | `sendSimilarityWarning(supabase, userId, chatId, type, query)` | `void` | `handleTransaction` |
 | `getAllUserTags(supabase, userId)` | `string[]` | Tag editors |
+| `transferUserData(supabase, oldUserId, newUserId, telegramId)` | `{success, error?}` | `/login CODIGO` — transfers transactions/categories/groups, deletes old user |
 
 ### `services/telegram.ts` -- Telegram API wrapper
 
@@ -777,6 +809,8 @@ In the wizard:
 | `handleTag(supabase, userId, chatId, args)` | `/tag` | Lists all tags with transaction counts + clickable buttons |
 | `handleCleanup(supabase, userId, chatId)` | `/limpar` | Removes unused categories (excluding `is_predefined`) + groups (excluding `is_default`). Tags are NOT shown — they're metadata on transactions, not deletable entities. |
 | `handleReset(supabase, userId, chatId)` | `/resetar` | Shows stats, sets `reset_confirm` wizard state. User types `RESETAR` to confirm → deletes wizard_states → transactions → categories → groups → users (cascade). |
+| `handleLogin(supabase, userId, chatId)` | `/login` | Generates 6-char code, saves to `link_codes` with `telegram_to_web` direction, sends to user |
+| `handleLogin(supabase, userId, chatId, args)` | `/login` | No args: generates 6-char code (`telegram_to_web`). With code: validates code from dashboard (`web_to_telegram`), calls `transferUserData` to merge accounts |
 
 ### `handlers/management.ts` -- Entity management
 
@@ -823,7 +857,7 @@ In the wizard:
 
 ### `handlers/callbacks.ts` -- Inline keyboard routing
 
-Routes ~40 callback prefixes via `handleCallbackQuery`. Key callbacks:
+Routes ~42 callback prefixes via `handleCallbackQuery`. Key callbacks:
 
 | Prefix | Purpose | Sends vs Edits |
 |--------|---------|----------------|
