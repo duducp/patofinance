@@ -1,9 +1,9 @@
 import { InlineKeyboard, DeepSeekResponse, TelegramCallbackQuery } from "../types/index.ts";
 import { sendTelegramMessage, sendTelegramMessageWithKeyboard, editTelegramMessageWithKeyboard, answerCallbackQuery } from "../services/telegram.ts";
-import { getOrCreateUser, normalizeString, getAllUserTags, getOrCreateUncategorizedCategory, deleteTransactionById, userOrNullFilter } from "../services/database.ts";
+import { getOrCreateUser, normalizeString, getOrCreateUncategorizedCategory, deleteTransactionById, userOrNullFilter } from "../services/database.ts";
 import { formatDateBR, getTodayISOBR, parseDateBR } from "../utils/formatting.ts";
 import { truncateCallbackData } from "../utils/rate-limiter.ts";
-import { getWizardState, setWizardState, clearWizardState, sendWizardStepMessage, getCurrentWizardStep, advanceWizardToNextStep, toggleTagInWizardState } from "./wizard.ts";
+import { getWizardState, setWizardState, clearWizardState, sendWizardStepMessage, getCurrentWizardStep, advanceWizardToNextStep, toggleTagInWizardState, buildTagKeyboard } from "./wizard.ts";
 import { executeNaturalLanguageAction } from "./nl-processing.ts";
 import { handleBalance, handleSummary, handleDetails, handleGroup, handleCategory, handleTransaction, showDetailsEditActions, showDetailsMainView } from "./commands.ts";
 import { handleListTransactions, handleListByTag, handleSearch, showDeleteConfirmation } from "./management.ts";
@@ -688,9 +688,18 @@ export async function handleCallbackQuery(
       const { data: transaction } = await supabase.from("transactions").select("tags").eq("id", transactionId).eq("user_id", user.id).single();
       const currentTags: string[] = transaction?.tags || [];
 
-      // Get existing tags from all user transactions
-      const allTags = await getAllUserTags(supabase, user.id);
-      const tagSet = new Set(allTags.map((t: string) => t.startsWith("#") ? t : `#${t}`));
+      // Store working state for toggle handler
+      await setWizardState(supabase, user.id, `edit_tags_${transactionId}`, { tags: currentTags, transaction_id: transactionId });
+
+      const { keyboard } = await buildTagKeyboard(supabase, user.id, sessionSeq, {
+        togglePrefix: `edit_tag_tog_${transactionId}_`,
+        extraButtons: [
+          [
+            { text: "✅ Concluir", callback_data: truncateCallbackData(`edit_tags_done_${transactionId}`, sessionSeq) },
+            { text: "⏭️ Limpar", callback_data: truncateCallbackData(`edit_tags_clr_${transactionId}`, sessionSeq) },
+          ],
+        ],
+      });
 
       let prompt = `🔖 *Editar tags* (transação #${transactionId})\n`;
       if (currentTags.length > 0) {
@@ -698,25 +707,6 @@ export async function handleCallbackQuery(
       }
       prompt += "\nClique nas tags para alternar ou digite uma nova.";
 
-      const keyboard: InlineKeyboard = [];
-      if (tagSet.size > 0) {
-        const grid = buildKeyboardGrid(
-          [...tagSet],
-          (tag) => ({
-            text: currentTags.includes(tag) ? `✅ ${tag}` : tag,
-            callback_data: addSession(`edit_tag_tog_${transactionId}_${tag}`, sessionSeq),
-          }),
-          2,
-        );
-        keyboard.push(...grid);
-      }
-      keyboard.push([
-        { text: "✅ Concluir", callback_data: truncateCallbackData(`edit_tags_done_${transactionId}`, sessionSeq) },
-        { text: "⏭️ Limpar", callback_data: truncateCallbackData(`edit_tags_clr_${transactionId}`, sessionSeq) },
-      ]);
-
-      // Store working state
-      await setWizardState(supabase, user.id, `edit_tags_${transactionId}`, { tags: currentTags, transaction_id: transactionId });
       await sendTelegramMessageWithKeyboard(chatId, prompt, keyboard);
       return;
     }
@@ -731,32 +721,21 @@ export async function handleCallbackQuery(
 
         const newTags = await toggleTagInWizardState(supabase, user.id, tag);
 
-        // Re-render the tag selection UI
-        const allTags = await getAllUserTags(supabase, user.id);
-        const tagSet = new Set(allTags.map((t: string) => t.startsWith("#") ? t : `#${t}`));
+        const { keyboard } = await buildTagKeyboard(supabase, user.id, sessionSeq, {
+          togglePrefix: `edit_tag_tog_${transactionId}_`,
+          extraButtons: [
+            [
+              { text: "✅ Concluir", callback_data: truncateCallbackData(`edit_tags_done_${transactionId}`, sessionSeq) },
+              { text: "⏭️ Limpar", callback_data: truncateCallbackData(`edit_tags_clr_${transactionId}`, sessionSeq) },
+            ],
+          ],
+        });
 
         let prompt = `🔖 *Editar tags* (transação #${transactionId})\n`;
         if (newTags.length > 0) {
           prompt += `\nSelecionadas: ${newTags.join(" ")}\n`;
         }
         prompt += "\nClique nas tags para alternar ou digite uma nova.";
-
-        const keyboard: InlineKeyboard = [];
-        if (tagSet.size > 0) {
-          const grid = buildKeyboardGrid(
-            [...tagSet],
-            (t) => ({
-              text: newTags.includes(t) ? `✅ ${t}` : t,
-              callback_data: addSession(`edit_tag_tog_${transactionId}_${t}`, sessionSeq),
-            }),
-            2,
-          );
-          keyboard.push(...grid);
-        }
-        keyboard.push([
-          { text: "✅ Concluir", callback_data: truncateCallbackData(`edit_tags_done_${transactionId}`, sessionSeq) },
-          { text: "⏭️ Limpar", callback_data: truncateCallbackData(`edit_tags_clr_${transactionId}`, sessionSeq) },
-        ]);
 
         await editTelegramMessageWithKeyboard(chatId, message.message_id, prompt, keyboard);
       }

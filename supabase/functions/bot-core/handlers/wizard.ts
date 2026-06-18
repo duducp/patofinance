@@ -98,18 +98,15 @@ export async function sendWizardStepMessage(
     keyboard.push([{ text: "✏️ Novo grupo", callback_data: addSession("wizard_new_group", sessionSeq) }]);
     await sendTelegramMessageWithKeyboard(chatId, step.prompt, keyboard);
   } else if (step.step_key === "tags") {
-    // Get current selected tags from wizard state
-    const { data: wizardData } = await supabase
-      .from("wizard_states")
-      .select("data")
-      .eq("user_id", userId)
-      .maybeSingle();
-    const currentTags: string[] = wizardData?.data?.tags
-      ? (Array.isArray(wizardData.data.tags) ? wizardData.data.tags : [wizardData.data.tags])
-      : [];
-
-    const allTags = await getAllUserTags(supabase, userId);
-    const tagSet = new Set(allTags.map((t: string) => t.startsWith("#") ? t : `#${t}`));
+    const { keyboard, currentTags } = await buildTagKeyboard(supabase, userId, sessionSeq, {
+      togglePrefix: "wiz_tag_",
+      extraButtons: [
+        [
+          { text: "✅ Concluir", callback_data: addSession("wiz_done_tags", sessionSeq) },
+          { text: "⏭️ Pular", callback_data: addSession("wizard_skip_tags", sessionSeq) },
+        ],
+      ],
+    });
 
     let prompt = step.prompt;
     if (currentTags.length > 0) {
@@ -118,22 +115,6 @@ export async function sendWizardStepMessage(
       prompt += "\n\n💡 Clique nas tags para selecionar ou digite uma nova.";
     }
 
-    const keyboard: InlineKeyboard = [];
-    if (tagSet.size > 0) {
-      const grid = buildKeyboardGrid(
-        [...tagSet],
-        (tag) => ({
-          text: currentTags.includes(tag) ? `✅ ${tag}` : tag,
-          callback_data: addSession(`wiz_tag_${tag}`, sessionSeq),
-        }),
-        2,
-      );
-      keyboard.push(...grid);
-    }
-    keyboard.push([
-      { text: "✅ Concluir", callback_data: addSession("wiz_done_tags", sessionSeq) },
-      { text: "⏭️ Pular", callback_data: addSession("wizard_skip_tags", sessionSeq) },
-    ]);
     if (messageId) {
       await editTelegramMessageWithKeyboard(chatId, messageId, prompt, keyboard);
     } else {
@@ -264,6 +245,54 @@ export async function toggleTagInWizardState(
   }).eq("user_id", userId);
 
   return newTags;
+}
+
+/**
+ * Build a tag selection keyboard with ✅ indicators for selected tags.
+ * Reads current tags from wizard state. Returns the keyboard and current tags.
+ */
+export async function buildTagKeyboard(
+  supabase: any,
+  userId: number,
+  sessionSeq: number,
+  options: {
+    togglePrefix: string;
+    extraButtons?: { text: string; callback_data: string }[][];
+  },
+): Promise<{ keyboard: InlineKeyboard; currentTags: string[] }> {
+  const { data: state } = await supabase
+    .from("wizard_states")
+    .select("data")
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  const currentTags: string[] = state?.data?.tags
+    ? (Array.isArray(state.data.tags) ? state.data.tags : [state.data.tags])
+    : [];
+
+  const allTags = await getAllUserTags(supabase, userId);
+  const tagSet = new Set(allTags.map((t: string) => t.startsWith("#") ? t : `#${t}`));
+
+  const keyboard: InlineKeyboard = [];
+  if (tagSet.size > 0) {
+    const grid = buildKeyboardGrid(
+      [...tagSet],
+      (tag) => ({
+        text: currentTags.includes(tag) ? `✅ ${tag}` : tag,
+        callback_data: addSession(`${options.togglePrefix}${tag}`, sessionSeq),
+      }),
+      2,
+    );
+    keyboard.push(...grid);
+  }
+
+  if (options.extraButtons) {
+    for (const row of options.extraButtons) {
+      keyboard.push(row);
+    }
+  }
+
+  return { keyboard, currentTags };
 }
 
 export async function getCurrentWizardStep(
