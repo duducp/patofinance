@@ -61,7 +61,7 @@ Three internal (non-exported) helpers shared across wizard handlers to reduce co
 | Function | Params | Purpose |
 |----------|--------|---------|
 | `storePromptMessageId(supabase, userId, key, messageId)` | `(any, number, string, number)` | Reads existing wizard state data, spreads it, and stores the given `key: messageId`. Used by `sendWizardStepMessage` in 5 places (category, group, tags, description, amount) to save the prompt `message_id` for later in-place editing |
-| `getNextWizardStep(supabase, wizardName, currentStepOrder)` | `(any, string, number)` | Queries `wizard_steps` for the next step after `currentStepOrder` within the given wizard. Uses `.maybeSingle()` — returns `undefined` if this is the last step. Used 10 times across `handleTransactionWizard` and `handleRecurrenceWizard` |
+| `getNextWizardStep(supabase, wizardName, currentStepOrder)` | `(any, string, number)` | Queries `wizard_steps` for the next step after `currentStepOrder` within the given wizard. Uses `.maybeSingle()` — returns `null` if this is the last step. Used 10 times across `handleTransactionWizard` and `handleRecurrenceWizard` |
 | `buildStepConfirmation(step, newStateData)` | `(any, Record<string, any>)` | Builds confirmation text for a completed step (e.g., `"✅ 🔖 Tags: #mercado"`, `"✅ 🔄 Frequência: Mensal (dia 15)"`). Returns `null` if no confirmation should be shown. Called by `advanceWizardToNextStep` |
 
 ### `advanceWizardToNextStep` (exported)

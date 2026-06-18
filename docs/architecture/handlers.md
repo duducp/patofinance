@@ -50,21 +50,23 @@ Lists all slash commands + NL example phrases.
 ### `handleDelete(supabase, userId, chatId, args)`
 - Shows transaction detail + confirm/cancel keyboard
 
-### `handleEntity(type, supabase, userId, chatId, args)`
-- Shared handler for category and group operations
-- `type: "category" | "group"` parameterized via table of constants
-- If no args: lists entities with counts + clickable management buttons
-  - For categories: includes system-global (`user_id IS NULL`) categories, deduplicated
+### `handleCategory(supabase, userId, chatId, args)`
+- Standalone handler for category operations (separated from group in refactoring)
+- If no args or `args[0] === "listar"`: lists categories with transaction counts + type icons (expense/income) + management buttons
+  - Includes system-global (`user_id IS NULL`) categories, deduplicated
   - System categories show "⭐ Categoria padrão" — no rename/delete
+- If args: checks similarity against user + system categories before creating
+  - Exact normalized match → "⚠️ Categoria 'X' já existe"
+  - Trigram similarity → suggest prompt "Usar X?" or "Criar Y mesmo assim?"
+  - No match → creates directly
+
+### `handleGroup(supabase, userId, chatId, args)`
+- Standalone handler for group operations (separated from category in refactoring)
+- If no args: lists groups with transaction counts + management buttons
 - If args: checks similarity before creating
-  - For categories: also checks system categories before creating (prevents duplicates)
-- Similarity prompt → "Usar X?" or "Criar Y mesmo assim?"
-
-### `handleGroup(…)`
-Alias: `handleEntity("group", …)`
-
-### `handleCategory(…)`
-Alias: `handleEntity("category", …)`
+  - Exact normalized match → warn
+  - Trigram similarity → suggest prompt
+  - No match → creates directly
 
 ### `handleTag(supabase, userId, chatId)`
 - Lists all user tags with transaction counts
