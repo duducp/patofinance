@@ -54,6 +54,37 @@ suggestSimilarCategories(userId, query, limit=3)
   → Returns up to 3 similar names with similarity scores
 ```
 
+## `handlers/wizard.ts` — Wizard Helpers (Internal)
+
+Two internal (non-exported) helpers shared across wizard handlers to reduce code duplication:
+
+| Function | Params | Purpose |
+|----------|--------|---------|
+| `storePromptMessageId(supabase, userId, key, messageId)` | `(any, number, string, number)` | Reads existing wizard state data, spreads it, and stores the given `key: messageId`. Used by `sendWizardStepMessage` in 5 places (category, group, tags, description, amount) to save the prompt `message_id` for later in-place editing |
+| `getNextWizardStep(supabase, wizardName, currentStepOrder)` | `(any, string, number)` | Queries `wizard_steps` for the next step after `currentStepOrder` within the given wizard. Uses `.maybeSingle()` — returns `undefined` if this is the last step. Used 10 times across `handleTransactionWizard` and `handleRecurrenceWizard` |
+
+### Usage Pattern
+
+```typescript
+// storePromptMessageId — in sendWizardStepMessage
+const sentMessageId = await sendTelegramMessageWithKeyboard(chatId, step.prompt, keyboard);
+if (sentMessageId) {
+  await storePromptMessageId(supabase, userId, "_amountPromptMessageId", sentMessageId);
+}
+
+// getNextWizardStep — in handleTransactionWizard
+const nextStep = await getNextWizardStep(supabase, wizardName, currentStep.step_order);
+if (nextStep) {
+  await setWizardState(supabase, userId, `${wizardName}_${nextStep.step_key}`, {
+    ...state.data,
+    amount: value,
+  });
+  // ... edit prompt, delete user message, send next step
+} else {
+  await completeWizard(supabase, userId, chatId, { ...state.data, amount: value });
+}
+```
+
 ## `services/deepseek.ts` — Natural Language Processing
 
 ### Architecture
