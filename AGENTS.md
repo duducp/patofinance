@@ -359,7 +359,7 @@ Every wizard step now follows a **visual confirmation pattern**:
 | tags | `✅ 🔖 Tags: #tag1 #tag2` / `Nenhuma tag` |
 | frequency | `✅ 🔄 Frequência: A cada 15 dias` / `Mensal (dia 15)` / `Anual (15 de Jan)` |
 
-**Implementation:** Each text-input step stores a `_<step>PromptMessageId` in `wizard_states.data` when the prompt is sent. When the user responds, the handler reads this ID, calls `editTelegramMessageWithKeyboard` to show the confirmation, and `deleteTelegramMessage` to remove the user's message. See [`docs/architecture/wizard.md`](docs/architecture/wizard.md) for full details.
+**Implementation:** Each text-input step stores a `_<step>PromptMessageId` in `wizard_states.data` when the prompt is sent via the shared `storePromptMessageId` helper. When the user responds, the handler reads this ID, calls `editTelegramMessageWithKeyboard` to show the confirmation, and `deleteTelegramMessage` to remove the user's message. Next-step lookups use the shared `getNextWizardStep` helper instead of inline supabase queries. See [`docs/architecture/wizard.md`](docs/architecture/wizard.md) for full details.
 
 ## Exported Functions Reference
 
@@ -417,5 +417,5 @@ supabase/
         ├── nl-processing.ts        # NL routing + wizard initiation
         ├── recurrences.ts          # 10 recurrence handlers (list/detail/advance/skip/archive/activate/edit)
         ├── callbacks.ts            # ~55 callback prefix handlers
-        └── wizard.ts               # 7 wizard functions (state + step + advance) + visual confirmation
+        └── wizard.ts               # 7 wizard functions (state + step + advance) + visual confirmation + internal helpers (storePromptMessageId, getNextWizardStep)
 ```
