@@ -217,7 +217,7 @@ export async function handleAuthTelegram(
 // ── Serve wrapper (only when run directly, not during tests) ─
 
 if (import.meta.main) {
-  serve(async (req: Request): Promise<Response> => {
+  serve((req: Request): Promise<Response> => {
     const supabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
     return handleAuthTelegram(req, supabase);
   });

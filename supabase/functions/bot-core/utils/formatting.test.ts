@@ -24,6 +24,12 @@ Deno.test("sanitizeMarkdown: text with _ escapes underscores", () => {
   assertEquals(sanitizeMarkdown("__underline__"), "\\_\\_underline\\_\\_");
 });
 
+Deno.test("sanitizeMarkdown: text with ~ escapes strikethrough markers", () => {
+  assertEquals(sanitizeMarkdown("strike~text"), "strike\\~text");
+  assertEquals(sanitizeMarkdown("~"), "\\~");
+  assertEquals(sanitizeMarkdown("~~strikethrough~~"), "\\~\\~strikethrough\\~\\~");
+});
+
 Deno.test("sanitizeMarkdown: text with backticks escapes code markers", () => {
   assertEquals(sanitizeMarkdown("code`here"), "code\\`here");
   assertEquals(sanitizeMarkdown("`"), "\\`");

@@ -739,12 +739,21 @@ export async function handleLogin(supabase: any, userId: number, chatId: number,
 
   const expiresAt = new Date(Date.now() + 2 * 60 * 1000);
 
-  await supabase.from("link_codes").insert({
+  const { error: insertError } = await supabase.from("link_codes").insert({
     user_id: user.id,
     auth_id: null,
     code: loginCode,
     expires_at: expiresAt.toISOString(),
   });
+
+  if (insertError) {
+    console.error("Error inserting login code:", insertError);
+    await sendTelegramMessage(
+      chatId,
+      "❌ Ops! Algo deu errado ao gerar o código. Tente novamente."
+    );
+    return;
+  }
 
   await sendTelegramMessage(
     chatId,
