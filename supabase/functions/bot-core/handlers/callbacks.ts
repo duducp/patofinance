@@ -3,7 +3,7 @@ import { sendTelegramMessage, sendTelegramMessageWithKeyboard, editTelegramMessa
 import { getOrCreateUser, normalizeString, getOrCreateUncategorizedCategory, deleteTransactionById, userOrNullFilter } from "../services/database.ts";
 import { formatDateBR, parseDateBR } from "../utils/formatting.ts";
 import { truncateCallbackData } from "../utils/rate-limiter.ts";
-import { getWizardState, setWizardState, clearWizardState, sendWizardStepMessage, getCurrentWizardStep, advanceWizardToNextStep, toggleTagInWizardState, buildTagKeyboard, buildCategoryKeyboard, buildGroupKeyboard, buildDateKeyboard, buildDeleteConfirmKeyboard, handleWizardSkip } from "./wizard.ts";
+import { getWizardState, setWizardState, clearWizardState, sendWizardStepMessage, getCurrentWizardStep, advanceWizardToNextStep, toggleTagInWizardState, buildTagKeyboard, buildCategoryKeyboard, buildGroupKeyboard, buildDateKeyboard, buildDeleteConfirmKeyboard, handleWizardSkip, handleEntityRename } from "./wizard.ts";
 import { executeNaturalLanguageAction } from "./nl-processing.ts";
 import { handleBalance, handleSummary, handleDetails, handleGroup, handleCategory, handleTransaction, showDetailsEditActions, showDetailsMainView } from "./commands.ts";
 import { handleListTransactions, handleListByTag, handleSearch, showDeleteConfirmation } from "./management.ts";
@@ -215,36 +215,6 @@ async function handleEntitySelect(
   }
   keyboard.push([{ text: "◀️ Voltar", callback_data: addSession(cbBack, sessionSeq) }]);
   await sendTelegramMessageWithKeyboard(chatId, `${icon} *${entityName}*\n\nO que deseja fazer?`, keyboard);
-}
-
-async function handleEntityRename(
-  type: "category" | "group",
-  supabase: any,
-  userId: number,
-  chatId: number,
-  entityName: string
-): Promise<void> {
-  const isCategory = type === "category";
-  const table = isCategory ? "categories" : "groups";
-  const flagColumn = isCategory ? "is_predefined" : "is_default";
-  const label = isCategory ? "categoria" : "grupo";
-
-  const { data: entity } = await supabase
-    .from(table)
-    .select(flagColumn)
-    .eq("user_id", userId)
-    .ilike("name", entityName)
-    .single();
-
-  if (!entity || entity[flagColumn]) {
-    const labelCapitalized = label.charAt(0).toUpperCase() + label.slice(1);
-    await sendTelegramMessage(chatId, `⭐ ${labelCapitalized}s padrão não podem ser renomead${isCategory ? "as" : "os"}.`);
-    return;
-  }
-
-  const wizardStep = isCategory ? "rename_cat" : "rename_grp";
-  await sendTelegramMessage(chatId, `✏️ Digite o novo nome para *${entityName}*:`);
-  await setWizardState(supabase, userId, wizardStep, { name: entityName });
 }
 
 async function handleEntityBack(
