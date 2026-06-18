@@ -709,11 +709,27 @@ export async function handleCallbackQuery(
     if (selectedValue === "wizard_new_category" || selectedValue === "wizard_new_group") {
       const state = await getWizardState(supabase, user.id);
       if (!state) return;
-      const prompt = selectedValue === "wizard_new_category"
+      const isCategory = selectedValue === "wizard_new_category";
+      const prompt = isCategory
         ? "✏️ Digite o nome da nova categoria:"
         : "✏️ Digite o nome do novo grupo:";
-      await sendTelegramMessage(chatId, prompt);
-      // Keep the same step so the typed name is picked up by handleTransactionWizard
+      const msgId = await sendTelegramMessage(chatId, prompt);
+      // Overwrite the _categoryPromptMessageId / _groupPromptMessageId so the handler
+      // edits THIS prompt instead of the original category selection screen
+      if (msgId) {
+        const key = isCategory ? "_categoryPromptMessageId" : "_groupPromptMessageId";
+        const { data: currentState } = await supabase
+          .from("wizard_states")
+          .select("data")
+          .eq("user_id", user.id)
+          .maybeSingle();
+        if (currentState) {
+          await supabase.from("wizard_states").update({
+            data: { ...currentState.data, [key]: msgId },
+            expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+          }).eq("user_id", user.id);
+        }
+      }
       return;
     }
 
