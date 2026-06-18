@@ -4,6 +4,7 @@ import { truncateCallbackData } from "../utils/rate-limiter.ts";
 import { addSession, getSessionSeq } from "../utils/session.ts";
 import { requireUser, normalizeString, suggestSimilarCategories, suggestSimilarGroups, listTransactionsPaginated, TRANSACTION_DETAIL_FIELDS, deduplicateByNormalizedName, userOrNullFilter } from "../services/database.ts";
 import { formatCurrencyBR, formatDateBR, sanitizeMarkdown } from "../utils/formatting.ts";
+import { buildDeleteConfirmKeyboard } from "./wizard.ts";
 
 async function handleCreateEntity(
   type: "category" | "group",
@@ -249,12 +250,10 @@ export async function showDeleteConfirmation(
   const catName = sanitizeMarkdown(transaction.categories?.name || "Sem categoria");
   const desc = sanitizeMarkdown(transaction.description || "");
 
-  const keyboard: InlineKeyboard = [
-    [
-      { text: "✅ Sim, excluir", callback_data: addSession(`confirm_delete_${transaction.id}`, sessionSeq) },
-      { text: "❌ Não, manter", callback_data: addSession(`cancel_delete_${transaction.id}`, sessionSeq) },
-    ],
-  ];
+  const keyboard = buildDeleteConfirmKeyboard(
+    addSession(`confirm_delete_${transaction.id}`, sessionSeq),
+    addSession(`cancel_delete_${transaction.id}`, sessionSeq),
+  );
 
   const messageText =
     `${emoji} *${typeName} #${transaction.id}:*\n\n` +

@@ -3,7 +3,7 @@ import { sendTelegramMessage, sendTelegramMessageWithKeyboard, editTelegramMessa
 import { getOrCreateUser, normalizeString, getOrCreateUncategorizedCategory, deleteTransactionById, userOrNullFilter } from "../services/database.ts";
 import { formatDateBR, parseDateBR } from "../utils/formatting.ts";
 import { truncateCallbackData } from "../utils/rate-limiter.ts";
-import { getWizardState, setWizardState, clearWizardState, sendWizardStepMessage, getCurrentWizardStep, advanceWizardToNextStep, toggleTagInWizardState, buildTagKeyboard, buildCategoryKeyboard, buildGroupKeyboard, buildDateKeyboard, handleWizardSkip } from "./wizard.ts";
+import { getWizardState, setWizardState, clearWizardState, sendWizardStepMessage, getCurrentWizardStep, advanceWizardToNextStep, toggleTagInWizardState, buildTagKeyboard, buildCategoryKeyboard, buildGroupKeyboard, buildDateKeyboard, buildDeleteConfirmKeyboard, handleWizardSkip } from "./wizard.ts";
 import { executeNaturalLanguageAction } from "./nl-processing.ts";
 import { handleBalance, handleSummary, handleDetails, handleGroup, handleCategory, handleTransaction, showDetailsEditActions, showDetailsMainView } from "./commands.ts";
 import { handleListTransactions, handleListByTag, handleSearch, showDeleteConfirmation } from "./management.ts";
@@ -79,10 +79,10 @@ async function handleEntityDeletePrompt(
     .eq("user_id", userId)
     .eq(fkColumn, entity.id);
 
-  const keyboard: InlineKeyboard = [
-    [{ text: "✅ Sim, excluir", callback_data: addSession(`${cbYesPrefix}${entityName}`, sessionSeq) }],
-    [{ text: "❌ Não, manter", callback_data: addSession(cbBack, sessionSeq) }],
-  ];
+  const keyboard = buildDeleteConfirmKeyboard(
+    addSession(`${cbYesPrefix}${entityName}`, sessionSeq),
+    addSession(cbBack, sessionSeq),
+  );
   await sendTelegramMessageWithKeyboard(
     chatId,
     `🗑️ Tem certeza de que deseja excluir ${isCategory ? "a categoria" : "o grupo"} *${entityName}*?\n\n${txCount || 0} ${(txCount || 0) !== 1 ? "transações" : "transação"} ${(txCount || 0) !== 1 ? "serão reatribuídas" : "será reatribuída"} para "${fallbackName}".`,

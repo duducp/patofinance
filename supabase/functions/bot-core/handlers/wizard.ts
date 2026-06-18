@@ -369,6 +369,22 @@ export function buildDateKeyboard(
 }
 
 /**
+ * Build a delete confirmation keyboard (✅ Sim, excluir / ❌ Não, manter).
+ * Shared by showDeleteConfirmation and handleEntityDeletePrompt.
+ */
+export function buildDeleteConfirmKeyboard(
+  confirmCallback: string,
+  cancelCallback: string,
+): InlineKeyboard {
+  return [
+    [
+      { text: "✅ Sim, excluir", callback_data: confirmCallback },
+      { text: "❌ Não, manter", callback_data: cancelCallback },
+    ],
+  ];
+}
+
+/**
  * Handle a wizard skip action: set the current step's value to empty and advance.
  * Shared by wizard_skip_description and wizard_skip_tags handlers.
  */
