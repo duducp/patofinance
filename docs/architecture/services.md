@@ -77,6 +77,21 @@ Three internal (non-exported) helpers shared across wizard handlers to reduce co
 
 This ensures that when the user clicks "⏭️ Pular" or "✅ Concluir" on the **last step** (e.g., tags in gasto/receita), the prompt is still edited with the confirmation text (e.g., `"✅ 🔖 Tags: Nenhuma tag"`) before the wizard is completed.
 
+### Entity Management Functions (exported)
+
+| Function | Params | Purpose |
+|----------|--------|---------|
+| `handleEntityRename(type, supabase, userId, chatId, entityName)` | `("category"\|"group", any, number, number, string)` | Starts a rename wizard: verifies the entity is not predefined/default, sends "✏️ Digite o novo nome" message, sets wizard state with step `rename_cat` or `rename_grp`. The user's next text input is handled by `handleTransactionWizard` which reads `state.data.name` |
+| `handleEntityDeletePrompt(type, supabase, userId, chatId, entityName, sessionSeq)` | `("category"\|"group", any, number, number, string, number)` | Shows delete confirmation dialog with entity name and transaction count. Prevents deletion of predefined/default entities. Uses `buildDeleteConfirmKeyboard` for the confirm/cancel buttons. Gender-aware labels ("a categoria" / "o grupo") |
+| `handleEntityDeleteExecute(type, supabase, userId, chatId, entityName)` | `("category"\|"group", any, number, number, string)` | Executes entity deletion: verifies not predefined/default, reassigns affected transactions to fallback ("Sem categoria" via `getOrCreateUncategorizedCategory` or "Pessoal" via `is_default` group lookup), deletes entity row, sends success message with reassignment count |
+
+### Keyboard Builders (exported)
+
+| Function | Params | Purpose |
+|----------|--------|---------|
+| `buildDeleteConfirmKeyboard(confirmCallback, cancelCallback)` | `(string, string)` | Returns a 2-button `InlineKeyboard`: `✅ Sim, excluir` and `❌ Não, manter`. Used by `handleEntityDeletePrompt` and `showDeleteConfirmation` |
+| `buildDateKeyboard({ todayCallback, yesterdayCallback, customCallback })` | `(todayCallback, yesterdayCallback, customCallback)` | Returns a date selection keyboard: top row with "📅 Hoje" / "📅 Ontem", bottom row with "📆 Outra data". Callbacks receive the ISO date string as parameter |
+
 ### Usage Pattern
 
 ```typescript
@@ -101,6 +116,19 @@ if (nextStep) {
 // advanceWizardToNextStep — called by callback handlers (e.g., wiz_done_tags, wiz_freq_detail)
 // Confirmation edit runs FIRST, then next step query:
 await advanceWizardToNextStep(supabase, user.id, chatId, wizard.currentStep, sessionSeq, newStateData, message.message_id);
+
+// buildDeleteConfirmKeyboard — in callback handlers
+const keyboard = buildDeleteConfirmKeyboard(
+  addSession(`cat_del_yes_${entityName}`, sessionSeq),
+  addSession("cat_back", sessionSeq),
+);
+
+// buildDateKeyboard — in sendWizardStepMessage
+const keyboard = buildDateKeyboard({
+  todayCallback: (date) => addSession(`wiz_date_${date}`, sessionSeq),
+  yesterdayCallback: (date) => addSession(`wiz_date_${date}`, sessionSeq),
+  customCallback: addSession("custom_date", sessionSeq),
+});
 ```
 
 ## `services/deepseek.ts` — Natural Language Processing
