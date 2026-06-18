@@ -19,6 +19,7 @@
   <img src="https://img.shields.io/badge/AI-DeepSeek-4F6BED?style=flat-square" alt="DeepSeek">
   <img src="https://img.shields.io/badge/License-MIT-brightgreen?style=flat-square" alt="MIT">
   <img src="https://img.shields.io/badge/CI-Passing-success?style=flat-square&logo=githubactions" alt="CI">
+  <a href="https://patofinance.vercel.app"><img src="https://img.shields.io/badge/Landing-Vercel-000?style=flat-square&logo=vercel" alt="Vercel"></a>
 </p>
 
 ---
