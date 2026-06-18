@@ -138,20 +138,19 @@ serve(async (req: Request): Promise<Response> => {
 
     const supabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
 
-    const { data: existingUser } = await supabase
-      .from("users")
-      .select("id")
+    const { data: existingAccount } = await supabase
+      .from("telegram_accounts")
+      .select("user_id")
       .eq("telegram_id", message.from.id)
       .maybeSingle();
 
+    const existingUser = existingAccount ? { id: existingAccount.user_id } : null;
+
     if (!existingUser) {
+      // 1. Create the core user account
       const { data: newUser, error: userError } = await supabase
         .from("users")
-        .insert({
-          telegram_id: message.from.id,
-          username: message.from.username,
-          first_name: message.from.first_name,
-        })
+        .insert({})
         .select("id")
         .single();
 
@@ -160,6 +159,14 @@ serve(async (req: Request): Promise<Response> => {
         await sendTelegramMessage(message.chat.id, "❌ Ops! Algo deu errado ao criar sua conta. Tente novamente.");
         return new Response("OK", { status: 200 });
       }
+
+      // 2. Create Telegram identity link
+      await supabase.from("telegram_accounts").insert({
+        user_id: newUser.id,
+        telegram_id: message.from.id,
+        username: message.from.username,
+        first_name: message.from.first_name,
+      });
 
       await supabase.from("groups").insert({
         user_id: newUser.id,

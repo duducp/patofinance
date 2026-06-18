@@ -10,12 +10,13 @@ export function normalizeString(str: string): string {
 }
 
 export async function getOrCreateUser(supabase: any, telegramId: number): Promise<any | null> {
-  const { data: user } = await supabase
-    .from("users")
-    .select("id")
+  const { data: account } = await supabase
+    .from("telegram_accounts")
+    .select("user_id")
     .eq("telegram_id", telegramId)
     .maybeSingle();
-  return user || null;
+  if (!account) return null;
+  return { id: account.user_id };
 }
 
 export async function requireUser(supabase: any, userId: number, chatId: number): Promise<any | null> {
