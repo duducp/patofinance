@@ -54,6 +54,49 @@ export async function setWizardState(
 }
 
 /**
+ * Store a messageId reference in the wizard state (used for editing prompts in-place).
+ * Reads existing state data, spreads it, and adds/overwrites the given key.
+ */
+async function storePromptMessageId(
+  supabase: any,
+  userId: number,
+  key: string,
+  messageId: number
+): Promise<void> {
+  const { data: state } = await supabase
+    .from("wizard_states")
+    .select("data")
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (state) {
+    await supabase.from("wizard_states").update({
+      data: { ...state.data, [key]: messageId },
+      expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+    }).eq("user_id", userId);
+  }
+}
+
+/**
+ * Query the next wizard step after the current one.
+ * Returns the step row or undefined if this is the last step.
+ */
+async function getNextWizardStep(
+  supabase: any,
+  wizardName: string,
+  currentStepOrder: number
+): Promise<any> {
+  const { data: nextStep } = await supabase
+    .from("wizard_steps")
+    .select("*")
+    .eq("wizard_name", wizardName)
+    .gt("step_order", currentStepOrder)
+    .order("step_order")
+    .limit(1)
+    .maybeSingle();
+  return nextStep;
+}
+
+/**
  * Delete the wizard state for a user (clears any in-progress wizard).
  */
 export async function clearWizardState(supabase: any, userId: number): Promise<void> {
@@ -87,17 +130,7 @@ export async function sendWizardStepMessage(
       sentMessageId = await sendTelegramMessageWithKeyboard(chatId, step.prompt, keyboard);
     }
     if (sentMessageId) {
-      const { data: state } = await supabase
-        .from("wizard_states")
-        .select("data")
-        .eq("user_id", userId)
-        .maybeSingle();
-      if (state) {
-        await supabase.from("wizard_states").update({
-          data: { ...state.data, _categoryPromptMessageId: sentMessageId },
-          expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
-        }).eq("user_id", userId);
-      }
+      await storePromptMessageId(supabase, userId, "_categoryPromptMessageId", sentMessageId);
     }
   } else if (step.step_key === "group") {
     const keyboard = await buildGroupKeyboard(supabase, userId, sessionSeq, {
@@ -111,17 +144,7 @@ export async function sendWizardStepMessage(
       sentMessageId = await sendTelegramMessageWithKeyboard(chatId, step.prompt, keyboard);
     }
     if (sentMessageId) {
-      const { data: state } = await supabase
-        .from("wizard_states")
-        .select("data")
-        .eq("user_id", userId)
-        .maybeSingle();
-      if (state) {
-        await supabase.from("wizard_states").update({
-          data: { ...state.data, _groupPromptMessageId: sentMessageId },
-          expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
-        }).eq("user_id", userId);
-      }
+      await storePromptMessageId(supabase, userId, "_groupPromptMessageId", sentMessageId);
     }
   } else if (step.step_key === "tags") {
     const { keyboard, currentTags, hasExistingTags } = await buildTagKeyboard(supabase, userId, sessionSeq, {
@@ -157,17 +180,7 @@ export async function sendWizardStepMessage(
     }
     // Store the message_id so we can edit it later when user types tags
     if (sentMessageId) {
-      const { data: state } = await supabase
-        .from("wizard_states")
-        .select("data")
-        .eq("user_id", userId)
-        .maybeSingle();
-      if (state) {
-        await supabase.from("wizard_states").update({
-          data: { ...state.data, _tagsPromptMessageId: sentMessageId },
-          expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
-        }).eq("user_id", userId);
-      }
+      await storePromptMessageId(supabase, userId, "_tagsPromptMessageId", sentMessageId);
     }
   } else if (step.step_key === "description") {
     const keyboard: InlineKeyboard = [
@@ -181,17 +194,7 @@ export async function sendWizardStepMessage(
     }
     // Store the message_id so we can edit it later when user types a description
     if (sentMessageId) {
-      const { data: state } = await supabase
-        .from("wizard_states")
-        .select("data")
-        .eq("user_id", userId)
-        .maybeSingle();
-      if (state) {
-        await supabase.from("wizard_states").update({
-          data: { ...state.data, _descPromptMessageId: sentMessageId },
-          expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
-        }).eq("user_id", userId);
-      }
+      await storePromptMessageId(supabase, userId, "_descPromptMessageId", sentMessageId);
     }
   } else if (step.step_key === "date") {
     const keyboard = buildDateKeyboard({
@@ -235,17 +238,7 @@ export async function sendWizardStepMessage(
     }
     // Store the message_id so we can edit it later when user types the amount
     if (sentMessageId) {
-      const { data: state } = await supabase
-        .from("wizard_states")
-        .select("data")
-        .eq("user_id", userId)
-        .maybeSingle();
-      if (state) {
-        await supabase.from("wizard_states").update({
-          data: { ...state.data, _amountPromptMessageId: sentMessageId },
-          expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
-        }).eq("user_id", userId);
-      }
+      await storePromptMessageId(supabase, userId, "_amountPromptMessageId", sentMessageId);
     }
   } else if (step.input_type === "select") {
     const { data: options } = await supabase
@@ -612,9 +605,12 @@ export function buildStepConfirmation(
 ): string | null {
   const value = newStateData[step.step_key];
   if (!value && value !== 0) {
-    // For description, show confirmation even when skipped
+    // For description and tags, show confirmation even when skipped/empty
     if (step.step_key === "description") {
       return "✅ 📝 Descrição: Nenhuma descrição informada";
+    }
+    if (step.step_key === "tags") {
+      return "✅ 🔖 Tags: Nenhuma tag";
     }
     return null;
   }
@@ -1015,16 +1011,7 @@ export async function handleTransactionWizard(
 
   // For category text input (user typed a new name), edit prompt and delete user's message
   if (stepKey === "category") {
-    const catPromptMessageId = state.data?._categoryPromptMessageId as number | undefined;
-
-    const { data: nextStep } = await supabase
-      .from("wizard_steps")
-      .select("*")
-      .eq("wizard_name", wizardName)
-      .gt("step_order", currentStep.step_order)
-      .order("step_order")
-      .limit(1)
-      .single();
+    const catPromptMessageId = state.data?._categoryPromptMessageId as number | undefined;    const nextStep = await getNextWizardStep(supabase, wizardName, currentStep.step_order);
 
     if (nextStep) {
       await setWizardState(supabase, userId, `${wizardName}_${nextStep.step_key}`, {
@@ -1052,16 +1039,7 @@ export async function handleTransactionWizard(
 
   // For group text input (user typed a new name), edit prompt and delete user's message
   if (stepKey === "group") {
-    const grpPromptMessageId = state.data?._groupPromptMessageId as number | undefined;
-
-    const { data: nextStep } = await supabase
-      .from("wizard_steps")
-      .select("*")
-      .eq("wizard_name", wizardName)
-      .gt("step_order", currentStep.step_order)
-      .order("step_order")
-      .limit(1)
-      .single();
+    const grpPromptMessageId = state.data?._groupPromptMessageId as number | undefined;    const nextStep = await getNextWizardStep(supabase, wizardName, currentStep.step_order);
 
     if (nextStep) {
       await setWizardState(supabase, userId, `${wizardName}_${nextStep.step_key}`, {
@@ -1090,16 +1068,7 @@ export async function handleTransactionWizard(
   // For amount step, edit the prompt message and delete user's message
   if (stepKey === "amount") {
     const amountPromptMessageId = state.data?._amountPromptMessageId as number | undefined;
-    const amountNum = parseFloat(value);
-
-    const { data: nextStep } = await supabase
-      .from("wizard_steps")
-      .select("*")
-      .eq("wizard_name", wizardName)
-      .gt("step_order", currentStep.step_order)
-      .order("step_order")
-      .limit(1)
-      .single();
+    const amountNum = parseFloat(value);    const nextStep = await getNextWizardStep(supabase, wizardName, currentStep.step_order);
 
     if (nextStep) {
       await setWizardState(supabase, userId, `${wizardName}_${nextStep.step_key}`, {
@@ -1128,16 +1097,7 @@ export async function handleTransactionWizard(
 
   // For description step, edit the prompt message and delete user's message
   if (stepKey === "description") {
-    const descPromptMessageId = state.data?._descPromptMessageId as number | undefined;
-
-    const { data: nextStep } = await supabase
-      .from("wizard_steps")
-      .select("*")
-      .eq("wizard_name", wizardName)
-      .gt("step_order", currentStep.step_order)
-      .order("step_order")
-      .limit(1)
-      .single();
+    const descPromptMessageId = state.data?._descPromptMessageId as number | undefined;    const nextStep = await getNextWizardStep(supabase, wizardName, currentStep.step_order);
 
     if (nextStep) {
       await setWizardState(supabase, userId, `${wizardName}_${nextStep.step_key}`, {
@@ -1163,16 +1123,7 @@ export async function handleTransactionWizard(
       });
     }
     return;
-  }
-
-  const { data: nextStep } = await supabase
-    .from("wizard_steps")
-    .select("*")
-    .eq("wizard_name", wizardName)
-    .gt("step_order", currentStep.step_order)
-    .order("step_order")
-    .limit(1)
-    .single();
+  }  const nextStep = await getNextWizardStep(supabase, wizardName, currentStep.step_order);
 
   if (nextStep) {
     await setWizardState(supabase, userId, `${wizardName}_${nextStep.step_key}`, {
@@ -1406,16 +1357,7 @@ export async function handleRecurrenceWizard(
 
   // For category text input (user typed a new name), edit prompt and delete user's message
   if (stepKey === "category") {
-    const catPromptMessageId = state.data?._categoryPromptMessageId as number | undefined;
-
-    const { data: nextStep } = await supabase
-      .from("wizard_steps")
-      .select("*")
-      .eq("wizard_name", "recorrencia")
-      .gt("step_order", currentStep.step_order)
-      .order("step_order")
-      .limit(1)
-      .single();
+    const catPromptMessageId = state.data?._categoryPromptMessageId as number | undefined;    const nextStep = await getNextWizardStep(supabase, "recorrencia", currentStep.step_order);
 
     if (nextStep) {
       await setWizardState(supabase, userId, `recorrencia_${nextStep.step_key}`, {
@@ -1443,16 +1385,7 @@ export async function handleRecurrenceWizard(
 
   // For group text input (user typed a new name), edit prompt and delete user's message
   if (stepKey === "group") {
-    const grpPromptMessageId = state.data?._groupPromptMessageId as number | undefined;
-
-    const { data: nextStep } = await supabase
-      .from("wizard_steps")
-      .select("*")
-      .eq("wizard_name", "recorrencia")
-      .gt("step_order", currentStep.step_order)
-      .order("step_order")
-      .limit(1)
-      .single();
+    const grpPromptMessageId = state.data?._groupPromptMessageId as number | undefined;    const nextStep = await getNextWizardStep(supabase, "recorrencia", currentStep.step_order);
 
     if (nextStep) {
       await setWizardState(supabase, userId, `recorrencia_${nextStep.step_key}`, {
@@ -1481,16 +1414,7 @@ export async function handleRecurrenceWizard(
   // For amount step, edit the prompt message and delete user's message
   if (stepKey === "amount") {
     const amountPromptMessageId = state.data?._amountPromptMessageId as number | undefined;
-    const amountNum = parseFloat(value);
-
-    const { data: nextStep } = await supabase
-      .from("wizard_steps")
-      .select("*")
-      .eq("wizard_name", "recorrencia")
-      .gt("step_order", currentStep.step_order)
-      .order("step_order")
-      .limit(1)
-      .single();
+    const amountNum = parseFloat(value);    const nextStep = await getNextWizardStep(supabase, "recorrencia", currentStep.step_order);
 
     if (nextStep) {
       await setWizardState(supabase, userId, `recorrencia_${nextStep.step_key}`, {
@@ -1518,16 +1442,7 @@ export async function handleRecurrenceWizard(
 
   // For description step, edit the prompt message and delete user's message
   if (stepKey === "description") {
-    const descPromptMessageId = state.data?._descPromptMessageId as number | undefined;
-
-    const { data: nextStep } = await supabase
-      .from("wizard_steps")
-      .select("*")
-      .eq("wizard_name", "recorrencia")
-      .gt("step_order", currentStep.step_order)
-      .order("step_order")
-      .limit(1)
-      .single();
+    const descPromptMessageId = state.data?._descPromptMessageId as number | undefined;    const nextStep = await getNextWizardStep(supabase, "recorrencia", currentStep.step_order);
 
     if (nextStep) {
       await setWizardState(supabase, userId, `recorrencia_${nextStep.step_key}`, {
@@ -1551,16 +1466,7 @@ export async function handleRecurrenceWizard(
       });
     }
     return;
-  }
-
-  const { data: nextStep } = await supabase
-    .from("wizard_steps")
-    .select("*")
-    .eq("wizard_name", "recorrencia")
-    .gt("step_order", currentStep.step_order)
-    .order("step_order")
-    .limit(1)
-    .single();
+  }  const nextStep = await getNextWizardStep(supabase, "recorrencia", currentStep.step_order);
 
   if (nextStep) {
     await setWizardState(supabase, userId, `recorrencia_${nextStep.step_key}`, {
