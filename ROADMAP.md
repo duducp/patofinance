@@ -49,6 +49,7 @@
 - [x] **Busca fuzzy** — `pg_trgm` para similaridade em categorias/grupos/tags
 - [x] **Índice GIN trigram** — Busca rápida em `transactions.description`
 - [x] **Deploy via CLI** — `supabase functions deploy` com `--no-verify-jwt`
+- [x] **RLS para Dashboard** — `auth_id` em `users`, políticas `auth.uid()` em 6 tabelas, grants para `authenticated`
 
 ### Documentação
 
@@ -91,7 +92,7 @@
 
 | Feature | Descrição |
 |---------|-----------|
-| **Web Dashboard** | Interface web para visualização, além do Telegram |
+| **Web Dashboard** | Interface web para visualização, além do Telegram 🚧 RLS pronto |
 | **Importação bancária** | OFX/OFD para importar extratos automaticamente |
 | **Compartilhamento** | Orçamento familiar compartilhado entre usuários |
 | **Multi-moeda** | Suporte a USD, EUR com conversão automática |
