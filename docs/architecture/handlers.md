@@ -203,6 +203,25 @@ Lists all slash commands + NL example phrases.
 - Then finds next step by `step_order`
 - Sends next step or completes wizard (calls `completeRecurrenceWizard` for recorrencia, `completeWizard` otherwise)
 
+### `handleEntityRename(type, supabase, userId, chatId, entityName)`
+- Starts a rename wizard for a category or group
+- `type: "category" | "group"` — verifies the entity is not predefined/default before proceeding
+- Sets wizard state with step `rename_cat` or `rename_grp` and the old name in data
+- The user's next text input is handled by `handleTransactionWizard` which reads `state.data.name`
+
+### `handleEntityDeletePrompt(type, supabase, userId, chatId, entityName, sessionSeq)`
+- Shows a delete confirmation dialog with the entity's transaction count
+- `type: "category" | "group"` — adjusts labels and article gender ("a categoria" / "o grupo")
+- Queries transaction count for the entity, shows it in the confirmation message
+- Uses shared `buildDeleteConfirmKeyboard` with `cat_del_yes_` / `grp_del_yes_` and back buttons
+- Prevents deletion of predefined/default entities (returns early with warning message if flagged)
+
+### `handleEntityDeleteExecute(type, supabase, userId, chatId, entityName)`
+- Executes entity deletion after user confirms
+- Reassigns affected transactions to fallback ("Sem categoria" or "Pessoal")
+- Deletes the entity row from categories/groups table
+- Sends success message with count of reassigned transactions
+
 ### `handleTransactionWizard(type, supabase, userId, chatId, state, input, userMessageId?)`
 - Routes wizard input by step key
 - `userMessageId?` — when provided, the user's typed message is **deleted** after processing
