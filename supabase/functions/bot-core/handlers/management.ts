@@ -3,7 +3,7 @@ import { sendTelegramMessage, sendTelegramMessageWithKeyboard, editTelegramMessa
 import { truncateCallbackData } from "../utils/rate-limiter.ts";
 import { addSession, getSessionSeq } from "../utils/session.ts";
 import { requireUser, normalizeString, suggestSimilarCategories, suggestSimilarGroups, listTransactionsPaginated, TRANSACTION_DETAIL_FIELDS, deduplicateByNormalizedName, userOrNullFilter } from "../services/database.ts";
-import { formatCurrencyBR, formatDateBR } from "../utils/formatting.ts";
+import { formatCurrencyBR, formatDateBR, sanitizeMarkdown } from "../utils/formatting.ts";
 
 async function handleCreateEntity(
   type: "category" | "group",
@@ -151,11 +151,10 @@ export async function handleListTransactions(supabase: any, userId: number, chat
   let message = `📋 *Últimas transações${tagLabel}${pageInfo}:*\n\n`;
 
   for (const t of items) {
-    const emoji = t.type === "income" ? "📈" : "📉";
-    const catName = t.categories?.name || "Sem categoria";
-    const dateStr = formatDateBR(t.transaction_date);
-    const desc = t.description ? ` — ${t.description}` : "";
-    message += `${emoji} ${dateStr} - *${formatCurrencyBR(Number(t.amount))}* | ${catName}${desc}\n`;
+    const emoji = t.type === "income" ? "📈" : "📉";  const catName = sanitizeMarkdown(t.categories?.name || "Sem categoria");
+      const dateStr = formatDateBR(t.transaction_date);
+      const desc = t.description ? ` — ${sanitizeMarkdown(t.description)}` : "";
+      message += `${emoji} ${dateStr} - *${formatCurrencyBR(Number(t.amount))}* | ${catName}${desc}\n`;
   }
 
   // Build navigation keyboard
@@ -207,10 +206,10 @@ export async function handleShowLastTransaction(supabase: any, userId: number, c
 
   const emoji = transaction.type === "income" ? "📈" : "📉";
   const typeName = transaction.type === "income" ? "Receita" : "Despesa";
-  const catName = transaction.categories?.name || "Sem categoria";
-  const groupName = transaction.groups?.name || "Sem grupo";
+  const catName = sanitizeMarkdown(transaction.categories?.name || "Sem categoria");
+  const groupName = sanitizeMarkdown(transaction.groups?.name || "Sem grupo");
   const tags = transaction.tags && transaction.tags.length > 0 
-    ? transaction.tags.map((t: string) => `#${t}`).join(" ") 
+    ? transaction.tags.map((t: string) => sanitizeMarkdown(`#${t}`)).join(" ") 
     : "Sem tags";
 
   const sessionSeq = await getSessionSeq(supabase, user.id);
@@ -247,8 +246,8 @@ export async function showDeleteConfirmation(
 ): Promise<void> {
   const emoji = transaction.type === "income" ? "📈" : "📉";
   const typeName = transaction.type === "income" ? "Receita" : "Despesa";
-  const catName = transaction.categories?.name || "Sem categoria";
-  const desc = transaction.description || "";
+  const catName = sanitizeMarkdown(transaction.categories?.name || "Sem categoria");
+  const desc = sanitizeMarkdown(transaction.description || "");
 
   const keyboard: InlineKeyboard = [
     [

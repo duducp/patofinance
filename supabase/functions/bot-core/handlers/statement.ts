@@ -1,7 +1,7 @@
 import type { InlineKeyboard, InlineKeyboardButton, ExtratoFilters, PeriodPreset } from "../types/index.ts";
 import { sendTelegramMessage, sendTelegramMessageWithKeyboard, editTelegramMessageWithKeyboard } from "../services/telegram.ts";
 import { getOrCreateUser, requireUser, getAllUserTags, deduplicateByNormalizedName, userOrNullFilter } from "../services/database.ts";
-import { formatCurrencyBR, formatDateBR, getTodayISOBR, getMonthName, getNowBR } from "../utils/formatting.ts";
+import { formatCurrencyBR, formatDateBR, getTodayISOBR, getMonthName, getNowBR, sanitizeMarkdown } from "../utils/formatting.ts";
 import { addSession, getSessionSeq } from "../utils/session.ts";
 import { buildKeyboardGrid } from "../utils/keyboard.ts";
 import { setWizardState, getWizardState, clearWizardState } from "./wizard.ts";
@@ -267,8 +267,8 @@ export async function handleStatement(
     const isFuture = t.transaction_date > today;
     const catName = t.categories?.name;
     const grpName = t.groups?.name || "Pessoal";
-    const catPart = catName ? ` - ${catName}` : "";
-    const line = `   • #${t.id}  ${shortDate}  ${formatCurrencyBR(Number(t.amount))}  - ${grpName}${catPart}`;
+    const catPart = catName ? ` - ${sanitizeMarkdown(catName)}` : "";
+    const line = `   • #${t.id}  ${shortDate}  ${formatCurrencyBR(Number(t.amount))}  - ${sanitizeMarkdown(grpName)}${catPart}`;
     return isFuture ? `_${line}_\n` : `${line}\n`;
   }
 
@@ -356,15 +356,15 @@ async function renderFilterPanelMessage(
   let catName = "Nenhuma";
   if (filters.category_id) {
     const { data: cat } = await supabase.from("categories").select("name").eq("id", filters.category_id).maybeSingle();
-    if (cat) catName = cat.name;
+    if (cat) catName = sanitizeMarkdown(cat.name);
   }
   let grpName = "Nenhum";
   if (filters.group_id) {
     const { data: grp } = await supabase.from("groups").select("name").eq("id", filters.group_id).maybeSingle();
-    if (grp) grpName = grp.name;
+    if (grp) grpName = sanitizeMarkdown(grp.name);
   }
   const tagStr = filters.tags.length > 0
-    ? filters.tags.map((t: string) => t.startsWith("#") ? t : `#${t}`).join(" ")
+    ? filters.tags.map((t: string) => sanitizeMarkdown(t.startsWith("#") ? t : `#${t}`)).join(" ")
     : "Nenhuma";
   const typeLabels: Record<string, string> = { all: "Todas", income: "📈 Receitas", expense: "📉 Despesas" };
   const periodLabels: Record<string, string> = {

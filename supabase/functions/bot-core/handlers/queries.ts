@@ -1,7 +1,7 @@
 import { PeriodResult } from "../types/index.ts";
 import { sendTelegramMessage, sendTelegramMessageWithKeyboard } from "../services/telegram.ts";
 import { requireUser } from "../services/database.ts";
-import { formatCurrencyBR, formatDateBR, getTodayISOBR } from "../utils/formatting.ts";
+import { formatCurrencyBR, formatDateBR, getTodayISOBR, sanitizeMarkdown } from "../utils/formatting.ts";
 import { addSession, getSessionSeq } from "../utils/session.ts";
 import { getDateRange } from "../utils/date-helpers.ts";
 
@@ -87,19 +87,19 @@ export async function getSummaryData(
 
 export function formatSummaryMessage(data: SummaryData, groupName?: string): string {
   let message = `📊 *Resumo - ${data.monthName}*\n`;
-  if (groupName) message += `📁 Grupo: *${groupName}*\n`;
+  if (groupName) message += `📁 Grupo: *${sanitizeMarkdown(groupName)}*\n`;
   message += "\n";
   if (data.incomeByCategory && Object.keys(data.incomeByCategory).length > 0) {
     message += `📈 *Receitas: ${formatCurrencyBR(data.totalIncomes)}*\n`;
     for (const [cat, amount] of Object.entries(data.incomeByCategory).sort((a, b) => b[1] - a[1])) {
-      message += `   • ${cat}: ${formatCurrencyBR(amount)}\n`;
+      message += `   • ${sanitizeMarkdown(cat)}: ${formatCurrencyBR(amount)}\n`;
     }
     message += "\n";
   }
   if (data.expenseByCategory && Object.keys(data.expenseByCategory).length > 0) {
     message += `📉 *Despesas: ${formatCurrencyBR(data.totalExpenses)}*\n`;
     for (const [cat, amount] of Object.entries(data.expenseByCategory).sort((a, b) => b[1] - a[1])) {
-      message += `   • ${cat}: ${formatCurrencyBR(amount)}\n`;
+      message += `   • ${sanitizeMarkdown(cat)}: ${formatCurrencyBR(amount)}\n`;
     }
     message += "\n";
   }
@@ -160,8 +160,7 @@ export async function handleQueryExpenses(
   for (const t of limited) {
     const catName = t.categories?.name || "Sem categoria";
     const desc = t.description ? ` — ${t.description}` : "";
-    const icon = t.type === "income" ? "📈" : "📉";
-    message += `${icon} ${formatDateBR(t.transaction_date)} - *${formatCurrencyBR(Number(t.amount))}* | ${catName}${desc}\n`;
+    const icon = t.type === "income" ? "📈" : "📉";      message += `${icon} ${formatDateBR(t.transaction_date)} - *${formatCurrencyBR(Number(t.amount))}* | ${sanitizeMarkdown(catName)}${sanitizeMarkdown(desc)}\n`;
     total += Number(t.amount);
   }
   message += `\n💰 Total: *${formatCurrencyBR(total)}*`;
@@ -230,15 +229,20 @@ export async function sendTransactionSuccess(
   const typeName = type === "expense" ? "Despesa" : "Receita";
   const seq = await getSessionSeq(supabase, userId);
   if (!params.transactionId) return;
+  const catName = params.category ? sanitizeMarkdown(params.category) : "Não definida";
+  const grpName = params.group ? sanitizeMarkdown(params.group) : "Pessoal";
+  const desc = params.description ? sanitizeMarkdown(params.description) : "";
+  const tagsStr = params.tags.length > 0 ? params.tags.map(sanitizeMarkdown).join(" ") : "";
+
   await sendTelegramMessageWithKeyboard(
     chatId,
     `✅ *${typeName} registrada com sucesso!*\n\n` +
     `💰 Valor: *${formatCurrencyBR(params.amount)}*\n` +
-    `🏷️ Categoria: ${params.category || "Não definida"}\n` +
-    `📁 Grupo: ${params.group || "Pessoal"}\n` +
+    `🏷️ Categoria: ${catName}\n` +
+    `📁 Grupo: ${grpName}\n` +
     `📅 Data: ${formatDateBR(params.date)}` +
-    (params.description ? `\n📝 Descrição: ${params.description}` : "") +
-    (params.tags.length > 0 ? `\n🔖 Tags: ${params.tags.join(" ")}` : ""),
+    (desc ? `\n📝 Descrição: ${desc}` : "") +
+    (tagsStr ? `\n🔖 Tags: ${tagsStr}` : ""),
     [[{ text: "📋 Ver detalhes", callback_data: addSession(`edit_show_${params.transactionId}`, seq) }]]
   );
 }

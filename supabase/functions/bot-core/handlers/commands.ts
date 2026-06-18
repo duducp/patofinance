@@ -1,7 +1,7 @@
 import type { InlineKeyboard } from "../types/index.ts";
 import { sendTelegramMessage, sendTelegramMessageWithKeyboard, editTelegramMessageWithKeyboard } from "../services/telegram.ts";
 import { requireUser, getOrCreateCategory, getOrCreateGroup, normalizeString, suggestSimilarCategories, suggestSimilarGroups, sendSimilarityWarning, getAllUserTags, createTransaction, getTransactionById, findGroupByName, userOrNullFilter } from "../services/database.ts";
-import { formatCurrencyBR, formatDateBR, getTodayISOBR } from "../utils/formatting.ts";
+import { formatCurrencyBR, formatDateBR, getTodayISOBR, sanitizeMarkdown } from "../utils/formatting.ts";
 import { getDateRange } from "../utils/date-helpers.ts";
 import { parseCommand } from "../utils/command-parsing.ts";
 import { resolveCommandPeriod } from "../utils/period-parser.ts";
@@ -394,10 +394,10 @@ export async function handleDetails(
 function formatDetailMessage(transaction: any): string {
   const emoji = transaction.type === "income" ? "📈" : "📉";
   const typeName = transaction.type === "income" ? "Receita" : "Despesa";
-  const catName = transaction.categories?.name || "—";
-  const grpName = transaction.groups?.name || "Pessoal";
-  const tags = transaction.tags?.length ? transaction.tags.join(" ") : "—";
-  const desc = transaction.description || "—";
+  const catName = sanitizeMarkdown(transaction.categories?.name || "—");
+  const grpName = sanitizeMarkdown(transaction.groups?.name || "Pessoal");
+  const tags = transaction.tags?.length ? transaction.tags.map(sanitizeMarkdown).join(" ") : "—";
+  const desc = sanitizeMarkdown(transaction.description || "—");
   const date = formatDateBR(transaction.transaction_date);
 
   return `${emoji} *${typeName} #${transaction.id}:*\n\n` +
@@ -526,7 +526,7 @@ export async function handleEntity(
       const count = countMap[item.id] || 0;
       const defaultTag = item[flagColumn] ? ` ⭐ (padrão)` : "";
       const typeIcon = item.transaction_type ? ` ${typeLabels[item.transaction_type]}` : "";
-      message += `• ${item.name}${defaultTag}${typeIcon} — ${count} ${count !== 1 ? "transações" : "transação"}\n`;
+      message += `• ${sanitizeMarkdown(item.name)}${sanitizeMarkdown(defaultTag)}${typeIcon} — ${count} ${count !== 1 ? "transações" : "transação"}\n`;
     }
     message += `\n💡 Para adicionar: \`${cmdRef}\``;
 
@@ -557,7 +557,7 @@ export async function handleEntity(
     const defaultTag = existing[flagColumn] ? ` ⭐ (padrão)` : "";
     await sendTelegramMessage(
       chatId,
-      `⚠️ ${icon} ${label.charAt(0).toUpperCase() + label.slice(1)} "${existing.name}"${defaultTag} já existe.`
+      `⚠️ ${icon} ${label.charAt(0).toUpperCase() + label.slice(1)} "${sanitizeMarkdown(existing.name)}"${defaultTag} já existe.`
     );
     return;
   }
@@ -577,7 +577,7 @@ export async function handleEntity(
     ];
     await sendTelegramMessageWithKeyboard(
       chatId,
-      `⚠️ Você quis dizer *${similar[0].name}*? (${(similar[0].similarity * 100).toFixed(0)}% similar)\n\nCaso contrário, confirme para criar *${entityName}* mesmo assim.`,
+      `⚠️ Você quis dizer *${sanitizeMarkdown(similar[0].name)}*? (${(similar[0].similarity * 100).toFixed(0)}% similar)\n\nCaso contrário, confirme para criar *${entityName}* mesmo assim.`,
       keyboard
     );
     return;
@@ -643,7 +643,7 @@ export async function handleTag(supabase: any, userId: number, chatId: number, _
   for (const tag of allTags) {
     const count = tagCount[tag] || 0;
     const displayTag = tag.startsWith("#") ? tag : `#${tag}`;
-    message += `• ${displayTag} — ${count} ${count !== 1 ? "transações" : "transação"}\n`;
+    message += `• ${sanitizeMarkdown(displayTag)} — ${count} ${count !== 1 ? "transações" : "transação"}\n`;
   }
   message += "\n💡 Clique em uma tag para ver as transações.";
 
@@ -699,12 +699,12 @@ export async function handleCleanup(supabase: any, userId: number, chatId: numbe
 
   if (unusedCats.length > 0) {
     message += `🏷️ *Categorias sem transações (${unusedCats.length}):*\n`;
-    message += unusedCats.map((c: any) => `   • ${c.name}`).join("\n") + "\n\n";
+    message += unusedCats.map((c: any) => `   • ${sanitizeMarkdown(c.name)}`).join("\n") + "\n\n";
   }
 
   if (unusedGrps.length > 0) {
     message += `📁 *Grupos sem transações (${unusedGrps.length}):*\n`;
-    message += unusedGrps.map((g: any) => `   • ${g.name}`).join("\n") + "\n\n";
+    message += unusedGrps.map((g: any) => `   • ${sanitizeMarkdown(g.name)}`).join("\n") + "\n\n";
   }
 
   message += "Deseja removê-los?";

@@ -36,3 +36,18 @@ export function getTodayISOBR(): string {
   const now = getNowBR();
   return now.toISOString().split("T")[0];
 }
+
+/**
+ * Escape Telegram Markdown special characters in user-provided text.
+ * Legacy Markdown mode: * _ ` [ are special.
+ * Prevents users from injecting bold/italic/code formatting via entity names.
+ */
+export function sanitizeMarkdown(text: string): string {
+  return text
+    .replace(/\\/g, "\\\\")
+    .replace(/\*/g, "\\*")
+    .replace(/_/g, "\\_")
+    .replace(/`/g, "\\`")
+    .replace(/\[/g, "\\[")
+    .replace(/\]/g, "\\]");
+}
