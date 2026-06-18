@@ -1,4 +1,4 @@
-import { PeriodResult } from "../types/index.ts";
+import { PeriodResult, InlineKeyboard } from "../types/index.ts";
 import { sendTelegramMessage, sendTelegramMessageWithKeyboard } from "../services/telegram.ts";
 import { requireUser } from "../services/database.ts";
 import { formatCurrencyBR, formatDateBR, getTodayISOBR, sanitizeMarkdown } from "../utils/formatting.ts";
@@ -224,7 +224,8 @@ export async function sendTransactionSuccess(
     description?: string | null;
     tags: string[];
     transactionId?: number | null;
-  }
+  },
+  extraKeyboard?: InlineKeyboard
 ): Promise<void> {
   const typeName = type === "expense" ? "Despesa" : "Receita";
   const seq = await getSessionSeq(supabase, userId);
@@ -233,6 +234,16 @@ export async function sendTransactionSuccess(
   const grpName = params.group ? sanitizeMarkdown(params.group) : "Pessoal";
   const desc = params.description ? sanitizeMarkdown(params.description) : "";
   const tagsStr = params.tags.length > 0 ? params.tags.map(sanitizeMarkdown).join(" ") : "";
+
+  const keyboard: InlineKeyboard = [
+    [{ text: "📋 Ver detalhes", callback_data: addSession(`edit_show_${params.transactionId}`, seq) }],
+  ];
+
+  if (extraKeyboard) {
+    for (const row of extraKeyboard) {
+      keyboard.push(row);
+    }
+  }
 
   await sendTelegramMessageWithKeyboard(
     chatId,
@@ -243,6 +254,6 @@ export async function sendTransactionSuccess(
     `📅 Data: ${formatDateBR(params.date)}` +
     (desc ? `\n📝 Descrição: ${desc}` : "") +
     (tagsStr ? `\n🔖 Tags: ${tagsStr}` : ""),
-    [[{ text: "📋 Ver detalhes", callback_data: addSession(`edit_show_${params.transactionId}`, seq) }]]
+    keyboard
   );
 }

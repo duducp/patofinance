@@ -11,6 +11,7 @@ import { findHelp } from "../utils/help-texts.ts";
 
 import { getSummaryData, formatSummaryMessage, formatFutureBlock, sendTransactionSuccess } from "./queries.ts";
 import { getWizardState, setWizardState, handleTransactionWizard } from "./wizard.ts";
+export { handleRecurrences, handleRecurrenceDetail, handleAdvanceRecurrence, handleSkipRecurrence, handleArchiveRecurrence, handleActivateRecurrence, handleEditRecurrence, handleManageRecurrences, handleAdvanceRecurrenceConfirm, handleSkipRecurrenceConfirm, handleArchiveRecurrenceConfirm, handleActivateRecurrenceConfirm } from "./recurrences.ts";
 
 export async function handleStart(chatId: number, firstName: string): Promise<void> {
   await sendTelegramMessage(
@@ -285,14 +286,21 @@ export async function handleTransaction(
     return;
   }
 
+  const sessionSeq = await getSessionSeq(supabase, user.id);
+  const recurKeyboard: InlineKeyboard = [
+    [{ text: "🔄 Transformar em recorrência", callback_data: addSession(`rec_transform_${id}`, sessionSeq) }],
+    [{ text: "Fechar", callback_data: addSession("rec_close", sessionSeq) }],
+  ];
+
   await sendTransactionSuccess(supabase, chatId, user.id, type, {
     amount: parsed.amount,
     category: parsed.category,
     group: parsed.group,
     date: parsed.date || getTodayISOBR(),
+    description: descriptionOverride || parsed.category || "",
     tags: parsed.tags,
     transactionId: id,
-  });
+  }, recurKeyboard);
 }
 
 export async function handleSummary(supabase: any, userId: number, chatId: number, args: string[] = []): Promise<void> {

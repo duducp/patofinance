@@ -85,3 +85,30 @@ export interface ExtratoFilters {
   period: PeriodPreset | { start: string; end: string; label?: string };
   status: "all" | "past" | "future";
 }
+
+export type FrequencyType = "daily" | "weekly" | "monthly" | "annual" | "every_x_days";
+
+export interface Recurrence {
+  id: number;
+  user_id: number;
+  type: "expense" | "income";
+  amount: number;
+  description: string | null;
+  category_id: number | null;
+  group_id: number | null;
+  tags: string[];
+  frequency_type: FrequencyType;
+  frequency_interval: number | null;
+  frequency_month: number | null;
+  next_date: string;
+  last_processed_date: string | null;
+  is_archived: boolean;
+  archived_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RecurrenceWithJoins extends Recurrence {
+  categories?: { name: string } | null;
+  groups?: { name: string } | null;
+}

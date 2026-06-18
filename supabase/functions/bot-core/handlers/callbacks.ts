@@ -1,11 +1,12 @@
 import { InlineKeyboard, DeepSeekResponse, TelegramCallbackQuery } from "../types/index.ts";
 import { sendTelegramMessage, sendTelegramMessageWithKeyboard, editTelegramMessageWithKeyboard, answerCallbackQuery } from "../services/telegram.ts";
-import { getOrCreateUser, normalizeString, deleteTransactionById, userOrNullFilter } from "../services/database.ts";
-import { formatDateBR, parseDateBR } from "../utils/formatting.ts";
+import { getOrCreateUser, normalizeString, deleteTransactionById, userOrNullFilter, getOrCreateCategory, getOrCreateGroup, updateRecurrence } from "../services/database.ts";
+import { formatDateBR, parseDateBR, getTodayISOBR } from "../utils/formatting.ts";
 import { truncateCallbackData } from "../utils/rate-limiter.ts";
 import { getWizardState, setWizardState, clearWizardState, sendWizardStepMessage, getCurrentWizardStep, advanceWizardToNextStep, toggleTagInWizardState, buildTagKeyboard, buildCategoryKeyboard, buildGroupKeyboard, buildDateKeyboard, handleWizardSkip, handleEntityRename, handleEntityDeletePrompt, handleEntityDeleteExecute } from "./wizard.ts";
 import { executeNaturalLanguageAction } from "./nl-processing.ts";
 import { handleBalance, handleSummary, handleDetails, handleGroup, handleCategory, handleTransaction, showDetailsEditActions, showDetailsMainView } from "./commands.ts";
+import { handleRecurrences } from "./recurrences.ts";
 import { handleListTransactions, handleListByTag, handleSearch, showDeleteConfirmation } from "./management.ts";
 import { handleStatement, handleFilterCallback } from "./statement.ts";
 import { addSession, removeSession, validateCallbackSession, getSessionSeq, incrementSessionSeq } from "../utils/session.ts";
@@ -193,9 +194,20 @@ export async function handleCallbackQuery(
 
     if (selectedValue.startsWith("confirm_delete_")) {
       const transactionId = selectedValue.replace("confirm_delete_", "");
+      const { data: tx } = await supabase
+        .from("transactions")
+        .select("id, recurrence_id, amount, description")
+        .eq("id", transactionId)
+        .eq("user_id", user.id)
+        .single();
+      const recId = tx?.recurrence_id;
       const { success } = await deleteTransactionById(supabase, user.id, transactionId);
       if (success) {
         await sendTelegramMessage(chatId, "✅ Transação excluída com sucesso!");
+        if (recId) {
+          const { handleSkipRecurrence } = await import("./recurrences.ts");
+          await handleSkipRecurrence(supabase, user.id, chatId, recId);
+        }
       } else {
         await sendTelegramMessage(chatId, "❌ Ops! Algo deu errado ao excluir. Tente novamente.");
       }
@@ -785,6 +797,392 @@ export async function handleCallbackQuery(
       const currentWizardName = state.step.substring(0, underscoreIndex);
       await sendTelegramMessage(chatId, "Informe a data (formato: DD/MM/YYYY):");
       await setWizardState(supabase, user.id, `${currentWizardName}_custom_date`, state.data);
+      return;
+    }
+
+    // ========== Recurrence callbacks ==========
+
+    // Transform transaction into recurrence
+    if (selectedValue.startsWith("rec_transform_")) {
+      const transactionId = selectedValue.replace("rec_transform_", "");
+      const { data: tx } = await supabase
+        .from("transactions")
+        .select("*, categories(name), groups(name)")
+        .eq("id", transactionId)
+        .eq("user_id", user.id)
+        .single();
+      if (!tx) return;
+
+      // Pre-fill all fields from existing transaction, skip directly to frequency step
+      const prefill = {
+        type: tx.type,
+        amount: tx.amount.toString(),
+        description: tx.description || "",
+        category: tx.categories?.name || "",
+        group: tx.groups?.name || "",
+        tags: tx.tags || [],
+        start_date: tx.transaction_date || getTodayISOBR(),
+      };
+      await setWizardState(supabase, user.id, "recorrencia_frequency", prefill);
+      const { data: freqStep } = await supabase
+        .from("wizard_steps")
+        .select("*")
+        .eq("wizard_name", "recorrencia")
+        .eq("step_key", "frequency")
+        .single();
+      if (freqStep) {
+        await incrementSessionSeq(supabase, user.id);
+        const newSeq = await getSessionSeq(supabase, user.id);
+        await sendWizardStepMessage(chatId, freqStep, user.id, supabase, newSeq);
+      }
+      return;
+    }
+
+    if (selectedValue === "rec_close") {
+      return;
+    }
+
+    if (selectedValue === "rec_new") {
+      await setWizardState(supabase, user.id, "recorrencia_type", {});
+      const { data: nextStep } = await supabase
+        .from("wizard_steps")
+        .select("*")
+        .eq("wizard_name", "recorrencia")
+        .eq("step_key", "type")
+        .single();
+      if (nextStep) {
+        await incrementSessionSeq(supabase, user.id);
+        const newSeq = await getSessionSeq(supabase, user.id);
+        await sendWizardStepMessage(chatId, nextStep, user.id, supabase, newSeq);
+      }
+      return;
+    }
+
+    if (selectedValue === "rec_manage") {
+      const { handleManageRecurrences } = await import("./recurrences.ts");
+      await handleManageRecurrences(supabase, user.id, chatId);
+      return;
+    }
+
+    if (selectedValue === "rec_back") {
+      await handleRecurrences(supabase, telegramId, chatId);
+      return;
+    }
+
+    if (selectedValue.startsWith("rec_show_")) {
+      const recId = parseInt(selectedValue.replace("rec_show_", ""), 10);
+      if (!isNaN(recId)) {
+        const { handleRecurrenceDetail } = await import("./recurrences.ts");
+        await handleRecurrenceDetail(supabase, user.id, chatId, recId, message.message_id);
+      }
+      return;
+    }
+
+    // Specific confirm handlers MUST come before generic prompt handlers
+    if (selectedValue.startsWith("rec_advance_yes_")) {
+      const recId = parseInt(selectedValue.replace("rec_advance_yes_", ""), 10);
+      if (!isNaN(recId)) {
+        const { handleAdvanceRecurrenceConfirm } = await import("./recurrences.ts");
+        await handleAdvanceRecurrenceConfirm(supabase, user.id, chatId, recId);
+      }
+      return;
+    }
+
+    if (selectedValue.startsWith("rec_advance_") && !selectedValue.startsWith("rec_advance_yes_")) {
+      const recId = parseInt(selectedValue.replace("rec_advance_", ""), 10);
+      if (!isNaN(recId)) {
+        const { handleAdvanceRecurrence } = await import("./recurrences.ts");
+        await handleAdvanceRecurrence(supabase, user.id, chatId, recId);
+      }
+      return;
+    }
+
+    if (selectedValue.startsWith("rec_skip_yes_")) {
+      const recId = parseInt(selectedValue.replace("rec_skip_yes_", ""), 10);
+      if (!isNaN(recId)) {
+        const { handleSkipRecurrenceConfirm } = await import("./recurrences.ts");
+        await handleSkipRecurrenceConfirm(supabase, user.id, chatId, recId);
+      }
+      return;
+    }
+
+    if (selectedValue.startsWith("rec_skip_") && !selectedValue.startsWith("rec_skip_yes_")) {
+      const recId = parseInt(selectedValue.replace("rec_skip_", ""), 10);
+      if (!isNaN(recId)) {
+        const { handleSkipRecurrence } = await import("./recurrences.ts");
+        await handleSkipRecurrence(supabase, user.id, chatId, recId);
+      }
+      return;
+    }
+
+    if (selectedValue.startsWith("rec_archive_yes_")) {
+      const recId = parseInt(selectedValue.replace("rec_archive_yes_", ""), 10);
+      if (!isNaN(recId)) {
+        const { handleArchiveRecurrenceConfirm } = await import("./recurrences.ts");
+        await handleArchiveRecurrenceConfirm(supabase, user.id, chatId, recId);
+      }
+      return;
+    }
+
+    if (selectedValue.startsWith("rec_archive_") && !selectedValue.startsWith("rec_archive_yes_")) {
+      const recId = parseInt(selectedValue.replace("rec_archive_", ""), 10);
+      if (!isNaN(recId)) {
+        const { handleArchiveRecurrence } = await import("./recurrences.ts");
+        await handleArchiveRecurrence(supabase, user.id, chatId, recId);
+      }
+      return;
+    }
+
+    if (selectedValue.startsWith("rec_activate_yes_")) {
+      const recId = parseInt(selectedValue.replace("rec_activate_yes_", ""), 10);
+      if (!isNaN(recId)) {
+        const { handleActivateRecurrenceConfirm } = await import("./recurrences.ts");
+        await handleActivateRecurrenceConfirm(supabase, user.id, chatId, recId);
+      }
+      return;
+    }
+
+    if (selectedValue.startsWith("rec_activate_") && !selectedValue.startsWith("rec_activate_yes_")) {
+      const recId = parseInt(selectedValue.replace("rec_activate_", ""), 10);
+      if (!isNaN(recId)) {
+        const { handleActivateRecurrence } = await import("./recurrences.ts");
+        await handleActivateRecurrence(supabase, user.id, chatId, recId);
+      }
+      return;
+    }
+
+    // rec_edit_field_ and rec_edit_set_* MUST come before generic rec_edit_
+    if (selectedValue.startsWith("rec_edit_field_")) {
+      const rest = selectedValue.replace("rec_edit_field_", "");
+      const underscoreIdx = rest.indexOf("_");
+      const field = rest.substring(0, underscoreIdx);
+      const recId = parseInt(rest.substring(underscoreIdx + 1), 10);
+      if (!isNaN(recId) && field) {
+        if (field === "amount" || field === "description" || field === "start_date") {
+          await setWizardState(supabase, user.id, `rec_edit_${field}`, { recurrence_id: recId });
+          const prompts: Record<string, string> = {
+            amount: "💰 Digite o novo valor:",
+            description: "📝 Digite a nova descrição:",
+            start_date: "📅 Digite a nova data de início (DD/MM/YYYY):",
+          };
+          await sendTelegramMessage(chatId, prompts[field]);
+        } else if (field === "category" || field === "group" || field === "frequency" || field === "tags") {
+          if (field === "category") {
+            const cb = await buildCategoryKeyboard(supabase, user.id, sessionSeq, {
+              callbackPrefix: `rec_edit_set_cat_${recId}_`,
+            });
+            await sendTelegramMessageWithKeyboard(chatId, "🏷️ Selecione a nova categoria:", cb);
+          } else if (field === "group") {
+            const cb = await buildGroupKeyboard(supabase, user.id, sessionSeq, {
+              callbackPrefix: `rec_edit_set_grp_${recId}_`,
+            });
+            if (cb.length > 0) {
+              await sendTelegramMessageWithKeyboard(chatId, "📁 Selecione o novo grupo:", cb);
+            } else {
+              await sendTelegramMessage(chatId, "📁 Nenhum grupo encontrado. Crie um com /grupo");
+            }
+          } else if (field === "frequency") {
+            const { data: stepData } = await supabase
+              .from("wizard_steps")
+              .select("id")
+              .eq("wizard_name", "recorrencia")
+              .eq("step_key", "frequency")
+              .single();
+            if (stepData) {
+              const { data: options } = await supabase
+                .from("wizard_step_options")
+                .select("value, label")
+                .eq("step_id", stepData.id)
+                .order("sort_order");
+              const freqKeyboard: InlineKeyboard = (options || []).map((o: any) => [
+                { text: o.label, callback_data: addSession(`rec_edit_set_freqtype_${recId}_${o.value}`, sessionSeq) },
+              ]);
+              freqKeyboard.push([{ text: "⬅ Voltar", callback_data: addSession(`rec_edit_${recId}`, sessionSeq) }]);
+              await sendTelegramMessageWithKeyboard(chatId, "🔄 Selecione a nova frequência:", freqKeyboard);
+            }
+          } else if (field === "tags") {
+            const { keyboard } = await buildTagKeyboard(supabase, user.id, sessionSeq, {
+              togglePrefix: `rec_edit_set_tag_${recId}_`,
+              extraButtons: [
+                [{ text: "✅ Concluir", callback_data: addSession(`rec_edit_set_tag_${recId}_done`, sessionSeq) }],
+                [{ text: "🗑️ Limpar tags", callback_data: addSession(`rec_edit_set_tag_${recId}_clr`, sessionSeq) }],
+              ],
+            });
+            await sendTelegramMessageWithKeyboard(chatId, "🔖 Selecione as tags:", keyboard);
+          }
+        }
+      }
+      return;
+    }
+
+    if (selectedValue.startsWith("rec_edit_set_cat_")) {
+      const rest = selectedValue.replace("rec_edit_set_cat_", "");
+      const delimIdx = rest.indexOf("_");
+      const recId = parseInt(rest.substring(0, delimIdx), 10);
+      const catName = rest.substring(delimIdx + 1);
+      if (!isNaN(recId) && catName) {
+        const cat = await getOrCreateCategory(supabase, user.id, catName, undefined);
+        if (cat) {
+          await updateRecurrence(supabase, user.id, recId, { category_id: cat });
+          await incrementSessionSeq(supabase, user.id);
+          await sendTelegramMessage(chatId, `✅ Categoria alterada para "${catName}"!`);
+        }
+      }
+      return;
+    }
+
+    if (selectedValue.startsWith("rec_edit_set_grp_")) {
+      const rest = selectedValue.replace("rec_edit_set_grp_", "");
+      const delimIdx = rest.indexOf("_");
+      const recId = parseInt(rest.substring(0, delimIdx), 10);
+      const grpName = rest.substring(delimIdx + 1);
+      if (!isNaN(recId) && grpName) {
+        const grp = await getOrCreateGroup(supabase, user.id, grpName);
+        if (grp) {
+          await updateRecurrence(supabase, user.id, recId, { group_id: grp });
+          await incrementSessionSeq(supabase, user.id);
+          await sendTelegramMessage(chatId, `✅ Grupo alterado para "${grpName}"!`);
+        }
+      }
+      return;
+    }
+
+    if (selectedValue.startsWith("rec_edit_set_freqtype_")) {
+      const rest = selectedValue.replace("rec_edit_set_freqtype_", "");
+      const parts = rest.split("_");
+      const recId = parseInt(parts[0], 10);
+      const freqType = parts.slice(1).join("_");
+      if (!isNaN(recId) && freqType) {
+        if (freqType === "daily") {
+          await updateRecurrence(supabase, user.id, recId, { frequency_type: freqType, frequency_interval: 1, frequency_month: null });
+          await incrementSessionSeq(supabase, user.id);
+          await sendTelegramMessage(chatId, "✅ Frequência alterada para Diária!");
+        } else {
+          await setWizardState(supabase, user.id, "rec_edit_freq_detail", { recurrence_id: recId, frequency_type: freqType });
+          const prompts: Record<string, string> = {
+            weekly: "📅 Qual dia da semana? (0=Dom a 6=Sáb)",
+            monthly: "📅 Qual dia do mês? (1 a 31)",
+            annual: "📅 Qual dia e mês? (DD/MM)",
+            every_x_days: "📅 A cada quantos dias?",
+          };
+          await sendTelegramMessage(chatId, prompts[freqType] || "📅 Informe o detalhe da frequência:");
+        }
+      }
+      return;
+    }
+
+    if (selectedValue.startsWith("rec_edit_set_tag_")) {
+      const rest = selectedValue.replace("rec_edit_set_tag_", "");
+      if (rest.endsWith("_done")) {
+        const recId = parseInt(rest.replace("_done", ""), 10);
+        if (!isNaN(recId)) {
+          await incrementSessionSeq(supabase, user.id);
+          await sendTelegramMessage(chatId, "✅ Tags atualizadas!");
+        }
+        return;
+      }
+      if (rest.endsWith("_clr")) {
+        const recId = parseInt(rest.replace("_clr", ""), 10);
+        if (!isNaN(recId)) {
+          const { data: existing } = await supabase.from("recurrences").select("tags").eq("id", recId).eq("user_id", user.id).single();
+          const currentTags: string[] = existing?.tags || [];
+          if (currentTags.length > 0) {
+            await updateRecurrence(supabase, user.id, recId, { tags: [] });
+          }
+          await incrementSessionSeq(supabase, user.id);
+          await sendTelegramMessage(chatId, "🗑️ Tags removidas!");
+        }
+        return;
+      }
+      // It's a toggle - format: {recId}_#tagname
+      const parts = rest.split("_#");
+      const recId = parseInt(parts[0], 10);
+      if (!isNaN(recId) && parts.length > 1) {
+        const tag = `#${parts.slice(1).join("_#")}`;
+        const { data: existing } = await supabase.from("recurrences").select("tags").eq("id", recId).eq("user_id", user.id).single();
+        const currentTags: string[] = existing?.tags || [];
+        const newTags = currentTags.includes(tag)
+          ? currentTags.filter((t: string) => t !== tag)
+          : [...currentTags, tag];
+        await updateRecurrence(supabase, user.id, recId, { tags: newTags });
+        // Re-render the tag keyboard
+        const { keyboard } = await buildTagKeyboard(supabase, user.id, sessionSeq, {
+          togglePrefix: `rec_edit_set_tag_${recId}_`,
+          extraButtons: [
+            [{ text: "✅ Concluir", callback_data: addSession(`rec_edit_set_tag_${recId}_done`, sessionSeq) }],
+            [{ text: "🗑️ Limpar tags", callback_data: addSession(`rec_edit_set_tag_${recId}_clr`, sessionSeq) }],
+          ],
+        });
+        await editTelegramMessageWithKeyboard(chatId, message.message_id, "🔖 Selecione as tags:", keyboard);
+      }
+      return;
+    }
+
+    // Generic rec_edit_ handler (MUST come after specific rec_edit_field_ and rec_edit_set_*)
+    if (selectedValue.startsWith("rec_edit_")) {
+      const recId = parseInt(selectedValue.replace("rec_edit_", ""), 10);
+      if (!isNaN(recId)) {
+        const { handleEditRecurrence } = await import("./recurrences.ts");
+        await handleEditRecurrence(supabase, user.id, chatId, recId);
+      }
+      return;
+    }
+
+    // Handle frequency selection for recurrence wizard — intercept BEFORE generic wizard handler
+    // because we need to store as `frequency_type` (not `frequency`) and handle sub-steps
+    if (selectedValue.startsWith("wiz_frequency_")) {
+      const freqWizard = await getCurrentWizardStep(supabase, user.id);
+      if (!freqWizard || freqWizard.currentStep.wizard_name !== "recorrencia") return;
+      const freq = selectedValue.replace("wiz_frequency_", "");
+      if (freq === "daily") {
+        const newStateData = { ...freqWizard.state.data, frequency_type: "daily", frequency_interval: 1 };
+        await advanceWizardToNextStep(supabase, user.id, chatId, freqWizard.currentStep, sessionSeq, newStateData);
+      } else {
+        await setWizardState(supabase, user.id, "recorrencia_freq_detail", {
+          ...freqWizard.state.data,
+          frequency_type: freq,
+        });
+        const prompts: Record<string, string> = {
+          weekly: "📅 *Qual dia da semana?*",
+          monthly: "📅 *Qual dia do mês?* (1 a 31)",
+          annual: "📅 *Qual dia e mês?* (formato: DD/MM)",
+          every_x_days: "📅 *A cada quantos dias?*",
+        };
+        if (freq === "weekly") {
+          const days = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+          const kb: InlineKeyboard = [days.map((d, i) => ({
+            text: d,
+            callback_data: addSession(`wiz_freq_detail_${i}`, sessionSeq),
+          }))];
+          await sendTelegramMessageWithKeyboard(chatId, prompts[freq]!, kb);
+        } else {
+          await sendTelegramMessage(chatId, prompts[freq]!);
+        }
+      }
+      return;
+    }
+
+    // Handle weekly day-of-week selection during recurrence creation
+    if (selectedValue.startsWith("wiz_freq_detail_")) {
+      const detail = selectedValue.replace("wiz_freq_detail_", "");
+      const freqWizard = await getCurrentWizardStep(supabase, user.id);
+      if (!freqWizard || freqWizard.currentStep.wizard_name !== "recorrencia") return;
+      const day = parseInt(detail, 10);
+      if (!isNaN(day) && day >= 0 && day <= 6) {
+        const { data: freqStep } = await supabase
+          .from("wizard_steps")
+          .select("*")
+          .eq("wizard_name", "recorrencia")
+          .eq("step_key", "frequency")
+          .single();
+        if (freqStep) {
+          await advanceWizardToNextStep(supabase, user.id, chatId, freqStep, sessionSeq, {
+            ...freqWizard.state.data,
+            frequency_type: "weekly",
+            frequency_interval: day,
+          });
+        }
+      }
       return;
     }
 

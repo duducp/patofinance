@@ -1,8 +1,8 @@
 import { WizardState } from "../types/index.ts";
 import { InlineKeyboard } from "../types/index.ts";
 import { sendTelegramMessage, sendTelegramMessageWithKeyboard, editTelegramMessageWithKeyboard } from "../services/telegram.ts";
-import { getOrCreateCategory, getOrCreateGroup, sendSimilarityWarning, getAllUserTags, deduplicateByNormalizedName, userOrNullFilter, typeOrNullFilter, getOrCreateUncategorizedCategory } from "../services/database.ts";
-import { parseDateBR, getTodayISOBR } from "../utils/formatting.ts";
+import { getOrCreateCategory, getOrCreateGroup, sendSimilarityWarning, getAllUserTags, deduplicateByNormalizedName, userOrNullFilter, typeOrNullFilter, getOrCreateUncategorizedCategory, createRecurrence } from "../services/database.ts";
+import { parseDateBR, getTodayISOBR, formatCurrencyBR, formatDateBR } from "../utils/formatting.ts";
 import { addSession, getSessionSeq } from "../utils/session.ts";
 import { sendTransactionSuccess } from "./queries.ts";
 import { buildKeyboardGrid } from "../utils/keyboard.ts";
@@ -122,6 +122,13 @@ export async function sendWizardStepMessage(
       customCallback: addSession("custom_date", sessionSeq),
     });
     await sendTelegramMessageWithKeyboard(chatId, step.prompt, keyboard);
+  } else if (step.step_key === "start_date") {
+    const keyboard = buildDateKeyboard({
+      todayCallback: (date) => addSession(`wiz_start_date_${date}`, sessionSeq),
+      yesterdayCallback: (date) => addSession(`wiz_start_date_${date}`, sessionSeq),
+      customCallback: addSession("custom_date", sessionSeq),
+    });
+    await sendTelegramMessageWithKeyboard(chatId, step.prompt, keyboard);
   } else if (step.input_type === "select") {
     const { data: options } = await supabase
       .from("wizard_step_options")
@@ -129,7 +136,8 @@ export async function sendWizardStepMessage(
       .eq("step_id", step.id)
       .order("sort_order");
     if (options && options.length > 0) {
-      const keyboard = options.map((o: any) => [{ text: o.label, callback_data: o.value }]);
+      const prefix = `wiz_${step.step_key}_`;
+      const keyboard = options.map((o: any) => [{ text: o.label, callback_data: addSession(`${prefix}${o.value}`, sessionSeq) }]);
       await sendTelegramMessageWithKeyboard(chatId, step.prompt, keyboard);
     } else {
       await sendTelegramMessage(chatId, step.prompt);
@@ -205,6 +213,75 @@ export async function completeWizard(
     tags,
     transactionId: txId,
   });
+}
+
+/**
+ * Finalize a recurrence wizard: create the recurrence record with all
+ * accumulated data (amount, category, group, tags, frequency, start date),
+ * clear wizard state, and send a success message.
+ */
+export async function completeRecurrenceWizard(
+  supabase: any,
+  userId: number,
+  chatId: number,
+  data: Record<string, any>
+): Promise<void> {
+  await clearWizardState(supabase, userId);
+  const type = data.type || "expense";
+  const amount = parseFloat(data.amount);
+  if (isNaN(amount) || amount <= 0) {
+    await sendTelegramMessage(chatId, "❌ Valor inválido. Tente novamente.");
+    return;
+  }
+
+  const categoryId = data.category ? await getOrCreateCategory(supabase, userId, data.category, type) : null;
+  const groupId = await getOrCreateGroup(supabase, userId, data.group || null);
+
+  const tags = Array.isArray(data.tags)
+    ? data.tags.map((t: string) => t.startsWith("#") ? t : `#${t}`).filter((t: string) => t)
+    : data.tags
+      ? data.tags.split(" ").filter((t: string) => t).map((t: string) => t.startsWith("#") ? t : `#${t}`)
+      : [];
+
+  const startDate = data.start_date || getTodayISOBR();
+  const desc = data.description || "";
+
+  const { error } = await createRecurrence(supabase, {
+    userId,
+    type,
+    amount,
+    description: desc,
+    categoryId,
+    groupId,
+    tags,
+    frequencyType: data.frequency_type,
+    frequencyInterval: data.frequency_interval || null,
+    frequencyMonth: data.frequency_month || null,
+    nextDate: startDate,
+  });
+
+  if (error) {
+    await sendTelegramMessage(chatId, "❌ Ops! Algo deu errado ao criar a recorrência. Tente novamente.");
+    return;
+  }
+
+  const freqLabels: Record<string, string> = {
+    daily: "Diária",
+    weekly: `Semanal (dia ${["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"][data.frequency_interval || 0]})`,
+    monthly: `Mensal (dia ${data.frequency_interval})`,
+    annual: `Anual`,
+    every_x_days: `A cada ${data.frequency_interval} dias`,
+  };
+
+  await sendTelegramMessage(
+    chatId,
+    `🔄 *Recorrência criada com sucesso!*\n\n` +
+    `${type === "expense" ? "💸" : "💰"} *${formatCurrencyBR(amount)}*\n` +
+    `📁 ${data.group || "Pessoal"}\n` +
+    `🏷️ ${data.category || "—"}\n` +
+    `🔄 ${freqLabels[data.frequency_type] || data.frequency_type}\n` +
+    `📅 Primeira: ${formatDateBR(startDate)}`
+  );
 }
 
 /**
@@ -602,7 +679,11 @@ export async function advanceWizardToNextStep(
     }).eq("user_id", userId);
     await sendWizardStepMessage(chatId, nextStep, userId, supabase, sessionSeq);
   } else {
-    await completeWizard(supabase, userId, chatId, newStateData);
+    if (currentStep.wizard_name === "recorrencia") {
+      await completeRecurrenceWizard(supabase, userId, chatId, newStateData);
+    } else {
+      await completeWizard(supabase, userId, chatId, newStateData);
+    }
   }
 }
 
@@ -712,5 +793,210 @@ export async function handleTransactionWizard(
       ? { ...state.data, [stepKey]: value, type: "income" }
       : { ...state.data, [stepKey]: value };
     await completeWizard(supabase, userId, chatId, finalData);
+  }
+}
+
+/**
+ * Route text input from the user through the recurrence wizard steps.
+ * Handles frequency detail input (every_x_days, weekly, monthly, annual),
+ * start_date parsing, tag accumulation, and advancing/completing the wizard.
+ */
+export async function handleRecurrenceWizard(
+  supabase: any,
+  userId: number,
+  chatId: number,
+  state: WizardState,
+  input: string
+): Promise<void> {
+  const prefix = "recorrencia_";
+
+  if (state.step === "recorrencia_freq_detail") {
+    const freqType = state.data.frequency_type;
+    if (freqType === "every_x_days" || freqType === "weekly" || freqType === "monthly" || freqType === "annual") {
+      const value = input.trim();
+      if (freqType === "every_x_days") {
+        const interval = parseInt(value, 10);
+        if (isNaN(interval) || interval < 1) {
+          await sendTelegramMessage(chatId, "Informe um número válido de dias (ex: 15).");
+          return;
+        }
+        await setWizardState(supabase, userId, "recorrencia_tags", {
+          ...state.data,
+          frequency_interval: interval,
+        });
+        const { data: tagsStep } = await supabase
+          .from("wizard_steps")
+          .select("*")
+          .eq("wizard_name", "recorrencia")
+          .eq("step_key", "tags")
+          .single();
+        if (tagsStep) {
+          const seq = await getSessionSeq(supabase, userId);
+          await sendWizardStepMessage(chatId, tagsStep, userId, supabase, seq);
+        } else {
+          await completeRecurrenceWizard(supabase, userId, chatId, {
+            ...state.data,
+            frequency_interval: interval,
+          });
+        }
+      } else if (freqType === "monthly") {
+        const day = parseInt(value, 10);
+        if (isNaN(day) || day < 1 || day > 31) {
+          await sendTelegramMessage(chatId, "Informe um dia válido (1 a 31).");
+          return;
+        }
+        await setWizardState(supabase, userId, "recorrencia_tags", {
+          ...state.data,
+          frequency_interval: day,
+        });
+        const { data: tagsStep } = await supabase
+          .from("wizard_steps")
+          .select("*")
+          .eq("wizard_name", "recorrencia")
+          .eq("step_key", "tags")
+          .single();
+        if (tagsStep) {
+          const seq = await getSessionSeq(supabase, userId);
+          await sendWizardStepMessage(chatId, tagsStep, userId, supabase, seq);
+        } else {
+          await completeRecurrenceWizard(supabase, userId, chatId, {
+            ...state.data,
+            frequency_interval: day,
+          });
+        }
+      } else if (freqType === "annual") {
+        const parts = value.split(/[\/\s-]+/);
+        const day = parseInt(parts[0], 10);
+        if (isNaN(day) || day < 1 || day > 31) {
+          await sendTelegramMessage(chatId, "Informe um dia válido (1 a 31). Ex: 15/01");
+          return;
+        }
+        const month = parts[1] ? parseInt(parts[1], 10) : NaN;
+        if (isNaN(month) || month < 1 || month > 12) {
+          await sendTelegramMessage(chatId, "Informe um mês válido (1 a 12). Ex: 15/01");
+          return;
+        }
+        await setWizardState(supabase, userId, "recorrencia_tags", {
+          ...state.data,
+          frequency_interval: day,
+          frequency_month: month,
+        });
+        const { data: tagsStep } = await supabase
+          .from("wizard_steps")
+          .select("*")
+          .eq("wizard_name", "recorrencia")
+          .eq("step_key", "tags")
+          .single();
+        if (tagsStep) {
+          const seq = await getSessionSeq(supabase, userId);
+          await sendWizardStepMessage(chatId, tagsStep, userId, supabase, seq);
+        } else {
+          await completeRecurrenceWizard(supabase, userId, chatId, {
+            ...state.data,
+            frequency_interval: day,
+            frequency_month: month,
+          });
+        }
+      } else {
+        await setWizardState(supabase, userId, "recorrencia_tags", {
+          ...state.data,
+          frequency_interval: parseInt(value, 10) || 1,
+        });
+        const { data: tagsStep } = await supabase
+          .from("wizard_steps")
+          .select("*")
+          .eq("wizard_name", "recorrencia")
+          .eq("step_key", "tags")
+          .single();
+        if (tagsStep) {
+          const seq = await getSessionSeq(supabase, userId);
+          await sendWizardStepMessage(chatId, tagsStep, userId, supabase, seq);
+        } else {
+          await completeRecurrenceWizard(supabase, userId, chatId, state.data);
+        }
+      }
+    }
+    return;
+  }
+
+  if (state.step === "recorrencia_start_date") {
+    const parsed = parseDateBR(input);
+    if (!parsed) {
+      await sendTelegramMessage(chatId, "Formato inválido. Use DD/MM/YYYY (ex: 15/01/2024)");
+      return;
+    }
+    await completeRecurrenceWizard(supabase, userId, chatId, {
+      ...state.data,
+      start_date: parsed,
+    });
+    return;
+  }
+
+  const stepKey = state.step.replace(prefix, "");
+  const { data: currentStep } = await supabase
+    .from("wizard_steps")
+    .select("*")
+    .eq("wizard_name", "recorrencia")
+    .eq("step_key", stepKey)
+    .single();
+
+  if (!currentStep) {
+    await sendTelegramMessage(chatId, "❌ Ops! Algo deu errado com o wizard. Tente novamente com /recorrencia");
+    return;
+  }
+
+  let value = input;
+  if (currentStep.input_type === "text" && stepKey === "amount") {
+    const amount = parseFloat(input.replace(",", "."));
+    if (isNaN(amount) || amount <= 0) {
+      await sendTelegramMessage(chatId, "Por favor, informe um valor válido (ex: 50,00 ou 50)");
+      return;
+    }
+    value = amount.toString();
+  }
+
+  // For tags step, accumulate instead of replace
+  if (stepKey === "tags") {
+    const currentTags: string[] = state.data?.tags
+      ? (Array.isArray(state.data.tags) ? state.data.tags : [state.data.tags])
+      : [];
+    const newTags = input.split(" ").filter((t: string) => t.trim());
+    const formattedTags = newTags.map((t: string) => t.startsWith("#") ? t : `#${t}`);
+    const accumulatedTags = [...currentTags, ...formattedTags];
+
+    for (const tag of newTags) {
+      await sendSimilarityWarning(supabase, userId, chatId, "tag", tag);
+    }
+
+    await setWizardState(supabase, userId, state.step, {
+      ...state.data,
+      tags: accumulatedTags,
+    });
+    const tagsSessionSeq = await getSessionSeq(supabase, userId);
+    await sendWizardStepMessage(chatId, currentStep, userId, supabase, tagsSessionSeq);
+    return;
+  }
+
+  const { data: nextStep } = await supabase
+    .from("wizard_steps")
+    .select("*")
+    .eq("wizard_name", "recorrencia")
+    .gt("step_order", currentStep.step_order)
+    .order("step_order")
+    .limit(1)
+    .single();
+
+  if (nextStep) {
+    await setWizardState(supabase, userId, `recorrencia_${nextStep.step_key}`, {
+      ...state.data,
+      [stepKey]: value,
+    });
+    const nextSessionSeq = await getSessionSeq(supabase, userId);
+    await sendWizardStepMessage(chatId, nextStep, userId, supabase, nextSessionSeq);
+  } else {
+    await completeRecurrenceWizard(supabase, userId, chatId, {
+      ...state.data,
+      [stepKey]: value,
+    });
   }
 }

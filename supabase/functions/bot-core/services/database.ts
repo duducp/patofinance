@@ -414,3 +414,140 @@ export async function listTransactionsPaginated(
     hasMore,
   };
 }
+
+// ── Recurrence functions ──
+
+export async function getRecurrences(
+  supabase: any,
+  userId: number,
+  includeArchived: boolean = false
+): Promise<any[]> {
+  let query = supabase
+    .from("recurrences")
+    .select("*, categories(name), groups(name)")
+    .eq("user_id", userId);
+
+  if (!includeArchived) {
+    query = query.eq("is_archived", false);
+  }
+
+  const { data } = await query.order("next_date", { ascending: true });
+  return data || [];
+}
+
+export async function getRecurrenceById(
+  supabase: any,
+  userId: number,
+  recurrenceId: number
+): Promise<any | null> {
+  const { data } = await supabase
+    .from("recurrences")
+    .select("*, categories(name), groups(name)")
+    .eq("id", recurrenceId)
+    .eq("user_id", userId)
+    .single();
+
+  return data || null;
+}
+
+export async function createRecurrence(
+  supabase: any,
+  data: {
+    userId: number;
+    type: "expense" | "income";
+    amount: number;
+    description?: string;
+    categoryId?: string | null;
+    groupId?: string | null;
+    tags?: string[];
+    frequencyType: string;
+    frequencyInterval?: number | null;
+    frequencyMonth?: number | null;
+    nextDate: string;
+  }
+): Promise<{ error: any; id?: number }> {
+  const { data: inserted, error } = await supabase
+    .from("recurrences")
+    .insert({
+      user_id: data.userId,
+      type: data.type,
+      amount: data.amount,
+      description: data.description || "",
+      category_id: data.categoryId || null,
+      group_id: data.groupId || null,
+      tags: data.tags || [],
+      frequency_type: data.frequencyType,
+      frequency_interval: data.frequencyInterval || null,
+      frequency_month: data.frequencyMonth || null,
+      next_date: data.nextDate,
+    })
+    .select("id")
+    .single();
+
+  if (error) return { error };
+  return { error: null, id: inserted?.id };
+}
+
+export async function updateRecurrence(
+  supabase: any,
+  userId: number,
+  recurrenceId: number,
+  updates: Record<string, any>
+): Promise<{ error: any }> {
+  const { error } = await supabase
+    .from("recurrences")
+    .update({ ...updates, updated_at: new Date().toISOString() })
+    .eq("id", recurrenceId)
+    .eq("user_id", userId);
+
+  return { error };
+}
+
+export function archiveRecurrence(
+  supabase: any,
+  userId: number,
+  recurrenceId: number
+): Promise<{ error: any }> {
+  return updateRecurrence(supabase, userId, recurrenceId, {
+    is_archived: true,
+    archived_at: new Date().toISOString(),
+  });
+}
+
+export function activateRecurrence(
+  supabase: any,
+  userId: number,
+  recurrenceId: number,
+  newNextDate?: string
+): Promise<{ error: any }> {
+  const updates: Record<string, any> = {
+    is_archived: false,
+    archived_at: null,
+  };
+  if (newNextDate) {
+    updates.next_date = newNextDate;
+  }
+  return updateRecurrence(supabase, userId, recurrenceId, updates);
+}
+
+export async function drainNotificationQueue(
+  supabase: any,
+  userId: number
+): Promise<string[]> {
+  const { data: notifications } = await supabase
+    .from("notification_queue")
+    .select("id, message")
+    .eq("user_id", userId)
+    .eq("delivered", false)
+    .order("created_at", { ascending: true });
+
+  if (!notifications || notifications.length === 0) return [];
+
+  const ids = notifications.map((n: any) => n.id);
+  await supabase
+    .from("notification_queue")
+    .update({ delivered: true })
+    .in("id", ids);
+
+  return notifications.map((n: any) => n.message);
+}

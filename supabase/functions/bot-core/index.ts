@@ -16,7 +16,7 @@ import { formatCurrencyBR, formatDateBR, parseDateBR } from "./utils/formatting.
 import { parseNaturalLanguage } from "./services/deepseek.ts";
 import { resolveCommandPeriod } from "./utils/period-parser.ts";
 import { sendTelegramMessage, sendTelegramMessageWithKeyboard, deleteTelegramMessage } from "./services/telegram.ts";
-import { getCategories, sendSimilarityWarning, normalizeString, getAllUserTags, userOrNullFilter } from "./services/database.ts";
+import { getCategories, sendSimilarityWarning, normalizeString, getAllUserTags, userOrNullFilter, updateRecurrence } from "./services/database.ts";
 import { handleCreateCategory, handleSearch } from "./handlers/management.ts";
 import { handleCallbackQuery, handleCancelWizard } from "./handlers/callbacks.ts";
 import { handleNaturalLanguageWithFollowUp, executeNaturalLanguageAction, buildNLCategoryKeyboard } from "./handlers/nl-processing.ts";
@@ -25,6 +25,7 @@ import {
   setWizardState,
   clearWizardState,
   handleTransactionWizard,
+  handleRecurrenceWizard,
 } from "./handlers/wizard.ts";
 import {
   handleStart,
@@ -39,6 +40,7 @@ import {
   handleCleanup,
   handleReset,
   handleLogin,
+  handleRecurrences,
 } from "./handlers/commands.ts";
 import { handleStatement, handleFilterPanel } from "./handlers/statement.ts";
 
@@ -180,9 +182,18 @@ serve(async (req: Request): Promise<Response> => {
       return new Response("OK", { status: 200 });
     }
 
+    // Drain notification queue
+    const { drainNotificationQueue } = await import("./services/database.ts");
+    const notifications = await drainNotificationQueue(supabase, existingUser.id);
+    for (const msg of notifications) {
+      await sendTelegramMessage(message.chat.id, msg);
+    }
+
     const wizardState = await getWizardState(supabase, existingUser.id);
     if (wizardState && !text.startsWith("/")) {
-      if (wizardState.step.startsWith("gasto_")) {
+      if (wizardState.step.startsWith("recorrencia_")) {
+        await handleRecurrenceWizard(supabase, existingUser.id, message.chat.id, wizardState, text);
+      } else if (wizardState.step.startsWith("gasto_")) {
         await handleTransactionWizard("expense", supabase, existingUser.id, message.chat.id, wizardState, text);
       } else if (wizardState.step.startsWith("receita_")) {
         await handleTransactionWizard("income", supabase, existingUser.id, message.chat.id, wizardState, text);
@@ -426,6 +437,75 @@ serve(async (req: Request): Promise<Response> => {
         }
         await clearWizardState(supabase, existingUser.id);
         await handleDetails(supabase, message.from.id, message.chat.id, [id]);
+      } else if (wizardState.step === "rec_edit_amount") {
+        const amount = parseFloat(text.replace(",", "."));
+        if (isNaN(amount) || amount <= 0) {
+          await sendTelegramMessage(message.chat.id, "Por favor, informe um valor válido (ex: 50,00 ou 50)");
+          return new Response("OK", { status: 200 });
+        }
+        const recId = wizardState.data.recurrence_id;
+        await updateRecurrence(supabase, existingUser.id, recId, { amount });
+        await clearWizardState(supabase, existingUser.id);
+        await incrementSessionSeq(supabase, existingUser.id);
+        await sendTelegramMessage(message.chat.id, `✅ Valor atualizado para ${formatCurrencyBR(amount)}!`);
+      } else if (wizardState.step === "rec_edit_description") {
+        const recId = wizardState.data.recurrence_id;
+        await updateRecurrence(supabase, existingUser.id, recId, { description: text });
+        await clearWizardState(supabase, existingUser.id);
+        await incrementSessionSeq(supabase, existingUser.id);
+        await sendTelegramMessage(message.chat.id, `✅ Descrição atualizada para "${text}"!`);
+      } else if (wizardState.step === "rec_edit_start_date") {
+        const parsed = parseDateBR(text);
+        if (!parsed) {
+          await sendTelegramMessage(message.chat.id, "Formato inválido. Use DD/MM/YYYY (ex: 15/01/2024)");
+          return new Response("OK", { status: 200 });
+        }
+        const recId = wizardState.data.recurrence_id;
+        await updateRecurrence(supabase, existingUser.id, recId, { next_date: parsed });
+        await clearWizardState(supabase, existingUser.id);
+        await incrementSessionSeq(supabase, existingUser.id);
+        await sendTelegramMessage(message.chat.id, `✅ Data de início atualizada para ${formatDateBR(parsed)}!`);
+      } else if (wizardState.step === "rec_edit_freq_detail") {
+        const freqType = wizardState.data.frequency_type;
+        const recId = wizardState.data.recurrence_id;
+        if (freqType === "every_x_days") {
+          const interval = parseInt(text.trim(), 10);
+          if (isNaN(interval) || interval < 1) {
+            await sendTelegramMessage(message.chat.id, "Informe um número válido de dias (ex: 15).");
+            return new Response("OK", { status: 200 });
+          }
+          await updateRecurrence(supabase, existingUser.id, recId, { frequency_interval: interval });
+        } else if (freqType === "monthly") {
+          const day = parseInt(text.trim(), 10);
+          if (isNaN(day) || day < 1 || day > 31) {
+            await sendTelegramMessage(message.chat.id, "Informe um dia válido (1 a 31).");
+            return new Response("OK", { status: 200 });
+          }
+          await updateRecurrence(supabase, existingUser.id, recId, { frequency_interval: day });
+        } else if (freqType === "annual") {
+          const parts = text.trim().split(/[\/\s-]+/);
+          const day = parseInt(parts[0], 10);
+          if (isNaN(day) || day < 1 || day > 31) {
+            await sendTelegramMessage(message.chat.id, "Informe um dia válido (1 a 31). Ex: 15/01");
+            return new Response("OK", { status: 200 });
+          }
+          const month = parts[1] ? parseInt(parts[1], 10) : NaN;
+          if (isNaN(month) || month < 1 || month > 12) {
+            await sendTelegramMessage(message.chat.id, "Informe um mês válido (1 a 12). Ex: 15/01");
+            return new Response("OK", { status: 200 });
+          }
+          await updateRecurrence(supabase, existingUser.id, recId, { frequency_interval: day, frequency_month: month });
+        } else if (freqType === "weekly") {
+          const day = parseInt(text.trim(), 10);
+          if (isNaN(day) || day < 0 || day > 6) {
+            await sendTelegramMessage(message.chat.id, "Informe um dia válido (0=Dom a 6=Sáb).");
+            return new Response("OK", { status: 200 });
+          }
+          await updateRecurrence(supabase, existingUser.id, recId, { frequency_interval: day });
+        }
+        await clearWizardState(supabase, existingUser.id);
+        await incrementSessionSeq(supabase, existingUser.id);
+        await sendTelegramMessage(message.chat.id, "✅ Frequência atualizada!");
       }
       return new Response("OK", { status: 200 });
     }
@@ -481,7 +561,7 @@ serve(async (req: Request): Promise<Response> => {
 
       // Check for active wizard on non-wizard commands
       const activeWizard = await getWizardState(supabase, existingUser.id);
-      const wizardCommands = ["/despesa", "/receita", "/cancelar", "/resetar"];
+      const wizardCommands = ["/despesa", "/receita", "/cancelar", "/resetar", "/recorrencia", "/recorrencias"];
       if (activeWizard && !wizardCommands.includes(command.toLowerCase())) {
         await clearWizardState(supabase, existingUser.id);
         await sendTelegramMessage(
@@ -605,6 +685,11 @@ serve(async (req: Request): Promise<Response> => {
 
         case "/login":
           await handleLogin(supabase, message.from.id, message.chat.id, args);
+          break;
+
+        case "/recorrencia":
+        case "/recorrencias":
+          await handleRecurrences(supabase, message.from.id, message.chat.id);
           break;
 
         default:

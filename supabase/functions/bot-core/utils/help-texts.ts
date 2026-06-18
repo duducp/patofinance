@@ -200,4 +200,26 @@ const COMMAND_HELP: Record<string, { keys: string[]; text: string }> = {
       `\`/login\` — gera um código de 6 dígitos (válido por 2 minutos)\n` +
       `💡 Acesse o dashboard e insira o código para fazer login.`,
   },
+  recorrencia: {
+    keys: ["recorrencia", "recorrencias"],
+    text:
+      `📖 *Ajuda — /recorrencia*\n\n` +
+      `Cria e gerencia transações recorrentes (automáticas).\n\n` +
+      `*Como usar:*\n` +
+      `\`/recorrencia\` — lista todas as recorrências com botões\n\n` +
+      `*Ações disponíveis:*\n` +
+      `• Criar nova recorrência pelo wizard\n` +
+      `• Ver detalhes da recorrência\n` +
+      `• Adiantar ocorrência (cria transação agora)\n` +
+      `• Pular próxima ocorrência\n` +
+      `• Arquivar/Reativar recorrência\n` +
+      `• Editar valor, categoria, grupo, frequência, tags\n\n` +
+      `💡 Após criar uma transação, ela pergunta se quer transformá-la em recorrência!\n\n` +
+      `*Frequências disponíveis:*\n` +
+      `Diária, Semanal (dia da semana), Mensal (dia do mês), Anual, A cada X dias\n\n` +
+      `*Comandos relacionados:*\n` +
+      `/despesa — Registrar despesa\n` +
+      `/receita — Registrar receita\n` +
+      `/agendadas — Listar transações futuras`,
+  },
 };
