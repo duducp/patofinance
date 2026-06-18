@@ -506,8 +506,7 @@ export async function showDetailsEditActions(
   );
 }
 
-export async function handleEntity(
-  type: "category" | "group",
+export async function handleCategory(
   supabase: any,
   userId: number,
   chatId: number,
@@ -516,70 +515,45 @@ export async function handleEntity(
   const user = await requireUser(supabase, userId, chatId);
   if (!user) return;
 
-  const isCategory = type === "category";
-  const table = isCategory ? "categories" : "groups";
-  const flagColumn = isCategory ? "is_predefined" : "is_default";
-  const icon = isCategory ? "🏷️" : "📁";
-  const label = isCategory ? "categoria" : "grupo";
-  const cbPrefix = isCategory ? "cat_sel_" : "grp_sel_";
-  const suggestFn = isCategory ? suggestSimilarCategories : suggestSimilarGroups;
-  const wizardStep = isCategory ? "suggest_cat" : "suggest_grp";
-  const sugUseCb = isCategory ? "cat_sug_use" : "grp_sug_use";
-  const sugNewCb = isCategory ? "cat_sug_new" : "grp_sug_new";
-  const cmdRef = isCategory ? "/categoria nome_da_categoria" : "/grupo nome_do_grupo";
-
-  if (args.length === 0 || (isCategory && args[0] === "listar")) {
-    const selectFields = isCategory ? `id, name, ${flagColumn}, transaction_type, normalized_name` : `id, name, ${flagColumn}`;
-    let orderQuery;
-    if (isCategory) {
-      orderQuery = supabase.from(table).select(selectFields)
-        .or(userOrNullFilter(user.id));
-    } else {
-      orderQuery = supabase.from(table).select(selectFields).eq("user_id", user.id);
-    }
-    orderQuery = orderQuery.order("name");
-    const { data: items } = await orderQuery;
+  if (args.length === 0 || args[0] === "listar") {
+    const { data: items } = await supabase
+      .from("categories")
+      .select("id, name, is_predefined, transaction_type, normalized_name")
+      .or(userOrNullFilter(user.id))
+      .order("name");
 
     if (!items || items.length === 0) {
-      await sendTelegramMessage(chatId, `${icon} Nenhum${isCategory ? "a" : ""} ${label} encontrad${isCategory ? "a" : ""}. Crie um${isCategory ? "a" : ""} com \`${cmdRef}\``);
+      await sendTelegramMessage(chatId, "🏷️ Nenhuma categoria encontrada. Crie uma com `/categoria nome_da_categoria`");
       return;
     }
 
-    // Get transaction counts
-    const fkColumn = isCategory ? "category_id" : "group_id";
     const { data: counts } = await supabase
       .from("transactions")
-      .select(`${fkColumn}, id`)
+      .select("category_id, id")
       .eq("user_id", user.id);
 
     const countMap: Record<number, number> = {};
     if (counts) {
       for (const t of counts) {
-        if (t[fkColumn]) {
-          countMap[t[fkColumn]] = (countMap[t[fkColumn]] || 0) + 1;
-        }
+        if (t.category_id) countMap[t.category_id] = (countMap[t.category_id] || 0) + 1;
       }
     }
 
-    const typeLabels: Record<string, string> = {
-      expense: "💸",
-      income: "💰",
-    };
+    const typeLabels: Record<string, string> = { expense: "💸", income: "💰" };
 
-    const pluralNoun = isCategory ? "categorias" : "grupos";
-    let message = `${icon} *Su${isCategory ? "as" : "s"} ${pluralNoun}:*\n\n`;
+    let message = "🏷️ *Suas categorias:*\n\n";
     for (const item of items) {
       const count = countMap[item.id] || 0;
-      const defaultTag = item[flagColumn] ? ` ⭐ (padrão)` : "";
+      const defaultTag = item.is_predefined ? " ⭐ (padrão)" : "";
       const typeIcon = item.transaction_type ? ` ${typeLabels[item.transaction_type]}` : "";
       message += `• ${sanitizeMarkdown(item.name)}${sanitizeMarkdown(defaultTag)}${typeIcon} — ${count} ${count !== 1 ? "transações" : "transação"}\n`;
     }
-    message += `\n💡 Para adicionar: \`${cmdRef}\``;
+    message += "\n💡 Para adicionar: `/categoria nome_da_categoria`";
 
     const sessionSeq = await getSessionSeq(supabase, user.id);
-    const keyboard = buildKeyboardGrid(items, (item) => ({
+    const keyboard = buildKeyboardGrid(items, (item: any) => ({
       text: item.name,
-      callback_data: addSession(`${cbPrefix}${item.name}`, sessionSeq),
+      callback_data: addSession(`cat_sel_${item.name}`, sessionSeq),
     }), 3);
 
     await sendTelegramMessageWithKeyboard(chatId, message, keyboard);
@@ -587,39 +561,34 @@ export async function handleEntity(
   }
 
   const entityName = args.join(" ");
-
-  // Check for exact match first (prevents duplicate creation with friendly message)
   const normalized = normalizeString(entityName);
-  let existsQuery = supabase
-    .from(table)
-    .select("id, name, " + flagColumn);
-  if (isCategory) {
-    existsQuery = existsQuery.or(userOrNullFilter(user.id));
-  } else {
-    existsQuery = existsQuery.eq("user_id", user.id);
-  }
-  const { data: existing } = await existsQuery.eq("normalized_name", normalized).maybeSingle();
+
+  // Check for exact match (including system-global)
+  const { data: existing } = await supabase
+    .from("categories")
+    .select("id, name, is_predefined")
+    .eq("normalized_name", normalized)
+    .or(userOrNullFilter(user.id))
+    .maybeSingle();
+
   if (existing) {
-    const defaultTag = existing[flagColumn] ? ` ⭐ (padrão)` : "";
-    await sendTelegramMessage(
-      chatId,
-      `⚠️ ${icon} ${label.charAt(0).toUpperCase() + label.slice(1)} "${sanitizeMarkdown(existing.name)}"${defaultTag} já existe.`
-    );
+    const defaultTag = existing.is_predefined ? " ⭐ (padrão)" : "";
+    await sendTelegramMessage(chatId, `⚠️ 🏷️ Categoria "${sanitizeMarkdown(existing.name)}"${defaultTag} já existe.`);
     return;
   }
 
-  // Check for similar names before creating
-  const similar = await suggestFn(supabase, user.id, entityName);
+  // Check for similar names
+  const similar = await suggestSimilarCategories(supabase, user.id, entityName);
   if (similar && similar.length > 0) {
-    await setWizardState(supabase, user.id, wizardStep, {
+    await setWizardState(supabase, user.id, "suggest_cat", {
       original_name: entityName,
       suggested_name: similar[0].name,
       similarity: similar[0].similarity,
     });
     const sessionSeq = await getSessionSeq(supabase, user.id);
     const keyboard: InlineKeyboard = [
-      [{ text: `✅ Usar "${similar[0].name}"`, callback_data: addSession(sugUseCb, sessionSeq) }],
-      [{ text: `✏️ Criar "${entityName}" mesmo assim`, callback_data: addSession(sugNewCb, sessionSeq) }],
+      [{ text: `✅ Usar "${similar[0].name}"`, callback_data: addSession("cat_sug_use", sessionSeq) }],
+      [{ text: `✏️ Criar "${entityName}" mesmo assim`, callback_data: addSession("cat_sug_new", sessionSeq) }],
     ];
     await sendTelegramMessageWithKeyboard(
       chatId,
@@ -629,32 +598,131 @@ export async function handleEntity(
     return;
   }
 
-  const { error } = await supabase.from(table).insert({
+  const { error } = await supabase.from("categories").insert({
     user_id: user.id,
     name: entityName,
     normalized_name: normalizeString(entityName),
-    [flagColumn]: false,
+    is_predefined: false,
   });
 
   if (error) {
     if (error.code === "23505") {
-      await sendTelegramMessage(chatId, `⚠️ Já existe ${isCategory ? "uma" : "um"} ${label} com esse nome. Escolha outro nome.`);
+      await sendTelegramMessage(chatId, "⚠️ Já existe uma categoria com esse nome. Escolha outro nome.");
     } else {
-      await sendTelegramMessage(chatId, `❌ Ops! Algo deu errado ao criar ${isCategory ? "a" : "o"} ${label}. Tente novamente.`);
+      await sendTelegramMessage(chatId, "❌ Ops! Algo deu errado ao criar a categoria. Tente novamente.");
     }
     return;
   }
 
-  const art = isCategory ? "a" : "o";
-  await sendTelegramMessage(chatId, `✅ ${icon} ${label.charAt(0).toUpperCase() + label.slice(1)} "${entityName}" criad${art} com sucesso!`);
+  await sendTelegramMessage(chatId, `✅ 🏷️ Categoria "${entityName}" criada com sucesso!`);
 }
 
-export function handleGroup(supabase: any, userId: number, chatId: number, args: string[]): Promise<void> {
-  return handleEntity("group", supabase, userId, chatId, args);
-}
+export async function handleGroup(
+  supabase: any,
+  userId: number,
+  chatId: number,
+  args: string[]
+): Promise<void> {
+  const user = await requireUser(supabase, userId, chatId);
+  if (!user) return;
 
-export function handleCategory(supabase: any, userId: number, chatId: number, args: string[]): Promise<void> {
-  return handleEntity("category", supabase, userId, chatId, args);
+  if (args.length === 0) {
+    const { data: items } = await supabase
+      .from("groups")
+      .select("id, name, is_default")
+      .eq("user_id", user.id)
+      .order("name");
+
+    if (!items || items.length === 0) {
+      await sendTelegramMessage(chatId, "📁 Nenhum grupo encontrado. Crie um com `/grupo nome_do_grupo`");
+      return;
+    }
+
+    const { data: counts } = await supabase
+      .from("transactions")
+      .select("group_id, id")
+      .eq("user_id", user.id);
+
+    const countMap: Record<number, number> = {};
+    if (counts) {
+      for (const t of counts) {
+        if (t.group_id) countMap[t.group_id] = (countMap[t.group_id] || 0) + 1;
+      }
+    }
+
+    let message = "📁 *Seus grupos:*\n\n";
+    for (const item of items) {
+      const count = countMap[item.id] || 0;
+      const defaultTag = item.is_default ? " ⭐ (padrão)" : "";
+      message += `• ${sanitizeMarkdown(item.name)}${sanitizeMarkdown(defaultTag)} — ${count} ${count !== 1 ? "transações" : "transação"}\n`;
+    }
+    message += "\n💡 Para adicionar: `/grupo nome_do_grupo`";
+
+    const sessionSeq = await getSessionSeq(supabase, user.id);
+    const keyboard = buildKeyboardGrid(items, (item: any) => ({
+      text: item.name,
+      callback_data: addSession(`grp_sel_${item.name}`, sessionSeq),
+    }), 3);
+
+    await sendTelegramMessageWithKeyboard(chatId, message, keyboard);
+    return;
+  }
+
+  const entityName = args.join(" ");
+  const normalized = normalizeString(entityName);
+
+  // Check for exact match
+  const { data: existing } = await supabase
+    .from("groups")
+    .select("id, name, is_default")
+    .eq("normalized_name", normalized)
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  if (existing) {
+    const defaultTag = existing.is_default ? " ⭐ (padrão)" : "";
+    await sendTelegramMessage(chatId, `⚠️ 📁 Grupo "${sanitizeMarkdown(existing.name)}"${defaultTag} já existe.`);
+    return;
+  }
+
+  // Check for similar names
+  const similar = await suggestSimilarGroups(supabase, user.id, entityName);
+  if (similar && similar.length > 0) {
+    await setWizardState(supabase, user.id, "suggest_grp", {
+      original_name: entityName,
+      suggested_name: similar[0].name,
+      similarity: similar[0].similarity,
+    });
+    const sessionSeq = await getSessionSeq(supabase, user.id);
+    const keyboard: InlineKeyboard = [
+      [{ text: `✅ Usar "${similar[0].name}"`, callback_data: addSession("grp_sug_use", sessionSeq) }],
+      [{ text: `✏️ Criar "${entityName}" mesmo assim`, callback_data: addSession("grp_sug_new", sessionSeq) }],
+    ];
+    await sendTelegramMessageWithKeyboard(
+      chatId,
+      `⚠️ Você quis dizer *${sanitizeMarkdown(similar[0].name)}*? (${(similar[0].similarity * 100).toFixed(0)}% similar)\n\nCaso contrário, confirme para criar *${entityName}* mesmo assim.`,
+      keyboard
+    );
+    return;
+  }
+
+  const { error } = await supabase.from("groups").insert({
+    user_id: user.id,
+    name: entityName,
+    normalized_name: normalizeString(entityName),
+    is_default: false,
+  });
+
+  if (error) {
+    if (error.code === "23505") {
+      await sendTelegramMessage(chatId, "⚠️ Já existe um grupo com esse nome. Escolha outro nome.");
+    } else {
+      await sendTelegramMessage(chatId, "❌ Ops! Algo deu errado ao criar o grupo. Tente novamente.");
+    }
+    return;
+  }
+
+  await sendTelegramMessage(chatId, `✅ 📁 Grupo "${entityName}" criado com sucesso!`);
 }
 
 export async function handleTag(supabase: any, userId: number, chatId: number, _args: string[]): Promise<void> {

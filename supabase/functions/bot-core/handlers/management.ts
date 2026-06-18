@@ -6,8 +6,7 @@ import { requireUser, normalizeString, suggestSimilarCategories, suggestSimilarG
 import { formatCurrencyBR, formatDateBR, sanitizeMarkdown } from "../utils/formatting.ts";
 import { buildDeleteConfirmKeyboard } from "./wizard.ts";
 
-async function handleCreateEntity(
-  type: "category" | "group",
+export async function handleCreateCategory(
   supabase: any,
   userId: number,
   chatId: number,
@@ -16,67 +15,96 @@ async function handleCreateEntity(
   const user = await requireUser(supabase, userId, chatId);
   if (!user) return;
 
-  const isCategory = type === "category";
-  const icon = isCategory ? "🏷️" : "📁";
-  const label = isCategory ? "categoria" : "grupo";
-  const table = isCategory ? "categories" : "groups";
-  const suggestFn = isCategory ? suggestSimilarCategories : suggestSimilarGroups;
-  const cmdRef = isCategory ? "/categoria" : "/grupo";
-
   const normalizedName = normalizeString(name);
 
-  // Check for exact match
-  let existsQuery = supabase.from(table).select("id").eq("normalized_name", normalizedName);
-  if (isCategory) {
-    existsQuery = existsQuery.or(userOrNullFilter(user.id));
-  } else {
-    existsQuery = existsQuery.eq("user_id", user.id);
-  }
-  const { data: existing } = await existsQuery.maybeSingle();
+  // Check for exact match (including system-global categories)
+  const { data: existing } = await supabase
+    .from("categories")
+    .select("id")
+    .eq("normalized_name", normalizedName)
+    .or(userOrNullFilter(user.id))
+    .maybeSingle();
 
   if (existing) {
-    await sendTelegramMessage(chatId, `⚠️ ${icon} ${label.charAt(0).toUpperCase() + label.slice(1)} "${name}" já existe.`);
+    await sendTelegramMessage(chatId, `⚠️ 🏷️ Categoria "${name}" já existe.`);
     return;
   }
 
   // Check for similar names
-  const similar = await suggestFn(supabase, user.id, name);
+  const similar = await suggestSimilarCategories(supabase, user.id, name);
   if (similar && similar.length > 0) {
     const suggestions = similar.map(s => `• ${s.name} (${(s.similarity * 100).toFixed(0)}%)`).join("\n");
     await sendTelegramMessage(chatId,
-      `⚠️ ${label.charAt(0).toUpperCase() + label.slice(1)} "${name}" não encontrad${isCategory ? "a" : "o"}, mas encontrei similares:\n${suggestions}\n\n` +
-      `Use o nome exato para reutilizar ou ${cmdRef} ${name} para criar mesmo assim.`
+      `⚠️ Categoria "${name}" não encontrada, mas encontrei similares:\n${suggestions}\n\n` +
+      `Use o nome exato para reutilizar ou /categoria ${name} para criar mesmo assim.`
     );
     return;
   }
 
-  const insertData: Record<string, any> = {
+  const { error } = await supabase.from("categories").insert({
     user_id: user.id,
     name,
     normalized_name: normalizedName,
-  };
-  if (isCategory) {
-    insertData.is_predefined = false;
-  } else {
-    insertData.is_default = false;
-  }
-
-  const { error } = await supabase.from(table).insert(insertData);
+    is_predefined: false,
+  });
 
   if (error) {
-    await sendTelegramMessage(chatId, `❌ Ops! Algo deu errado ao criar ${isCategory ? "a" : "o"} ${label}. Tente novamente.`);
+    await sendTelegramMessage(chatId, "❌ Ops! Algo deu errado ao criar a categoria. Tente novamente.");
     return;
   }
 
-  const art = isCategory ? "a" : "o";
-  await sendTelegramMessage(chatId, `✅ ${icon} ${label.charAt(0).toUpperCase() + label.slice(1)} "${name}" criad${art} com sucesso!`);
+  await sendTelegramMessage(chatId, `✅ 🏷️ Categoria "${name}" criada com sucesso!`);
 }
 
-export const handleCreateCategory = (supabase: any, userId: number, chatId: number, name: string): Promise<void> =>
-  handleCreateEntity("category", supabase, userId, chatId, name);
+export async function handleCreateGroup(
+  supabase: any,
+  userId: number,
+  chatId: number,
+  name: string
+): Promise<void> {
+  const user = await requireUser(supabase, userId, chatId);
+  if (!user) return;
 
-export const handleCreateGroup = (supabase: any, userId: number, chatId: number, name: string): Promise<void> =>
-  handleCreateEntity("group", supabase, userId, chatId, name);
+  const normalizedName = normalizeString(name);
+
+  // Check for exact match
+  const { data: existing } = await supabase
+    .from("groups")
+    .select("id")
+    .eq("normalized_name", normalizedName)
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  if (existing) {
+    await sendTelegramMessage(chatId, `⚠️ 📁 Grupo "${name}" já existe.`);
+    return;
+  }
+
+  // Check for similar names
+  const similar = await suggestSimilarGroups(supabase, user.id, name);
+  if (similar && similar.length > 0) {
+    const suggestions = similar.map(s => `• ${s.name} (${(s.similarity * 100).toFixed(0)}%)`).join("\n");
+    await sendTelegramMessage(chatId,
+      `⚠️ Grupo "${name}" não encontrado, mas encontrei similares:\n${suggestions}\n\n` +
+      `Use o nome exato para reutilizar ou /grupo ${name} para criar mesmo assim.`
+    );
+    return;
+  }
+
+  const { error } = await supabase.from("groups").insert({
+    user_id: user.id,
+    name,
+    normalized_name: normalizedName,
+    is_default: false,
+  });
+
+  if (error) {
+    await sendTelegramMessage(chatId, "❌ Ops! Algo deu errado ao criar o grupo. Tente novamente.");
+    return;
+  }
+
+  await sendTelegramMessage(chatId, `✅ 📁 Grupo "${name}" criado com sucesso!`);
+}
 
 export async function handleListCategories(supabase: any, userId: number, chatId: number): Promise<void> {
   const user = await requireUser(supabase, userId, chatId);
