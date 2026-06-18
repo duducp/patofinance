@@ -286,6 +286,7 @@ export const TRANSACTION_DETAIL_FIELDS = `
       description,
       tags,
       transaction_date,
+      recurrence_id,
       categories (name),
       groups (name)
     `;
