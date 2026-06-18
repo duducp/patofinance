@@ -42,22 +42,8 @@
       font-display: swap;
       src: url("https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/webfonts/fa-brands-400.woff2") format("woff2");
     }
-    @font-face {
-      font-family: "Font Awesome 6 Free";
-      font-style: normal;
-      font-weight: 400;
-      font-display: swap;
-      src: url("https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/webfonts/fa-regular-400.woff2") format("woff2");
-    }
-    @font-face {
-      font-family: "Font Awesome 6 Free";
-      font-style: normal;
-      font-weight: 900;
-      font-display: swap;
-      src: url("https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/webfonts/fa-solid-900.woff2") format("woff2");
-    }
   </style>
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" integrity="sha512-DTOQO9RWCH3ppGqcWaEA1BIZOC6xxalwEsw9c2QQeAIftl+Vegovlnee1c9QX4TctnWMn13TZye+giMm8e2LwA==" crossorigin="anonymous" referrerpolicy="no-referrer" media="print" onload="this.media='all'">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/brands.min.css" crossorigin="anonymous" media="print" onload="this.media='all'">
   <link rel="stylesheet" href="styles.css">
   <script type="application/ld+json">
   {
@@ -118,32 +104,47 @@
         <div class="feature-card fade-in">
           <div class="feature-icon" aria-hidden="true">💸</div>
           <h3>Despesas e Receitas</h3>
-          <p>Registre gastos e ganhos em segundos com comandos rápidos como <code>/despesa 50 mercado</code>. Transações futuras são identificadas automaticamente como agendadas</p>
+          <p>Registre gastos e ganhos em segundos com comandos rápidos como <code>/despesa 50 mercado</code>. Wizard conversacional guia passo a passo quando faltam dados. Transações futuras viram agendadas automaticamente</p>
         </div>
         <div class="feature-card fade-in">
           <div class="feature-icon" aria-hidden="true">📊</div>
-          <h3>Extrato Interativo</h3>
-          <p>Visualize transações com filtros por categoria, grupo, tags, tipo, período e status (realizadas/agendadas). Transações futuras aparecem com <span aria-label="relógio">⏳</span></p>
+          <h3>Extrato e Resumo</h3>
+          <p>Extrato interativo com filtros por categoria, grupo, tags, tipo, período e status. Resumo por categoria com totais de receitas, despesas e saldo do período</p>
+        </div>
+        <div class="feature-card fade-in">
+          <div class="feature-icon" aria-hidden="true">📅</div>
+          <h3>Saldo e Agendadas</h3>
+          <p>Consulte saldo do mês, mês passado ou janeiro — o bot entende períodos naturais. Transações futuras aparecem com <span aria-label="relógio">⏳</span> e são listadas em <code>/agendadas</code></p>
+        </div>
+        <div class="feature-card fade-in">
+          <div class="feature-icon" aria-hidden="true">🔄</div>
+          <h3>Recorrências</h3>
+          <p>Crie recorrências com wizard completo. Geração automática diária via cron — adiante, pule, arquive ou edite cada ocorrência. Transforme qualquer transação em recorrência</p>
+        </div>
+        <div class="feature-card fade-in">
+          <div class="feature-icon" aria-hidden="true">🔍</div>
+          <h3>Busca e Detalhes</h3>
+          <p>Busque transações por descrição, valor ou tag com <code>/buscar mercado</code>. Veja detalhes completos, edite valor/categoria/data/grupo/tags ou exclua com confirmação</p>
         </div>
         <div class="feature-card fade-in">
           <div class="feature-icon" aria-hidden="true">🌐</div>
           <h3>Linguagem Natural <span class="feature-badge">IA</span></h3>
-          <p>"Gastei 50 no almoço" — o bot entende frases comuns sem precisar de comandos</p>
+          <p>"Gastei 50 no almoço", "quanto gastei esse mês?", "recebi 3000 de salário" — o bot entende frases comuns sem precisar de comandos, graças à IA do DeepSeek</p>
         </div>
         <div class="feature-card fade-in">
           <div class="feature-icon" aria-hidden="true">📁</div>
           <h3>Grupos e Categorias</h3>
-          <p>Organize por conta bancária, cartão de crédito e tipo de gasto. Consulte saldo por grupo com projeção de agendados</p>
+          <p>Organize por conta bancária, cartão de crédito ou tipo de gasto. Categorias pré-definidas por tipo (despesa/receita) + crie as suas. Consulte saldo e resumo filtrando por grupo</p>
         </div>
         <div class="feature-card fade-in">
           <div class="feature-icon" aria-hidden="true">🔖</div>
-          <h3>Tags Personalizadas</h3>
-          <p>Adicione tags como <code>#trabalho</code> para classificar e filtrar transações</p>
+          <h3>Tags</h3>
+          <p>Adicione tags livres como <code>#trabalho</code> para classificar transações. Filtrar por tag com um clique, busque por tag, veja contagem de uso de cada uma</p>
         </div>
         <div class="feature-card fade-in">
-          <div class="feature-icon" aria-hidden="true">🔒</div>
-          <h3>Seus Dados Seguros</h3>
-          <p>Tudo armazenado com segurança no Supabase PostgreSQL</p>
+          <div class="feature-icon" aria-hidden="true">🔗</div>
+          <h3>Web Dashboard</h3>
+          <p>Acesse seus dados pelo navegador com código temporário de 6 dígitos gerado pelo <code>/login</code>. Limpeza automática de categorias e grupos sem uso com <code>/limpar</code></p>
         </div>
       </div>
     </div>
@@ -177,72 +178,82 @@
   <section class="commands" id="comandos">
     <div class="container">
       <h2 class="section-title fade-in">Comandos disponíveis</h2>
-      <div class="commands-grid fade-in">
-        <div class="command-card">
-          <div class="command-example"><code>/despesa 50 almoço</code></div>
-          <p>Registra uma despesa</p>
-        </div>
-        <div class="command-card">
-          <div class="command-example"><code>/receita 3000 salário</code></div>
-          <p>Registra uma receita</p>
-        </div>
-        <div class="command-card">
-          <div class="command-example"><code>/saldo</code></div>
-          <p>Saldo do período — use <code>/saldo mes passado</code>, <code>/saldo janeiro</code></p>
-        </div>
-        <div class="command-card">
-          <div class="command-example"><code>/extrato</code></div>
-          <p>Extrato com filtros — use <code>/extrato janeiro 2025</code>, <code>/extrato --grupo Pessoal</code></p>
-        </div>
-        <div class="command-card">
-          <div class="command-example"><code>/resumo</code></div>
-          <p>Resumo por categoria — use <code>/resumo ultimo mes</code>, <code>/resumo --grupo Trabalho</code></p>
-        </div>
-        <div class="command-card">
-          <div class="command-example"><code>/detalhes 42</code></div>
-          <p>Detalhes completos da transação com botões para editar e excluir</p>
-        </div>
-        <div class="command-card">
-          <div class="command-example"><code>/agendadas</code></div>
-          <p>Lista transações futuras agendadas &mdash; use <code>/futuras</code> como atalho</p>
-        </div>
-        <div class="command-card">
-          <div class="command-example"><code>/buscar mercado</code></div>
-          <p>Busca transações por descrição, valor ou tag — use <code>/buscar 150</code>, <code>/buscar #ifood</code></p>
-        </div>
-        <div class="command-card">
-          <div class="command-example"><code>/grupo</code></div>
-          <p>Gerencia grupos (contas bancárias, carteiras)</p>
-        </div>
-        <div class="command-card">
-          <div class="command-example"><code>/categoria</code></div>
-          <p>Gerencia categorias (despesa e receita)</p>
-        </div>
-        <div class="command-card">
-          <div class="command-example"><code>/tag</code></div>
-          <p>Lista tags com quantidade de transações</p>
-        </div>
-        <div class="command-card">
-          <div class="command-example"><code>/ajuda</code></div>
-          <p>Lista todos os comandos. Use <code>/ajuda extrato</code> para detalhes de um comando</p>
-        </div>
-        <div class="command-card">
-          <div class="command-example"><code>/limpar</code></div>
-          <p>Remove categorias/grupos sem transações</p>
-        </div>
-        <div class="command-card">
-          <div class="command-example"><code>/resetar</code></div>
-          <p>Reseta sua conta (apaga todos os dados)</p>
-        </div>
-        <div class="command-card">
-          <div class="command-example"><code>/cancelar</code></div>
-          <p>Cancelar operação em andamento</p>
-        </div>
-        <div class="command-card command-card-highlight">
-          <div class="command-example"><span aria-hidden="true">💬</span> Linguagem natural</div>
-          <p>"Gastei 50 no almoço" · "Recebi 3000 de salário" · "Quanto gastei este mês?"</p>
+      <div class="commands-grid-wrapper fade-in">
+        <div class="commands-grid" id="cmd-grid">
+          <div class="command-card">
+            <div class="command-example"><code>/despesa 50 almoço</code></div>
+            <p>Registra uma despesa</p>
+          </div>
+          <div class="command-card">
+            <div class="command-example"><code>/receita 3000 salário</code></div>
+            <p>Registra uma receita</p>
+          </div>
+          <div class="command-card">
+            <div class="command-example"><code>/saldo</code></div>
+            <p>Saldo do período — use <code>/saldo mes passado</code>, <code>/saldo janeiro</code></p>
+          </div>
+          <div class="command-card">
+            <div class="command-example"><code>/extrato</code></div>
+            <p>Extrato com filtros — use <code>/extrato janeiro 2025</code>, <code>/extrato --grupo Pessoal</code></p>
+          </div>
+          <div class="command-card">
+            <div class="command-example"><code>/resumo</code></div>
+            <p>Resumo por categoria — use <code>/resumo ultimo mes</code>, <code>/resumo --grupo Trabalho</code></p>
+          </div>
+          <div class="command-card">
+            <div class="command-example"><code>/detalhes 42</code></div>
+            <p>Detalhes completos da transação com botões para editar ou excluir</p>
+          </div>
+          <div class="command-card">
+            <div class="command-example"><code>/agendadas</code></div>
+            <p>Lista transações futuras agendadas &mdash; use <code>/futuras</code> como atalho</p>
+          </div>
+          <div class="command-card">
+            <div class="command-example"><code>/recorrencia</code></div>
+            <p>Cria e gerencia recorrências com geração automática — adiante, pule ou arquive ocorrências</p>
+          </div>
+          <div class="command-card">
+            <div class="command-example"><code>/buscar mercado</code></div>
+            <p>Busca transações por descrição, valor ou tag — use <code>/buscar 150</code>, <code>/buscar #ifood</code></p>
+          </div>
+          <div class="command-card">
+            <div class="command-example"><code>/grupo</code></div>
+            <p>Gerencia grupos (contas bancárias, carteiras)</p>
+          </div>
+          <div class="command-card">
+            <div class="command-example"><code>/categoria</code></div>
+            <p>Gerencia categorias (despesa e receita)</p>
+          </div>
+          <div class="command-card">
+            <div class="command-example"><code>/tag</code></div>
+            <p>Lista tags com quantidade de transações</p>
+          </div>
+          <div class="command-card">
+            <div class="command-example"><code>/ajuda</code></div>
+            <p>Lista todos os comandos. Use <code>/ajuda extrato</code> para detalhes de um comando</p>
+          </div>
+          <div class="command-card">
+            <div class="command-example"><code>/limpar</code></div>
+            <p>Remove categorias/grupos sem transações</p>
+          </div>
+          <div class="command-card">
+            <div class="command-example"><code>/resetar</code></div>
+            <p>Reseta sua conta (apaga todas as transações, categorias, grupos e tags)</p>
+          </div>
+          <div class="command-card">
+            <div class="command-example"><code>/cancelar</code></div>
+            <p>Cancelar operação em andamento</p>
+          </div>
+          <div class="command-card command-card-highlight">
+            <div class="command-example"><span aria-hidden="true">💬</span> Linguagem natural</div>
+            <p>"Gastei 50 no almoço" · "Recebi 3000 de salário" · "Quanto gastei este mês?"</p>
+          </div>
         </div>
       </div>
+      <button class="show-more-btn" id="show-more-cmds" aria-expanded="false" aria-controls="cmd-grid">
+        <span class="show-more-text" aria-live="polite" aria-atomic="true">Ver mais comandos</span>
+        <span class="show-more-arrow">↓</span>
+      </button>
     </div>
   </section>
 
@@ -265,6 +276,50 @@
         <details class="faq-item fade-in">
           <summary class="faq-question">Funciona sem internet?</summary>
           <p class="faq-answer">Precisa de internet para o Telegram, mas o bot é leve e funciona até em 3G.</p>
+        </details>
+        <details class="faq-item fade-in">
+          <summary class="faq-question">O que fazer depois de iniciar o bot?</summary>
+          <p class="faq-answer">Envie seu primeiro comando: <code>/despesa 50 almoço</code> para registrar um gasto, <code>/receita 3000 salário</code> para uma receita, ou <code>/saldo</code> para ver seu saldo. O bot já vem com categorias pré-definidas — não precisa configurar nada.</p>
+        </details>
+        <details class="faq-item fade-in">
+          <summary class="faq-question">Preciso criar categorias antes de registrar?</summary>
+          <p class="faq-answer">Não. O bot tem categorias pré-definidas (Alimentação, Transporte, Salário, etc.) e cria novas automaticamente se você digitar um nome que não existe. Use <code>/categoria</code> para gerenciar.</p>
+        </details>
+        <details class="faq-item fade-in">
+          <summary class="faq-question">Como registro uma despesa com categoria, tags e grupo específicos?</summary>
+          <p class="faq-answer">Use os flags opcionais: <code>/despesa 50 --descricao "almoço no shopping" --grupo "Cartão Nubank" --tags #comida #lazer</code>. Para receita: <code>/receita 3000 --descricao "salário" --grupo "Conta Corrente"</code>. Se omitir algo, o wizard conversacional guia passo a passo.</p>
+        </details>
+        <details class="faq-item fade-in">
+          <summary class="faq-question">Posso editar ou excluir uma transação depois de registrada?</summary>
+          <p class="faq-answer">Sim. Use <code>/detalhes ID</code> (o ID aparece no extrato) para ver a transação completa. Lá você encontra botões para editar valor, categoria, data, grupo, tags, descrição ou excluir a transação.</p>
+        </details>
+        <details class="faq-item fade-in">
+          <summary class="faq-question">Como funciona o sistema de tags?</summary>
+          <p class="faq-answer">Tags são marcadores livres como <code>#ifood</code>, <code>#viagem</code> ou <code>#trabalho</code>. Você adiciona ao registrar com o flag <code>--tags #minhaTag</code>. Depois, use <code>/tag</code> para ver todas com contagem de uso, e clique em qualquer uma para filtrar as transações daquela tag.</p>
+        </details>
+        <details class="faq-item fade-in">
+          <summary class="faq-question">Como funcionam as recorrências?</summary>
+          <p class="faq-answer">Recorrências criam transações automaticamente todo mês, semana ou período configurado. Use <code>/recorrencia</code> para criar pelo wizard ou transforme uma transação existente em recorrência. O bot roda um cron diário às 06:00 que gera as ocorrências pendentes. Você pode adiantar, pular, arquivar ou editar cada recorrência pelos botões inline.</p>
+        </details>
+        <details class="faq-item fade-in">
+          <summary class="faq-question">Como acesso meus dados pelo navegador?</summary>
+          <p class="faq-answer">Envie <code>/login</code> no bot para gerar um código de 6 dígitos. Acesse o site do Pato Finance, vá em "Entrar" e digite o código. Pronto — seus dados aparecem no navegador com a mesma conta do Telegram.</p>
+        </details>
+        <details class="faq-item fade-in">
+          <summary class="faq-question">Consigo usar no computador?</summary>
+          <p class="faq-answer">Sim. O Telegram tem versão Desktop e Web (web.telegram.org). Todos os comandos funcionam igual — você pode registrar, consultar e gerenciar tudo do PC.</p>
+        </details>
+        <details class="faq-item fade-in">
+          <summary class="faq-question">O bot não respondeu, o que fazer?</summary>
+          <p class="faq-answer">Pode ser instante de lentidão — aguarde alguns segundos. Se não responder, envie <code>/cancelar</code> para limpar qualquer estado pendente e tente novamente. Se o problema persistir, o bot pode estar em manutenção — verifique o status no GitHub.</p>
+        </details>
+        <details class="faq-item fade-in">
+          <summary class="faq-question">O que acontece se eu resetar minha conta?</summary>
+          <p class="faq-answer">O comando <code>/resetar</code> apaga todas as suas transações, categorias, grupos, tags e recorrências. É uma operação destrutiva — o bot exibe um aviso e você precisa digitar <code>RESETAR</code> para confirmar. Use com cuidado.</p>
+        </details>
+        <details class="faq-item fade-in">
+          <summary class="faq-question">Como reportar um bug ou sugerir melhoria?</summary>
+          <p class="faq-answer">Abra uma issue no <a href="https://github.com/duducp/patofinance/issues" target="_blank" rel="noopener">GitHub</a>. O projeto é open source e toda contribuição é bem-vinda. Descreva o problema ou sugestão que a gente analisa.</p>
         </details>
       </div>
     </div>
@@ -301,42 +356,6 @@
     </div>
   </footer>
 
-  <script src="https://cdn.jsdelivr.net/npm/@twemoji/api@14.1.2/dist/twemoji.min.js" defer crossorigin="anonymous"></script>
-  <script>
-    document.addEventListener('DOMContentLoaded', function() {
-      twemoji.parse(document.body, {
-        folder: 'svg',
-        ext: '.svg',
-        base: 'https://cdn.jsdelivr.net/npm/@twemoji/api@14.1.2/assets/'
-      });
-      document.querySelectorAll('img.emoji').forEach(function(img) {
-        img.loading = 'lazy';
-      });
-    });
-  </script>
   <script src="main.js" defer></script>
-  <script>
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('sw.js').catch(function(err) {
-        console.warn('SW registration failed:', err);
-      });
-    }
-  </script>
-  <script>
-    (function() {
-      var s = document.createElement('script');
-      s.src = 'https://unpkg.com/web-vitals@5/dist/web-vitals.iife.js';
-      s.onload = function () {
-        function logMetric(m) {
-          console.log('[Web Vitals]', m.name, ':', m.value, m.rating ? '(' + m.rating + ')' : '');
-        }
-        webVitals.onLCP(logMetric);
-        webVitals.onINP(logMetric);
-        webVitals.onCLS(logMetric);
-        webVitals.onTTFB(logMetric);
-      };
-      document.head.appendChild(s);
-    })();
-  </script>
 </body>
 </html>

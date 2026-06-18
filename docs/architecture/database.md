@@ -67,6 +67,37 @@ System-global categories (`user_id = NULL`) are served to all users from a singl
 - `idx_transactions_group`: `(group_id)` — group filter joins
 - `idx_transactions_category`: `(category_id)` — category filter joins
 
+### `recurrences`
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | `BIGSERIAL PK` | |
+| `user_id` | `BIGINT FK → users.id` | Owner |
+| `group_id` | `BIGINT FK → groups.id` | |
+| `category_id` | `BIGINT FK → categories.id` | NULL allowed |
+| `type` | `TEXT CHECK` | `income` or `expense` |
+| `amount` | `DECIMAL(12,2)` | Always positive |
+| `description` | `TEXT` | Optional |
+| `tags` | `TEXT[]` | Array of tag strings |
+| `frequency_type` | `TEXT CHECK` | `daily` / `weekly` / `monthly` / `annual` / `every_x_days` |
+| `frequency_interval` | `INT` | Weekly: DOW (0-6), Monthly/Annual: day (1-31), every_x_days: interval |
+| `frequency_month` | `INT` | Annual only: month (1-12) |
+| `next_date` | `DATE` | Next scheduled occurrence |
+| `last_processed_date` | `DATE` | Last date processed by cron (prevents duplicate generation) |
+| `archived` | `BOOLEAN DEFAULT FALSE` | TRUE = paused, no auto-generation |
+| `created_at` | `TIMESTAMPTZ` | |
+
+### `notification_queue`
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | `BIGSERIAL PK` | |
+| `user_id` | `BIGINT FK → users.id` | Recipient |
+| `message` | `TEXT` | Error/message text to show user |
+| `created_at` | `TIMESTAMPTZ` | |
+
+Used by `process_recurrences()` to enqueue errors. Drained at the start of each user interaction.
+
 ### `wizard_states`
 
 | Column | Type | Notes |
@@ -83,6 +114,7 @@ Used for:
 - Edit transaction flows
 - Statement filter state
 - Rename entity flows
+- Recurrence frequency detail sub-step (virtual step, no DB row)
 
 ### `predefined_categories`
 
@@ -159,6 +191,25 @@ Same as `suggest_categories` but for `groups` table.
 Unnests `transactions.tags` array, applies trigram similarity.
 Uses `DISTINCT ON` to avoid duplicate tags. Excludes exact matches.
 
+### `calculate_next_date(current_date, frequency_type, frequency_interval, frequency_month) → DATE`
+
+Pure SQL function (no table access):
+- `daily` → `current_date + 1`
+- `weekly` → next day matching `frequency_interval` DOW
+- `monthly` → same day next month (clamped to month max day)
+- `annual` → same day+month next year
+- `every_x_days` → `current_date + frequency_interval`
+
+### `process_recurrences()`
+
+PL/pgSQL function called by `pg_cron` daily at 06:00 BRT:
+
+1. Selects active recurrences where `next_date <= today` AND `archived = FALSE`
+2. Uses `FOR UPDATE SKIP LOCKED` for safe concurrent execution
+3. For each: inserts transaction with `transaction_date = next_date`, updates `last_processed_date` and `next_date`
+4. On error: enqueues message in `notification_queue`
+5. Skips duplicates via `last_processed_date IS NULL OR last_processed_date < next_date`
+
 ## Extensions
 
 - `pg_trgm` — enables `%` similarity operator and `gin_trgm_ops` indexes
@@ -195,6 +246,18 @@ All tables have RLS enabled, but the bot uses the **service_role key** which byp
 | `20260615000005` | Sync existing categories type + insert new predefined for existing users |
 | `20260615000006` | Fix normalize_string TRANSLATE character count bug |
 | `20260616000000` | Make predefined categories global (`user_id = NULL`) — remove per-user copies, add partial unique indexes, update suggest_categories |
+| `20260616000001` | user_sessions table |
+| `20260616000002` | Add description step to gasto/receita wizards |
+| `20260616000003` | Fix description prompt newlines |
+| `20260616000004` | Separate telegram_accounts table |
+| `20260616000005` | Add GIN trigram index on transactions.description |
+| `20260617000000` | Add RLS policies for web + auth_id FK on users |
+| `20260617000001` | Add link_codes table |
+| `20260617000002` | (no-op — auth_id already added) |
+| `20260617000003` | Add link_codes cleanup cron |
+| `20260617000004` | GRANT on link_codes to authenticated role |
+| `20260618000000` | Remove link_codes direction column |
+| `20260618000001` | Add recurrences table, process_recurrences cron, notification_queue |
 
 ## Category Resolution by Transaction Type
 

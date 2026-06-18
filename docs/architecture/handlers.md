@@ -123,6 +123,47 @@ Alias: `handleEntity("category", …)`
 ### `handleQuerySummary(supabase, userId, chatId, period)`
 - Delegates to shared `getSummaryData` + `formatSummaryMessage`
 
+## Module: `handlers/recurrences.ts` — Recurring Transactions
+
+### `handleRecurrences(supabase, userId, chatId)`
+- Lists all active recurrences sorted by `next_date`
+- Shows amount, category, frequency, next_date per item
+- "Transformar em recorrência" button after `/despesa`/`/receita` calls this flow
+
+### `handleShowRecurrence(supabase, userId, chatId, recId, messageId?)`
+- Full recurrence detail with management buttons:
+  - 🚀 Adiantar — create next occurrence now
+  - ⏭️ Pular — skip next occurrence
+  - 📦 Arquivar — archive (stop generating)
+  - 📝 Editar — edit fields
+  - Reativar — for archived recurrences
+
+### `handleAdvanceRecurrence(supabase, userId, chatId, recId)`
+- Creates a transaction with `transaction_date = next_date`
+- Recalculates next_date via `process_recurrences` logic
+- Re-renders updated recurrence detail
+
+### `handleSkipRecurrence(supabase, userId, chatId, recId)`
+- Recalculates next_date without creating a transaction
+- Shows "Próxima: {new date}"
+
+### `handleArchiveRecurrence(supabase, userId, chatId, recId)`
+- Sets `archived = true`
+- Stops future auto-generation
+
+### `handleActivateRecurrence(supabase, userId, chatId, recId)`
+- Sets `archived = false`
+- If `next_date` is in the past, recalculates to today
+
+### `handleEditRecurrence(supabase, userId, chatId, recId)`
+- Shows edit action buttons (same pattern as edit transaction fields)
+- Each field opens its own edit flow (text input or select)
+
+### `handleEditRecurrenceField(supabase, userId, chatId, recId, field)`
+- Editable fields: amount, description, category, group, frequency, tags, start_date
+- Text input: amount, description, start_date, frequency detail
+- Select: category, group, frequency type
+
 ## Module: `handlers/wizard.ts` — Wizards
 
 ### `getWizardState(supabase, userId)` → `WizardState | null`

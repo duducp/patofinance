@@ -46,6 +46,23 @@ LEAST SPECIFIC:
   edit_              → generic amount/category/date
 ```
 
+Recurrence callbacks follow the same rule:
+```
+MOST SPECIFIC (order first):
+  rec_advance_yes_   → before rec_advance_
+  rec_skip_yes_      → before rec_skip_
+  rec_edit_field_    → before rec_edit_
+  rec_edit_set_cat_  → before rec_edit_set_freqtype_ → before rec_edit_
+  rec_edit_set_grp_  → before rec_edit_
+  rec_edit_set_tag_  → before rec_edit_
+  rec_edit_set_freqtype_ → before rec_edit_
+  rec_edit_          → generic edit menu
+  rec_advance_       → after rec_advance_yes_
+  rec_skip_          → after rec_skip_yes_
+LEAST SPECIFIC:
+  rec_               → catches rec_new, rec_show_, rec_close, rec_back, rec_archive_, rec_activate_, rec_transform_
+```
+
 ### 3. Under 64 Bytes
 
 Telegram limits `callback_data` to 64 bytes. Use `truncateCallbackData()` (truncates at 60 chars) for any callback containing dynamic values (tags, category names, dates, long transaction IDs).
@@ -152,6 +169,33 @@ Telegram limits `callback_data` to 64 bytes. Use `truncateCallbackData()` (trunc
 | `wiz_done_tags` | Confirm wizard tags | Delegates |
 | `wizard_skip_tags` | Skip wizard tags | Delegates |
 | `custom_date` | Custom date in wizard | Sends new |
+| `wiz_frequency_{freq}` | Select frequency (daily/advance, others→freq_detail) | Sends new |
+| `wiz_freq_detail_{day}` | Weekly day-of-week selection | Sends new |
+
+### Recurrence Management
+
+| Prefix | Action | Message |
+|--------|--------|---------|
+| `rec_transform_{id}` | Transform existing transaction into recurrence | Sends new |
+| `rec_close` | Close recurrence detail view | Sends new |
+| `rec_back` | Back to recurrence list | Sends new |
+| `rec_new` | Start recurrence creation wizard | Sends new |
+| `rec_show_{id}` | Show recurrence detail | Sends new |
+| `rec_advance_{id}` | Confirm advance prompt | Sends new |
+| `rec_advance_yes_{id}` | Execute advance (create transaction + recalculate) | Sends new |
+| `rec_skip_{id}` | Confirm skip prompt | Sends new |
+| `rec_skip_yes_{id}` | Execute skip (recalculate without creating) | Sends new |
+| `rec_archive_{id}` | Confirm archive prompt | Sends new |
+| `rec_archive_yes_{id}` | Execute archive | Sends new |
+| `rec_activate_{id}` | Reactivate archived recurrence | Sends new |
+| `rec_edit_{id}` | Show edit action menu | Sends new |
+| `rec_edit_field_{id}_{field}` | Show field-specific edit wizard | Sends new |
+| `rec_edit_set_cat_{id}_{name}` | Confirm category change | Sends new |
+| `rec_edit_set_grp_{id}_{name}` | Confirm group change | Sends new |
+| `rec_edit_set_freqtype_{id}_{freq}` | Confirm frequency type change | Sends new |
+| `rec_edit_set_tag_{id}_{tag}` | Toggle tag in recurrence edit | Edits |
+| `rec_edit_set_tag_{id}_done` | Confirm recurrence tags | Sends new |
+| `rec_edit_set_tag_{id}_clr` | Clear recurrence tags | Sends new |
 
 ## Filter Panel Internals
 

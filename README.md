@@ -35,6 +35,7 @@
 - **📊 Saldo do período** — `/saldo`, `/saldo mes passado`, `/saldo janeiro`
 - **📋 Extrato interativo** — `/extrato` com painel de filtros (categoria, grupo, tags, tipo, período), paginação e visualização otimizada
 - **⏳ Transações agendadas** — `/agendadas` lista todas as transações futuras
+- **🔄 Recorrências** — `/recorrencia` cria e gerencia recorrências com geração automática via cron diário
 - **🔍 Busca textual** — `/buscar mercado` encontra transações pela descrição, valor ou tag
 - **📈 Resumo por categoria** — `/resumo` com totais agrupados
 - **📁 Grupos (contas)** — Organize por conta bancária, cartão de crédito, etc.
@@ -306,6 +307,7 @@ ajuda - Ajuda completa
 | `/saldo` | Saldo do per\u00EDodo | `/saldo`, `/saldo mes passado`, `/saldo janeiro` |
 | `/extrato` | Extrato interativo — painel de filtros + paginação | `/extrato`, `/extrato janeiro 2025`, `/extrato --grupo Pessoal` |
 | `/agendadas` | Listar transações futuras agendadas | `/agendadas` |
+| `/recorrencia` | Gerenciar recorrências (criar, listar, adiantar, pular, arquivar) | `/recorrencia` |
 | `/buscar` | Buscar transações por palavra-chave na descrição | `/buscar mercado` |
 | `/resumo` | Resumo por categoria | `/resumo`, `/resumo ultimo mes`, `/resumo --grupo Trabalho` |
 | `/detalhes` | Detalhes, edição e exclusão da transação pelo ID | `/detalhes 42` |

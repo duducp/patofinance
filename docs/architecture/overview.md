@@ -13,6 +13,11 @@ Telegram Bot API ──── webhook ────► Supabase Edge Function
                                         │
                                         ▼
                               Bot API Response
+
+pg_cron ──► process_recurrences() @ 06:00 BRT
+                 │
+                 ▼
+           Generates transactions + notification_queue
 ```
 
 All interactions flow through a **single Edge Function** (`bot-core`) that:
@@ -74,7 +79,9 @@ POST /bot-core
 
 4. **Session-based Callback Protection**: Every inline keyboard gets a session sequence prefix. When a new command starts, the sequence increments, invalidating all previous callbacks. Prevents replay attacks and stale button clicks.
 
-5. **Wizard System**: Multi-step transactions use a `wizard_states` table with 10-minute TTL. State is persisted in JSONB. The wizard handles amount → category → group → date → tags in sequence.
+5. **Wizard System**: Multi-step transactions use a `wizard_states` table with 10-minute TTL. State is persisted in JSONB. The wizard handles amount → category → group → date → tags in sequence. Recurrence creation wizard (8 steps) follows the same pattern with frequency sub-steps.
+
+6. **Recurring Transactions**: `recurrences` table with PL/pgSQL `process_recurrences()` running via `pg_cron` daily at 06:00 BRT. Creates transactions from due recurrences, enqueues errors in `notification_queue`. Errors are drained at the start of each user interaction.
 
 6. **Natural Language Fallback**: If `DEEPSEEK_API_KEY` is not set, the bot responds to slash commands only. NL uses a 3-tier approach: common phrases (no API), cache (per-user/5min TTL), DeepSeek API.
 

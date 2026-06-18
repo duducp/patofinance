@@ -16,6 +16,19 @@ amount → category → group → date → tags → COMPLETE
 amount → category → group → date → tags → COMPLETE
 ```
 
+### `/recorrencia` Wizard (8 steps)
+
+```
+type → amount → description → category → group → frequency → tags → start_date → COMPLETE
+```
+
+Frequency step has sub-steps handled in code (not in wizard_steps table):
+- `daily` → advances directly with `frequency_interval: 1`
+- `weekly` → shows day-of-week keyboard (Dom–Sáb)
+- `monthly` → text input for day (1–31)
+- `annual` → text input for month + day (DD/MM)
+- `every_x_days` → text input for interval
+
 ### Step Definitions (from `wizard_steps` table)
 
 | Wizard | Order | Key | Type | Prompt |
@@ -30,6 +43,15 @@ amount → category → group → date → tags → COMPLETE
 | receita | 3 | group | select | "Qual grupo?" |
 | receita | 4 | date | date | "Qual data?" |
 | receita | 5 | tags | tags | "Tags?" |
+
+| recorrencia | 1 | type | select | "Despesa ou Receita?" |
+| recorrencia | 2 | amount | text | "Qual o valor?" |
+| recorrencia | 3 | description | text | "Descrição?" |
+| recorrencia | 4 | category | select | "Qual categoria?" |
+| recorrencia | 5 | group | select | "Qual grupo?" |
+| recorrencia | 6 | frequency | select | "Qual frequência?" |
+| recorrencia | 7 | tags | tags | "Tags?" |
+| recorrencia | 8 | start_date | date | "Data da primeira ocorrência?" |
 
 ## State Management
 
@@ -67,15 +89,27 @@ A "✏️ Nova categoria" button lets users type a custom name.
 - "✅ Concluir" → advance to completion
 - "⏭️ Pular" → skip tags, advance
 
-## Completion (`completeWizard`)
+## Completion
 
-When all steps are done:
+### `completeWizard(supabase, userId, chatId, data)`
+When all steps are done for gasto/receita:
 1. Clear wizard state
 2. Check similarity warnings for category, group, tags
 3. Create/retrieve category, group
 4. Format tags (ensure # prefix)
 5. Insert transaction
 6. Send success message with details
+
+### `completeRecurrenceWizard(supabase, userId, chatId, data)`
+When all steps are done for recorrencia:
+1. Clear wizard state
+2. Create/retrieve category, group
+3. Format tags (ensure # prefix)
+4. Insert recurrence with frequency type/interval/month
+5. Send success message with frequency label
+
+### `advanceWizardToNextStep`
+Detects `wizard_name === "recorrencia"` and calls `completeRecurrenceWizard` instead of `completeWizard` when at the final step.
 
 ## Interaction with Callbacks
 
