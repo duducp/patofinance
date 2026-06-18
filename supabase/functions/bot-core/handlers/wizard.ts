@@ -368,6 +368,22 @@ export function buildDateKeyboard(
   ];
 }
 
+/**
+ * Handle a wizard skip action: set the current step's value to empty and advance.
+ * Shared by wizard_skip_description and wizard_skip_tags handlers.
+ */
+export async function handleWizardSkip(
+  supabase: any,
+  userId: number,
+  chatId: number,
+  sessionSeq: number,
+): Promise<void> {
+  const wizard = await getCurrentWizardStep(supabase, userId);
+  if (!wizard) return;
+  const newStateData = { ...wizard.state.data, [wizard.currentStep.step_key]: "" };
+  await advanceWizardToNextStep(supabase, userId, chatId, wizard.currentStep, sessionSeq, newStateData);
+}
+
 export async function getCurrentWizardStep(
   supabase: any,
   userId: number

@@ -3,7 +3,7 @@ import { sendTelegramMessage, sendTelegramMessageWithKeyboard, editTelegramMessa
 import { getOrCreateUser, normalizeString, getOrCreateUncategorizedCategory, deleteTransactionById, userOrNullFilter } from "../services/database.ts";
 import { formatDateBR, parseDateBR } from "../utils/formatting.ts";
 import { truncateCallbackData } from "../utils/rate-limiter.ts";
-import { getWizardState, setWizardState, clearWizardState, sendWizardStepMessage, getCurrentWizardStep, advanceWizardToNextStep, toggleTagInWizardState, buildTagKeyboard, buildCategoryKeyboard, buildGroupKeyboard, buildDateKeyboard } from "./wizard.ts";
+import { getWizardState, setWizardState, clearWizardState, sendWizardStepMessage, getCurrentWizardStep, advanceWizardToNextStep, toggleTagInWizardState, buildTagKeyboard, buildCategoryKeyboard, buildGroupKeyboard, buildDateKeyboard, handleWizardSkip } from "./wizard.ts";
 import { executeNaturalLanguageAction } from "./nl-processing.ts";
 import { handleBalance, handleSummary, handleDetails, handleGroup, handleCategory, handleTransaction, showDetailsEditActions, showDetailsMainView } from "./commands.ts";
 import { handleListTransactions, handleListByTag, handleSearch, showDeleteConfirmation } from "./management.ts";
@@ -808,21 +808,9 @@ export async function handleCallbackQuery(
       return;
     }
 
-    // Handle wizard skip description
-    if (selectedValue === "wizard_skip_description") {
-      const wizard = await getCurrentWizardStep(supabase, user.id);
-      if (!wizard) return;
-      const newStateData = { ...wizard.state.data, [wizard.currentStep.step_key]: "" };
-      await advanceWizardToNextStep(supabase, user.id, chatId, wizard.currentStep, sessionSeq, newStateData);
-      return;
-    }
-
-    // Handle wizard skip tags
-    if (selectedValue === "wizard_skip_tags") {
-      const wizard = await getCurrentWizardStep(supabase, user.id);
-      if (!wizard) return;
-      const newStateData = { ...wizard.state.data, [wizard.currentStep.step_key]: "" };
-      await advanceWizardToNextStep(supabase, user.id, chatId, wizard.currentStep, sessionSeq, newStateData);
+    // Handle wizard skip (description or tags)
+    if (selectedValue === "wizard_skip_description" || selectedValue === "wizard_skip_tags") {
+      await handleWizardSkip(supabase, user.id, chatId, sessionSeq);
       return;
     }
 
