@@ -873,12 +873,11 @@ export async function handleCallbackQuery(
     }
 
     // Handle category/group: back
-    if (selectedValue === "cat_back") {
-      await handleEntityBack("category", supabase, user.id, chatId);
-      return;
-    }
-    if (selectedValue === "grp_back") {
-      await handleEntityBack("group", supabase, user.id, chatId);
+    if (selectedValue === "cat_back" || selectedValue === "grp_back") {
+      await handleEntityBack(
+        selectedValue === "cat_back" ? "category" : "group",
+        supabase, user.id, chatId
+      );
       return;
     }
 
