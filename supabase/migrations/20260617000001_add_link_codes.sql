@@ -1,14 +1,14 @@
--- Create link_codes table for bidirectional Telegram-Web authentication
+-- Create link_codes table for Telegram→Web authentication
 --
--- Supports two flows:
---   web_to_telegram: dashboard generates code, user sends it in the bot to link accounts
---   telegram_to_web: bot generates code, user enters it in the dashboard to log in
+-- Original design had bidirectional flows (web_to_telegram and telegram_to_web).
+-- Simplified to only telegram_to_web in migration 20260618000000.
+--
+-- Flow: bot generates code → user enters it in the dashboard to log in
 --
 -- Each code:
 -- - Is 6 alphanumeric characters
 -- - Expires in 2-5 minutes
 -- - Can only be used once (used = TRUE)
--- - Has a direction flag to control which side validates it
 
 CREATE TABLE link_codes (
   id BIGSERIAL PRIMARY KEY,

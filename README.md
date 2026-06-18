@@ -43,8 +43,7 @@
 - **🗣️ Wizard conversacional** — O bot guia você passo a passo com botões interativos
 - **🧹 Limpeza automática** — Remova categorias/grupos sem uso
 - **🌐 Linguagem natural** — Digite frases como "quanto gastei esse mês?" ou "últimas 10 transações"
-- **🔑 Login no dashboard** — `/login` gera código temporário para acessar o web dashboard
-- **🔗 Login no Web** — `/login CODIGO` conecta sua conta do Telegram ao dashboard web (ou `/login` gera código para entrar no dashboard)
+- **🔑 Login no dashboard web** — `/login` gera código temporário de 6 dígitos para acessar o web dashboard
 
 ## Arquitetura
 
@@ -124,7 +123,7 @@ finance/
 | `wizard_states` | Estado do wizard conversacional + session_seq (TTL 10min) |
 | `wizard_steps` | Steps configuráveis dos wizards |
 | `predefined_categories` | Categorias padrão com tipo (expense/income/null=ambos) |
-| `link_codes` | Códigos de 6 dígitos para autenticação bidirecional Telegram↔Web (`web_to_telegram`, `telegram_to_web`) |
+| `link_codes` | Códigos de 6 dígitos para autenticação Telegram→Web. Bot gera, dashboard valida |
 
 ### Extensões
 
@@ -326,7 +325,7 @@ ajuda - Ajuda completa
 | `/limpar` | Remover categorias/grupos sem transações |
 | `/resetar` | Resetar conta (apaga todas as transações, categorias, grupos e tags) |
 | `/cancelar` | Cancelar operação em andamento |
-| `/login` | Gerar código OU vincular conta: `/login` gera código, `/login CODIGO` vincula ao dashboard web |
+| `/login` | Gerar código de 6 dígitos para acessar o dashboard web |
 | `/ajuda` | Ajuda completa. Use `/ajuda <comando>` para detalhes (ex: `/ajuda saldo`) |
 | `/futuras` | Listar transações agendadas (alias: `/agendadas`) |
 

@@ -1,6 +1,6 @@
 import type { InlineKeyboard } from "../types/index.ts";
 import { sendTelegramMessage, sendTelegramMessageWithKeyboard, editTelegramMessageWithKeyboard } from "../services/telegram.ts";
-import { requireUser, getOrCreateCategory, getOrCreateGroup, normalizeString, suggestSimilarCategories, suggestSimilarGroups, sendSimilarityWarning, getAllUserTags, createTransaction, getTransactionById, findGroupByName, userOrNullFilter, transferUserData } from "../services/database.ts";
+import { requireUser, getOrCreateCategory, getOrCreateGroup, normalizeString, suggestSimilarCategories, suggestSimilarGroups, sendSimilarityWarning, getAllUserTags, createTransaction, getTransactionById, findGroupByName, userOrNullFilter } from "../services/database.ts";
 import { formatCurrencyBR, formatDateBR, getTodayISOBR, sanitizeMarkdown } from "../utils/formatting.ts";
 import { getDateRange } from "../utils/date-helpers.ts";
 import { parseCommand } from "../utils/command-parsing.ts";
@@ -59,7 +59,7 @@ export async function handleHelp(chatId: number, args: string[] = []): Promise<v
     `/detalhes - Ver/editar/excluir transação pelo ID (ex: \`/detalhes 42\`)\n` +
     `/limpar - Remover categorias/grupos sem transações\n` +
     `/cancelar - Cancelar operação em andamento\n` +
-    `/login - Gerar código ou vincular conta (ex: \`/login 4A8F2B\`)\n` +
+    `/login - Gerar código de acesso ao dashboard web\n` +
     `/ajuda <comando> - Detalhes de um comando (ex: \`/ajuda extrato\`)\n\n` +
     `💡 *Linguagem Natural:*\n` +
     `Você também pode digitar naturalmente:\n\n` +
@@ -720,79 +720,15 @@ export async function handleCleanup(supabase: any, userId: number, chatId: numbe
   await sendTelegramMessageWithKeyboard(chatId, message, keyboard);
 }
 
-export async function handleLogin(supabase: any, userId: number, chatId: number, args: string[] = []): Promise<void> {
+export async function handleLogin(supabase: any, userId: number, chatId: number, _args: string[] = []): Promise<void> {
   const user = await requireUser(supabase, userId, chatId);
   if (!user) return;
-
-  // If a code is provided, validate and link (web → telegram flow)
-  const code = (args[0] || "").toUpperCase().trim();
-  if (code) {
-    if (code.length !== 6 || !/^[A-Z0-9]{6}$/.test(code)) {
-      await sendTelegramMessage(
-        chatId,
-        "✉️ Código inválido. Digite o código de 6 dígitos gerado no dashboard.\n\n" +
-        "Ex: \`/login 4A8F2B\`"
-      );
-      return;
-    }
-
-    const { data: link } = await supabase
-      .from("link_codes")
-      .select("id, user_id")
-      .eq("code", code)
-      .eq("used", false)
-      .eq("direction", "web_to_telegram")
-      .gt("expires_at", new Date().toISOString())
-      .maybeSingle();
-
-    if (!link) {
-      await sendTelegramMessage(
-        chatId,
-        "❌ Código inválido ou expirado. Gere um novo código no dashboard."
-      );
-      return;
-    }
-
-    // If already linked to this user, just mark as used and confirm
-    if (user.id === link.user_id) {
-      await supabase.from("link_codes").update({ used: true }).eq("id", link.id);
-      await sendTelegramMessage(
-        chatId,
-        "✅ Sua conta já está vinculada a este dashboard!"
-      );
-      return;
-    }
-
-    // Mark code as used and transfer data
-    await supabase.from("link_codes").update({ used: true }).eq("id", link.id);
-
-    const result = await transferUserData(supabase, user.id, link.user_id, userId);
-
-    if (!result.success) {
-      await sendTelegramMessage(
-        chatId,
-        "❌ Erro ao vincular conta. Tente novamente."
-      );
-      return;
-    }
-
-    await sendTelegramMessage(
-      chatId,
-      "✅ *Conta vinculada com sucesso!*\n\n" +
-      "Agora você pode acessar seus dados pelo dashboard web.\n" +
-      "Suas transações, categorias e grupos foram migrados para sua conta do dashboard."
-    );
-    return;
-  }
-
-  // No code: generate a new login code (telegram → web flow)
 
   // Invalidate all pending codes for this user (security: only one active code at a time)
   await supabase
     .from("link_codes")
     .update({ used: true })
     .eq("user_id", user.id)
-    .eq("direction", "telegram_to_web")
     .eq("used", false);
 
   const codeChars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -807,7 +743,6 @@ export async function handleLogin(supabase: any, userId: number, chatId: number,
     user_id: user.id,
     auth_id: null,
     code: loginCode,
-    direction: "telegram_to_web",
     expires_at: expiresAt.toISOString(),
   });
 

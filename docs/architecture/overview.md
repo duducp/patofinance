@@ -103,8 +103,8 @@ bot-core/
 │   ├── command-parsing.ts # parseCommand for slash args
 │   └── session.ts         # addSession/removeSession/validateCallbackSession
 ├── services/
-│   ├── telegram.ts        # 4 wrappers: send, sendWithKeyboard, edit, answerCallback
-│   ├── database.ts        # 11 functions: CRUD + suggestSimilar* + getAllUserTags
+│   ├── telegram.ts        # 5 wrappers: send, sendWithKeyboard, edit, answerCallback, deleteMessage
+│   ├── database.ts        # 18 functions: CRUD + filters + suggestSimilar*
 │   └── deepseek.ts        # buildSystemPrompt, callDeepSeek, parseNaturalLanguage
 └── handlers/
     ├── commands.ts        # 14 slash command handlers + shared handleEntity

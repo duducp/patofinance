@@ -19,4 +19,4 @@ SELECT cron.schedule(
   $$DELETE FROM link_codes WHERE expires_at < NOW() - INTERVAL '1 hour'$$
 );
 
-COMMENT ON TABLE link_codes IS 'One-time codes for linking Telegram accounts to web accounts. Expired codes are cleaned up daily at 03:00 via pg_cron.';
+COMMENT ON TABLE link_codes IS 'One-time codes for Telegram→Web authentication. Bot generates 6-char codes that the web dashboard validates to create Supabase Auth sessions. Expired codes are cleaned up daily at 03:00 via pg_cron.';

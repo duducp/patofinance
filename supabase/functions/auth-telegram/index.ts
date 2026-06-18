@@ -117,7 +117,7 @@ export async function handleAuthTelegram(
     // Look up the code (must be unused and not expired)
     const { data: link } = await supabase
       .from("link_codes")
-      .select("id, user_id, auth_id, direction, expires_at")
+      .select("id, user_id, auth_id, expires_at")
       .eq("code", cleanCode)
       .eq("used", false)
       .gt("expires_at", new Date().toISOString())

@@ -192,16 +192,12 @@ const COMMAND_HELP: Record<string, { keys: string[]; text: string }> = {
       `/despesa --data DD/MM/AAAA — Registrar transação futura`,
   },
   login: {
-    keys: ["login", "vincular"],
+    keys: ["login"],
     text:
       `📖 *Ajuda — /login*\n\n` +
-      `Duas funcionalidades em um comando: gerar código de acesso ou vincular conta existente.\n\n` +
-      `*Gerar código (Telegram → Web):*\n` +
+      `Gera um código de acesso para entrar no dashboard web.\n\n` +
+      `*Como usar:*\n` +
       `\`/login\` — gera um código de 6 dígitos (válido por 2 minutos)\n` +
-      `💡 Acesse o dashboard e insira o código para fazer login.\n\n` +
-      `*Vincular conta (Web → Telegram):*\n` +
-      `\`/login 4A8F2B\` — vincula usando o código gerado no dashboard\n` +
-      `💡 Gere um código no dashboard (vincular conta) e envie-o aqui.\n` +
-      `Suas transações e categorias serão migradas para a conta do dashboard.`,
+      `💡 Acesse o dashboard e insira o código para fazer login.`,
   },
 };

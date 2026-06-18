@@ -15,4 +15,4 @@
 GRANT SELECT, INSERT, UPDATE ON link_codes TO authenticated;
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO authenticated;
 
-COMMENT ON TABLE link_codes IS 'One-time codes for linking Telegram accounts to web accounts. Supports web→telegram (vinculo) and telegram→web (login) flows. Authenticated users can read/insert/update their own codes via RLS.';
+COMMENT ON TABLE link_codes IS 'One-time codes for Telegram→Web authentication. Authenticated users can read/insert/update their own codes via RLS.';
