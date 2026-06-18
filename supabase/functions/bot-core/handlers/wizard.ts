@@ -1,12 +1,16 @@
 import { WizardState } from "../types/index.ts";
 import { InlineKeyboard } from "../types/index.ts";
 import { sendTelegramMessage, sendTelegramMessageWithKeyboard, editTelegramMessageWithKeyboard } from "../services/telegram.ts";
-import { getOrCreateCategory, getOrCreateGroup, sendSimilarityWarning, getAllUserTags, deduplicateByNormalizedName, userOrNullFilter, typeOrNullFilter } from "../services/database.ts";
+import { getOrCreateCategory, getOrCreateGroup, sendSimilarityWarning, getAllUserTags, deduplicateByNormalizedName, userOrNullFilter, typeOrNullFilter, getOrCreateUncategorizedCategory } from "../services/database.ts";
 import { parseDateBR, getTodayISOBR } from "../utils/formatting.ts";
 import { addSession, getSessionSeq } from "../utils/session.ts";
 import { sendTransactionSuccess } from "./queries.ts";
 import { buildKeyboardGrid } from "../utils/keyboard.ts";
 
+/**
+ * Read the current wizard state for a user.
+ * Returns null if no state exists or if it has expired (auto-clears expired states).
+ */
 export async function getWizardState(supabase: any, userId: number): Promise<WizardState | null> {
   const { data } = await supabase
     .from("wizard_states")
@@ -21,6 +25,10 @@ export async function getWizardState(supabase: any, userId: number): Promise<Wiz
   return { step: data.step, data: data.data || {} };
 }
 
+/**
+ * Create or update wizard state for a user with a 10-minute expiry.
+ * Upserts: inserts if no state exists, updates if it does.
+ */
 export async function setWizardState(
   supabase: any,
   userId: number,
@@ -45,10 +53,18 @@ export async function setWizardState(
   }
 }
 
+/**
+ * Delete the wizard state for a user (clears any in-progress wizard).
+ */
 export async function clearWizardState(supabase: any, userId: number): Promise<void> {
   await supabase.from("wizard_states").delete().eq("user_id", userId);
 }
 
+/**
+ * Render a wizard step to the user: builds the appropriate keyboard
+ * (category, group, tags, description, date, or generic select) and
+ * sends or edits the message.
+ */
 export async function sendWizardStepMessage(
   chatId: number,
   step: any,
@@ -123,6 +139,11 @@ export async function sendWizardStepMessage(
   }
 }
 
+/**
+ * Finalize a wizard: insert the transaction with all accumulated data
+ * (amount, category, group, tags, date, description), clear wizard state,
+ * and send a success message.
+ */
 export async function completeWizard(
   supabase: any,
   userId: number,
@@ -434,6 +455,110 @@ export async function handleEntityRename(
   await setWizardState(supabase, userId, wizardStep, { name: entityName });
 }
 
+/**
+ * Show a delete confirmation prompt for a category or group.
+ * Queries entity and transaction count, then shows confirm/cancel keyboard.
+ */
+export async function handleEntityDeletePrompt(
+  type: "category" | "group",
+  supabase: any,
+  userId: number,
+  chatId: number,
+  entityName: string,
+  sessionSeq: number
+): Promise<void> {
+  const isCategory = type === "category";
+  const table = isCategory ? "categories" : "groups";
+  const cbYesPrefix = isCategory ? "cat_del_yes_" : "grp_del_yes_";
+  const cbBack = isCategory ? "cat_back" : "grp_back";
+  const fallbackName = isCategory ? "Sem categoria" : "Pessoal";
+
+  const { data: entity } = await supabase
+    .from(table)
+    .select("id")
+    .eq("user_id", userId)
+    .ilike("name", entityName)
+    .single();
+  if (!entity) return;
+
+  const fkColumn = isCategory ? "category_id" : "group_id";
+  const { count: txCount } = await supabase
+    .from("transactions")
+    .select("*", { count: "exact", head: true })
+    .eq("user_id", userId)
+    .eq(fkColumn, entity.id);
+
+  const keyboard = buildDeleteConfirmKeyboard(
+    addSession(`${cbYesPrefix}${entityName}`, sessionSeq),
+    addSession(cbBack, sessionSeq),
+  );
+  await sendTelegramMessageWithKeyboard(
+    chatId,
+    `🗑️ Tem certeza de que deseja excluir ${isCategory ? "a categoria" : "o grupo"} *${entityName}*?\n\n${txCount || 0} ${(txCount || 0) !== 1 ? "transações" : "transação"} ${(txCount || 0) !== 1 ? "serão reatribuídas" : "será reatribuída"} para "${fallbackName}".`,
+    keyboard
+  );
+}
+
+/**
+ * Execute entity deletion: reassign transactions to fallback, then delete.
+ * Prevents deletion of predefined/default entities.
+ */
+export async function handleEntityDeleteExecute(
+  type: "category" | "group",
+  supabase: any,
+  userId: number,
+  chatId: number,
+  entityName: string
+): Promise<void> {
+  const isCategory = type === "category";
+  const table = isCategory ? "categories" : "groups";
+  const flagColumn = isCategory ? "is_predefined" : "is_default";
+  const icon = isCategory ? "🏷️" : "📁";
+  const label = isCategory ? "categoria" : "grupo";
+  const fallbackName = isCategory ? "Sem categoria" : "Pessoal";
+
+  const { data: entity } = await supabase
+    .from(table)
+    .select("id, " + flagColumn)
+    .eq("user_id", userId)
+    .ilike("name", entityName)
+    .single();
+
+  if (!entity || entity[flagColumn]) {
+    const labelCapitalized = label.charAt(0).toUpperCase() + label.slice(1);
+    await sendTelegramMessage(chatId, `⭐ ${labelCapitalized}s padrão não podem ser excluíd${isCategory ? "as" : "os"}.`);
+    return;
+  }
+
+  const fkColumn = isCategory ? "category_id" : "group_id";
+  const { count: txCount } = await supabase
+    .from("transactions")
+    .select("*", { count: "exact", head: true })
+    .eq("user_id", userId)
+    .eq(fkColumn, entity.id);
+
+  // Reassign affected transactions
+  let fallbackId: string | null = null;
+  if (isCategory) {
+    fallbackId = await getOrCreateUncategorizedCategory(supabase, userId);
+  } else {
+    const { data: defaultGrp } = await supabase.from("groups").select("id").eq("user_id", userId).eq("is_default", true).single();
+    fallbackId = defaultGrp?.id || null;
+  }
+  const updateField = isCategory ? { category_id: fallbackId } : { group_id: fallbackId };
+  await supabase.from("transactions").update(updateField).eq(fkColumn, entity.id).eq("user_id", userId);
+  await supabase.from(table).delete().eq("id", entity.id).eq("user_id", userId);
+
+  await sendTelegramMessage(
+    chatId,
+    `✅ ${icon} ${label.charAt(0).toUpperCase() + label.slice(1)} "${entityName}" excluíd${isCategory ? "a" : "o"}! ${txCount || 0} ${(txCount || 0) !== 1 ? "transações" : "transação"} ${(txCount || 0) !== 1 ? "reatribuídas" : "reatribuída"} para "${fallbackName}".`
+  );
+}
+
+/**
+ * Read the current wizard state and resolve the corresponding wizard_step row.
+ * Returns null if no state exists or the step definition is missing.
+ */
 export async function getCurrentWizardStep(
   supabase: any,
   userId: number
@@ -448,6 +573,10 @@ export async function getCurrentWizardStep(
   return { state, currentStep };
 }
 
+/**
+ * Move to the next wizard step: find the next step by order, update state,
+ * and render it. If there is no next step, finalize the wizard.
+ */
 export async function advanceWizardToNextStep(
   supabase: any,
   userId: number,
@@ -477,6 +606,11 @@ export async function advanceWizardToNextStep(
   }
 }
 
+/**
+ * Route text input from the user through the current wizard step.
+ * Handles amount validation, tag accumulation, custom date parsing,
+ * and advancing/ completing the wizard as appropriate.
+ */
 export async function handleTransactionWizard(
   type: "expense" | "income",
   supabase: any,

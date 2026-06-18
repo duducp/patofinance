@@ -1,9 +1,9 @@
 import { InlineKeyboard, DeepSeekResponse, TelegramCallbackQuery } from "../types/index.ts";
 import { sendTelegramMessage, sendTelegramMessageWithKeyboard, editTelegramMessageWithKeyboard, answerCallbackQuery } from "../services/telegram.ts";
-import { getOrCreateUser, normalizeString, getOrCreateUncategorizedCategory, deleteTransactionById, userOrNullFilter } from "../services/database.ts";
+import { getOrCreateUser, normalizeString, deleteTransactionById, userOrNullFilter } from "../services/database.ts";
 import { formatDateBR, parseDateBR } from "../utils/formatting.ts";
 import { truncateCallbackData } from "../utils/rate-limiter.ts";
-import { getWizardState, setWizardState, clearWizardState, sendWizardStepMessage, getCurrentWizardStep, advanceWizardToNextStep, toggleTagInWizardState, buildTagKeyboard, buildCategoryKeyboard, buildGroupKeyboard, buildDateKeyboard, buildDeleteConfirmKeyboard, handleWizardSkip, handleEntityRename } from "./wizard.ts";
+import { getWizardState, setWizardState, clearWizardState, sendWizardStepMessage, getCurrentWizardStep, advanceWizardToNextStep, toggleTagInWizardState, buildTagKeyboard, buildCategoryKeyboard, buildGroupKeyboard, buildDateKeyboard, handleWizardSkip, handleEntityRename, handleEntityDeletePrompt, handleEntityDeleteExecute } from "./wizard.ts";
 import { executeNaturalLanguageAction } from "./nl-processing.ts";
 import { handleBalance, handleSummary, handleDetails, handleGroup, handleCategory, handleTransaction, showDetailsEditActions, showDetailsMainView } from "./commands.ts";
 import { handleListTransactions, handleListByTag, handleSearch, showDeleteConfirmation } from "./management.ts";
@@ -49,98 +49,6 @@ async function handleGroupFilterCallback(
 }
 
 // ========== Shared entity (category/group) callback handlers ==========
-
-async function handleEntityDeletePrompt(
-  type: "category" | "group",
-  supabase: any,
-  userId: number,
-  chatId: number,
-  entityName: string,
-  sessionSeq: number
-): Promise<void> {
-  const isCategory = type === "category";
-  const table = isCategory ? "categories" : "groups";
-  const cbYesPrefix = isCategory ? "cat_del_yes_" : "grp_del_yes_";
-  const cbBack = isCategory ? "cat_back" : "grp_back";
-  const fallbackName = isCategory ? "Sem categoria" : "Pessoal";
-
-  const { data: entity } = await supabase
-    .from(table)
-    .select("id")
-    .eq("user_id", userId)
-    .ilike("name", entityName)
-    .single();
-  if (!entity) return;
-
-  const fkColumn = isCategory ? "category_id" : "group_id";
-  const { count: txCount } = await supabase
-    .from("transactions")
-    .select("*", { count: "exact", head: true })
-    .eq("user_id", userId)
-    .eq(fkColumn, entity.id);
-
-  const keyboard = buildDeleteConfirmKeyboard(
-    addSession(`${cbYesPrefix}${entityName}`, sessionSeq),
-    addSession(cbBack, sessionSeq),
-  );
-  await sendTelegramMessageWithKeyboard(
-    chatId,
-    `🗑️ Tem certeza de que deseja excluir ${isCategory ? "a categoria" : "o grupo"} *${entityName}*?\n\n${txCount || 0} ${(txCount || 0) !== 1 ? "transações" : "transação"} ${(txCount || 0) !== 1 ? "serão reatribuídas" : "será reatribuída"} para "${fallbackName}".`,
-    keyboard
-  );
-}
-
-async function handleEntityDeleteExecute(
-  type: "category" | "group",
-  supabase: any,
-  userId: number,
-  chatId: number,
-  entityName: string
-): Promise<void> {
-  const isCategory = type === "category";
-  const table = isCategory ? "categories" : "groups";
-  const flagColumn = isCategory ? "is_predefined" : "is_default";
-  const icon = isCategory ? "🏷️" : "📁";
-  const label = isCategory ? "categoria" : "grupo";
-  const fallbackName = isCategory ? "Sem categoria" : "Pessoal";
-
-  const { data: entity } = await supabase
-    .from(table)
-    .select("id, " + flagColumn)
-    .eq("user_id", userId)
-    .ilike("name", entityName)
-    .single();
-
-  if (!entity || entity[flagColumn]) {
-    const labelCapitalized = label.charAt(0).toUpperCase() + label.slice(1);
-    await sendTelegramMessage(chatId, `⭐ ${labelCapitalized}s padrão não podem ser excluíd${isCategory ? "as" : "os"}.`);
-    return;
-  }
-
-  const fkColumn = isCategory ? "category_id" : "group_id";
-  const { count: txCount } = await supabase
-    .from("transactions")
-    .select("*", { count: "exact", head: true })
-    .eq("user_id", userId)
-    .eq(fkColumn, entity.id);
-
-  // Reassign affected transactions
-  let fallbackId: string | null = null;
-  if (isCategory) {
-    fallbackId = await getOrCreateUncategorizedCategory(supabase, userId);
-  } else {
-    const { data: defaultGrp } = await supabase.from("groups").select("id").eq("user_id", userId).eq("is_default", true).single();
-    fallbackId = defaultGrp?.id || null;
-  }
-  const updateField = isCategory ? { category_id: fallbackId } : { group_id: fallbackId };
-  await supabase.from("transactions").update(updateField).eq(fkColumn, entity.id).eq("user_id", userId);
-  await supabase.from(table).delete().eq("id", entity.id).eq("user_id", userId);
-
-  await sendTelegramMessage(
-    chatId,
-    `✅ ${icon} ${label.charAt(0).toUpperCase() + label.slice(1)} "${entityName}" excluíd${isCategory ? "a" : "o"}! ${txCount || 0} ${(txCount || 0) !== 1 ? "transações" : "transação"} ${(txCount || 0) !== 1 ? "reatribuídas" : "reatribuída"} para "${fallbackName}".`
-  );
-}
 
 async function handleEntitySuggestion(
   type: "category" | "group",
