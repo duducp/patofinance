@@ -293,6 +293,7 @@ img.emoji { height: 1em; width: 1em; margin: 0 .05em 0 .1em; vertical-align: -0.
   .command-card:hover { border-color: rgba(30, 77, 123, 0.25); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3); }
   .command-card-highlight { border-color: rgba(30, 77, 123, 0.2); background: linear-gradient(135deg, rgba(30, 77, 123, 0.12), rgba(212, 168, 67, 0.12)); }
   .command-card-highlight:hover { border-color: rgba(30, 77, 123, 0.4); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3); }
+  .command-example, .command-example code { color: var(--accent-sky); }
 }
 
 /* ========== CTA ========== */
