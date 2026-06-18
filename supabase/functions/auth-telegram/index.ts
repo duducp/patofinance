@@ -45,8 +45,26 @@ function jsonResponse(data: ApiResponse, status: number): Response {
 const rateLimitMap = new Map<string, number[]>();
 const RATE_LIMIT_WINDOW = 60000; // 1 minute
 const RATE_LIMIT_MAX = 10;
+const RATE_LIMIT_CLEANUP_INTERVAL = 300_000; // 5 minutes
+
+let lastRateLimitCleanup = 0;
+
+function cleanupStaleRateLimitEntries(): void {
+  const now = Date.now();
+  if (now - lastRateLimitCleanup < RATE_LIMIT_CLEANUP_INTERVAL) return;
+  lastRateLimitCleanup = now;
+  for (const [ip, timestamps] of rateLimitMap.entries()) {
+    const recent = timestamps.filter((t) => now - t < RATE_LIMIT_WINDOW);
+    if (recent.length === 0) {
+      rateLimitMap.delete(ip);
+    } else {
+      rateLimitMap.set(ip, recent);
+    }
+  }
+}
 
 function isRateLimited(ip: string): boolean {
+  cleanupStaleRateLimitEntries();
   const now = Date.now();
   const timestamps = rateLimitMap.get(ip) || [];
   const recent = timestamps.filter((t) => now - t < RATE_LIMIT_WINDOW);
