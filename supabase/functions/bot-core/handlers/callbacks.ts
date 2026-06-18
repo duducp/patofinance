@@ -9,7 +9,6 @@ import { handleBalance, handleSummary, handleDetails, handleGroup, handleCategor
 import { handleListTransactions, handleListByTag, handleSearch, showDeleteConfirmation } from "./management.ts";
 import { handleStatement, handleFilterCallback } from "./statement.ts";
 import { addSession, removeSession, validateCallbackSession, getSessionSeq, incrementSessionSeq } from "../utils/session.ts";
-import { buildKeyboardGrid } from "../utils/keyboard.ts";
 
 async function handleGroupFilterCallback(
   supabase: any,
@@ -21,15 +20,15 @@ async function handleGroupFilterCallback(
   if (selectedValue === `${prefix}_shwgrp`) {
     const user = await getOrCreateUser(supabase, telegramId);
     if (!user) return;
-    const { data: groups } = await supabase.from("groups").select("name").eq("user_id", user.id).order("name");
     const sessionSeq = await getSessionSeq(supabase, user.id);
-    if (groups && groups.length > 0) {
-      const keyboard = buildKeyboardGrid(groups, (g) => ({
-        text: g.name,
-        callback_data: addSession(`${prefix}_grp_${g.name}`, sessionSeq),
-      }), 3);
-      keyboard.push([{ text: "📋 Todas as contas", callback_data: addSession(`${prefix}_grp_all`, sessionSeq) }]);
-      const title = prefix === "balance" ? "saldo" : "resumo";
+    const keyboard = await buildGroupKeyboard(supabase, user.id, sessionSeq, {
+      callbackPrefix: `${prefix}_grp_`,
+      extraButtons: [
+        [{ text: "📋 Todas as contas", callback_data: addSession(`${prefix}_grp_all`, sessionSeq) }],
+      ],
+    });
+    const title = prefix === "balance" ? "saldo" : "resumo";
+    if (keyboard.length > 0) {
       await sendTelegramMessageWithKeyboard(chatId, `📁 *Filtrar ${title} por grupo:*`, keyboard);
     }
     return;
