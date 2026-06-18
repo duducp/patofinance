@@ -878,6 +878,15 @@ export async function advanceWizardToNextStep(
   newStateData: Record<string, any>,
   messageId?: number
 ): Promise<void> {
+  // Edit current message with confirmation BEFORE querying next step,
+  // so it also works when this is the last step (no nextStep)
+  if (messageId) {
+    const confirmText = buildStepConfirmation(currentStep, newStateData);
+    if (confirmText) {
+      await editTelegramMessageWithKeyboard(chatId, messageId, confirmText, []);
+    }
+  }
+
   const { data: nextStep } = await supabase
     .from("wizard_steps")
     .select("*")
@@ -888,13 +897,6 @@ export async function advanceWizardToNextStep(
     .single();
 
   if (nextStep) {
-    // Edit current message with confirmation before advancing to next step
-    if (messageId) {
-      const confirmText = buildStepConfirmation(currentStep, newStateData);
-      if (confirmText) {
-        await editTelegramMessageWithKeyboard(chatId, messageId, confirmText, []);
-      }
-    }
 
     await supabase.from("wizard_states").update({
       step: `${nextStep.wizard_name}_${nextStep.step_key}`,
