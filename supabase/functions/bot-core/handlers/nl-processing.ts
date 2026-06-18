@@ -259,6 +259,11 @@ export async function executeNaturalLanguageAction(
     return;
   }
 
+  if (natural.intent === "query_future") {
+    await handleStatement(supabase, userId, chatId, 0, "future");
+    return;
+  }
+
   if (natural.intent === "create_category" && natural.name) {
     await handleCreateCategory(supabase, userId, chatId, natural.name);
     return;

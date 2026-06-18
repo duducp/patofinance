@@ -22,6 +22,7 @@ Intents:
 - "query_expenses_date": gastos de data específica
 - "query_expenses_category": gastos por categoria
 - "query_summary": resumo por categoria
+- "query_future": listar transações futuras/agendadas
 - "query_extract": extrato detalhado
 - "create_category": criar nova categoria
 - "create_group": criar novo grupo
@@ -95,6 +96,9 @@ const commonPhrases: Record<string, DeepSeekResponse> = {
   "apagar última": { intent: "delete_last_transaction", amount: null, category: null, date: null, period: null, name: null, tag: null, limit: null, missingFields: [] },
   "limpe": { intent: "cleanup", amount: null, category: null, date: null, period: null, name: null, tag: null, limit: null, missingFields: [] },
   "limpar": { intent: "cleanup", amount: null, category: null, date: null, period: null, name: null, tag: null, limit: null, missingFields: [] },
+  "agendadas": { intent: "query_future", amount: null, category: null, date: null, period: null, name: null, tag: null, limit: null, missingFields: [] },
+  "futuras": { intent: "query_future", amount: null, category: null, date: null, period: null, name: null, tag: null, limit: null, missingFields: [] },
+  "transações futuras": { intent: "query_future", amount: null, category: null, date: null, period: null, name: null, tag: null, limit: null, missingFields: [] },
 };
 
 interface UserContext {

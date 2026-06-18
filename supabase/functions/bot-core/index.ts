@@ -545,6 +545,20 @@ serve(async (req: Request): Promise<Response> => {
           }
           break;
 
+        case "/agendadas":
+        case "/futuras": {
+          const filters: ExtratoFilters = {
+            category_id: null,
+            group_id: null,
+            tags: [],
+            type: "all",
+            period: "this_month",
+            status: "future",
+          };
+          await handleStatement(supabase, message.from.id, message.chat.id, 0, "future", filters);
+          break;
+        }
+
         case "/resumo":
           await handleSummary(supabase, message.from.id, message.chat.id, args);
           break;

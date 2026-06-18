@@ -33,6 +33,7 @@
 - **💰 Registrar receitas** — `/receita 3000 salário` ou "recebi 3000 de salário"
 - **📊 Saldo do período** — `/saldo`, `/saldo mes passado`, `/saldo janeiro`
 - **📋 Extrato interativo** — `/extrato` com painel de filtros (categoria, grupo, tags, tipo, período), paginação e visualização otimizada
+- **⏳ Transações agendadas** — `/agendadas` lista todas as transações futuras
 - **📈 Resumo por categoria** — `/resumo` com totais agrupados
 - **📁 Grupos (contas)** — Organize por conta bancária, cartão de crédito, etc.
 - **🏷️ Categorias** — Pré-definidas + personalizadas
@@ -47,7 +48,7 @@ Telegram → Edge Function (webhook) → Supabase DB → Resposta via Bot API
 ```
 
 - **Edge Function** — Processa mensagens do Telegram com handlers modulares
-- **Supabase DB** — PostgreSQL com 7 tabelas
+- **Supabase DB** — PostgreSQL com 8 tabelas
 - **Bot API** — Envia respostas com botões interativos
 
 ## Tecnologias
@@ -69,14 +70,22 @@ fincance/
 ├── supabase/
 │   ├── config.toml          # Config local (verify_jwt=false)
 │   ├── .env.example         # Template de variáveis de ambiente
-│   ├── migrations/          # 11 migrations SQL
+│   ├── migrations/          # 14 migrations SQL
 │   │   ├── 20260614000000_initial_schema.sql
 │   │   ├── 20260614000001_add_wizard_steps.sql
 │   │   ├── 20260614000002_add_wizard_steps_index_and_timestamps.sql
 │   │   ├── 20260615000000_add_tags_step_to_receita_wizard.sql
 │   │   ├── 20260615000001_add_normalized_name_and_trgm.sql
 │   │   ├── 20260615000002_add_category_type.sql
-│   │   └── 20260615000003_add_session_seq.sql
+│   │   ├── 20260615000003_add_session_seq.sql
+│   │   ├── 20260615000004_add_wizard_step_options.sql
+│   │   ├── 20260615000005_sync_existing_categories_type.sql
+│   │   ├── 20260615000006_fix_normalize_string.sql
+│   │   ├── 20260616000000_make_predefined_global.sql
+│   │   ├── 20260616000001_create_user_sessions.sql
+│   │   ├── 20260616000002_add_description_step.sql
+│   │   ├── 20260616000003_fix_description_prompt_newlines.sql
+│   │   └── 20260616000004_separate_telegram_accounts.sql
 │   └── functions/bot-core/
 │       ├── index.ts         # Entry point + roteamento
 │       ├── config.ts        # Env vars + cache NL
@@ -95,7 +104,8 @@ fincance/
 
 | Tabela | Descrição |
 |--------|-----------|
-| `users` | Usuários do bot (`telegram_id`, `username`) |
+| `users` | Contas dos usuários (desacoplado de plataformas) |
+| `telegram_accounts` | Identidades Telegram vinculadas a `users` (`telegram_id`, `username`, `first_name`) |
 | `groups` | Grupos/contas bancárias (`name`, `is_default`) |
 | `categories` | Categorias (`name`, `is_predefined`, `normalized_name`, `transaction_type`) |
 | `transactions` | Receitas e despesas (`type`, `amount`, `tags TEXT[]`) |
@@ -251,6 +261,7 @@ despesa - Registrar despesa (ex: /despesa 50 mercado)
 receita - Registrar receita (ex: /receita 3000 salario)
 saldo - Ver saldo (ex: /saldo mes passado)
 extrato - Ver extrato (ex: /extrato janeiro 2025)
+agendadas - Listar transacoes futuras agendadas
 resumo - Resumo por categoria (ex: /resumo ultimo mes)
 detalhes - Detalhes, edicao e exclusao de transacao
 categoria - Gerenciar categorias
@@ -279,6 +290,7 @@ ajuda - Ajuda completa
 | `/receita` | Registrar receita | `/receita 3000 salario` |
 | `/saldo` | Saldo do per\u00EDodo | `/saldo`, `/saldo mes passado`, `/saldo janeiro` |
 | `/extrato` | Extrato interativo — painel de filtros + paginação | `/extrato`, `/extrato janeiro 2025`, `/extrato --grupo Pessoal` |
+| `/agendadas` | Listar transações futuras agendadas | `/agendadas` |
 | `/resumo` | Resumo por categoria | `/resumo`, `/resumo ultimo mes`, `/resumo --grupo Trabalho` |
 | `/detalhes` | Detalhes, edição e exclusão da transação pelo ID | `/detalhes 42` |
 
@@ -300,6 +312,7 @@ ajuda - Ajuda completa
 | `/resetar` | Resetar conta (apaga todas as transações, categorias, grupos e tags) |
 | `/cancelar` | Cancelar operação em andamento |
 | `/ajuda` | Ajuda completa. Use `/ajuda <comando>` para detalhes (ex: `/ajuda saldo`) |
+| `/agendadas` | Listar transações agendadas (alias: `/futuras`) |
 
 ### 🌐 Linguagem Natural
 
@@ -311,6 +324,7 @@ Com `DEEPSEEK_API_KEY` configurada, você pode digitar frases diretamente ou usa
 - `"quanto gastei em alimentação?"` — consulta por categoria
 - `"resumo do mês"` — resumo agrupado
 - `"últimas 10 transações"` — extrato
+- `"agendadas"` — lista transações futuras
 - `"crie a categoria transporte"` — criar categoria
 - `"transações com #alimentação"` — filtrar por tag
 - `"quais tags uso?"` — listar tags

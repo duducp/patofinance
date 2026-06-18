@@ -252,7 +252,7 @@ export async function handleStatement(
   if (!showAllTypes) {
     filterParts.push(typeFilter === "income" ? "📈 Receitas" : typeFilter === "expense" ? "📉 Despesas" : "📉 Despesas");
   }
-  if (typeFilter === "future") {
+  if (typeFilter === "future" || filters?.status === "future") {
     filterParts.push("⏳ Agendadas");
   }
   if (filterParts.length > 0) {

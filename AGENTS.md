@@ -357,7 +357,7 @@ Tag é **opcional** para expense/income. Se DeepSeek retornar `tag`:
 
 ### Supported intents
 
-`expense`, `income`, `query_balance`, `query_expenses_month`, `query_expenses_last_month`, `query_expenses_date`, `query_expenses_category`, `query_summary`, `query_extract`, `create_category`, `create_group`, `list_categories`, `list_groups`, `list_tags`, `list_transactions`, `show_last_transaction`, `delete_last_transaction`, `list_by_tag`, `cleanup`
+`expense`, `income`, `query_balance`, `query_expenses_month`, `query_expenses_last_month`, `query_expenses_date`, `query_expenses_category`, `query_summary`, `query_extract`, `query_future`, `create_category`, `create_group`, `list_categories`, `list_groups`, `list_tags`, `list_transactions`, `show_last_transaction`, `delete_last_transaction`, `list_by_tag`, `cleanup`
 
 ### Pagination via NL
 
@@ -634,7 +634,8 @@ Project ref: `zjcfjqtlijktrikgvwrv`
 
 | Table | Key columns | Notes |
 |-------|-------------|-------|
-| `users` | `id`, `telegram_id`, `username`, `first_name` | |
+| `users` | `id`, `created_at` | Core account, no platform-specific data |
+| `telegram_accounts` | `id`, `user_id` (FK→users), `telegram_id`, `username`, `first_name` | Telegram identity, `ON DELETE CASCADE` |
 | `groups` | `id`, `user_id`, `name`, `normalized_name`, `is_default` | `normalized_name` + pg_trgm index |
 | `categories` | `id`, `user_id` (NULL=global), `name`, `normalized_name`, `is_predefined`, `transaction_type` | System categories: `user_id=NULL` (single row shared by all users), partial unique indexes per type |
 | `transactions` | `id`, `user_id`, `group_id`, `category_id`, `type`, `amount`, `tags TEXT[]` | |
@@ -660,7 +661,14 @@ Project ref: `zjcfjqtlijktrikgvwrv`
 20260615000001_add_normalized_name_and_trgm.sql  # pg_trgm extension + normalized_name + suggest_* functions
 20260615000002_add_category_type.sql            # transaction_type column (expense/income/null=both)
 20260615000003_add_session_seq.sql              # session_seq column for callback protection
+20260615000004_add_wizard_step_options.sql      # Options column in wizard_steps
+20260615000005_sync_existing_categories_type.sql
+20260615000006_fix_normalize_string.sql
 20260616000000_make_predefined_global.sql       # System categories global (user_id=NULL), partial indexes, suggest_categories update
+20260616000001_create_user_sessions.sql         # User sessions table
+20260616000002_add_description_step.sql         # Description step in wizard
+20260616000003_fix_description_prompt_newlines.sql
+20260616000004_separate_telegram_accounts.sql   # telegram_accounts table, decouple from users
 ```
 
 ### Predefined Categories
@@ -715,6 +723,7 @@ In the wizard:
 |----------|---------|-------|
 | `handleStart(chatId, firstName)` | `/start` | |
 | `handleHelp(chatId)` | `/ajuda` | |
+| `/agendadas` / `/futuras` | Calls `handleStatement` with `"future"` filter | Reuses extrato infrastructure |
 | `handleBalance(supabase, userId, chatId, args?)` | `/saldo` | Period via DeepSeek (ex: `mes passado`, `janeiro`). `--grupo` flag for group filter |
 | `handleTransaction(type, supabase, userId, chatId, args, descriptionOverride?)` | `/despesa`, `/receita` | Unified handler, `type: "expense"|"income"` |
 | `handleStatement(supabase, userId, chatId, page?, filter?, filters?)` | `/extrato` | Pagination + `ExtratoFilters`. Period via DeepSeek (ex: `janeiro 2025`). `--grupo` flag for group filter |
@@ -828,7 +837,7 @@ Routes ~42 callback prefixes via `handleCallbackQuery`. Key callbacks:
 ```text
 supabase/
 ├── config.toml               # verify_jwt=false for local
-├── migrations/               # 11 SQL migrations
+├── migrations/               # 14 SQL migrations
 │   ├── 20260614000000_*.sql
 │   ├── 20260614000001_*.sql
 │   ├── 20260614000002_*.sql
@@ -836,7 +845,14 @@ supabase/
 │   ├── 20260615000001_*.sql  # pg_trgm + normalized_name + suggest_* functions
 │   ├── 20260615000002_*.sql  # transaction_type on categories
 │   ├── 20260615000003_*.sql  # session_seq on wizard_states
-│   └── 20260616000000_*.sql  # Global predefined categories (user_id=NULL)
+│   ├── 20260615000004_*.sql  # wizard_step_options
+│   ├── 20260615000005_*.sql
+│   ├── 20260615000006_*.sql
+│   ├── 20260616000000_*.sql  # Global predefined categories
+│   ├── 20260616000001_*.sql  # User sessions
+│   ├── 20260616000002_*.sql  # Description step
+│   ├── 20260616000003_*.sql  # Fix prompts
+│   └── 20260616000004_*.sql  # telegram_accounts
 └── functions/bot-core/
     ├── index.ts              # Entry point (serve handler + wizard step routing)
     ├── config.ts             # Env vars, commonPhrases map, nlCache, periodCache
@@ -855,7 +871,7 @@ supabase/
     │   ├── database.ts       # 11 functions: CRUD + suggestSimilar* + getAllUserTags
     │   └── deepseek.ts       # callDeepSeek, parseNaturalLanguage, parseCommandPeriod, chat history
     └── handlers/
-        ├── commands.ts       # 14 slash command handlers + shared handleEntity
+        ├── commands.ts       # 15 slash command handlers + shared handleEntity
         ├── management.ts     # 8 entity management functions with pagination
         ├── queries.ts        # getSummaryData, formatSummaryMessage, query handlers
         ├── nl-processing.ts  # NL routing + wizard initiation

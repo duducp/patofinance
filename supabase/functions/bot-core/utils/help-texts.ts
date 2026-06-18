@@ -165,4 +165,16 @@ const COMMAND_HELP: Record<string, { keys: string[]; text: string }> = {
       `\`/cancelar\` — cancela o wizard atual\n\n` +
       `💡 Use quando estiver no meio de um registro e quiser sair.`,
   },
+  agendadas: {
+    keys: ["agendadas", "futuras"],
+    text:
+      `📖 *Ajuda — /agendadas*\n\n` +
+      `Lista todas as transações futuras/agendadas (com data posterior a hoje).\n\n` +
+      `*Como usar:*\n` +
+      `\`/agendadas\` — lista transações agendadas\n` +
+      `\`/futuras\` — mesmo comando, nome alternativo\n\n` +
+      `*Comandos relacionados:*\n` +
+      `/extrato — Extrato completo com filtros\n` +
+      `/despesa --data DD/MM/AAAA — Registrar transação futura`,
+  },
 };
