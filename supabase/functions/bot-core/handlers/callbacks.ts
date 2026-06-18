@@ -1,9 +1,9 @@
 import { InlineKeyboard, DeepSeekResponse, TelegramCallbackQuery } from "../types/index.ts";
 import { sendTelegramMessage, sendTelegramMessageWithKeyboard, editTelegramMessageWithKeyboard, answerCallbackQuery } from "../services/telegram.ts";
 import { getOrCreateUser, normalizeString, getOrCreateUncategorizedCategory, deleteTransactionById, userOrNullFilter } from "../services/database.ts";
-import { formatDateBR, getTodayISOBR, parseDateBR } from "../utils/formatting.ts";
+import { formatDateBR, parseDateBR } from "../utils/formatting.ts";
 import { truncateCallbackData } from "../utils/rate-limiter.ts";
-import { getWizardState, setWizardState, clearWizardState, sendWizardStepMessage, getCurrentWizardStep, advanceWizardToNextStep, toggleTagInWizardState, buildTagKeyboard, buildCategoryKeyboard, buildGroupKeyboard } from "./wizard.ts";
+import { getWizardState, setWizardState, clearWizardState, sendWizardStepMessage, getCurrentWizardStep, advanceWizardToNextStep, toggleTagInWizardState, buildTagKeyboard, buildCategoryKeyboard, buildGroupKeyboard, buildDateKeyboard } from "./wizard.ts";
 import { executeNaturalLanguageAction } from "./nl-processing.ts";
 import { handleBalance, handleSummary, handleDetails, handleGroup, handleCategory, handleTransaction, showDetailsEditActions, showDetailsMainView } from "./commands.ts";
 import { handleListTransactions, handleListByTag, handleSearch, showDeleteConfirmation } from "./management.ts";
@@ -758,13 +758,11 @@ export async function handleCallbackQuery(
           await sendTelegramMessage(chatId, "Nenhuma categoria disponível. Crie uma com /categoria");
         }
       } else if (action === "date") {
-        const today = getTodayISOBR();
-        const yesterday = new Date(Date.now() - 86400000).toISOString().split("T")[0];
-        const keyboard: InlineKeyboard = [
-          [{ text: "📅 Hoje", callback_data: truncateCallbackData(`edit_date_select_${transactionId}_${today}`, sessionSeq) }],
-          [{ text: "📅 Ontem", callback_data: truncateCallbackData(`edit_date_select_${transactionId}_${yesterday}`, sessionSeq) }],
-          [{ text: "📆 Outra data", callback_data: addSession(`edit_date_custom_${transactionId}`, sessionSeq) }],
-        ];
+        const keyboard = buildDateKeyboard({
+          todayCallback: (date) => truncateCallbackData(`edit_date_select_${transactionId}_${date}`, sessionSeq),
+          yesterdayCallback: (date) => truncateCallbackData(`edit_date_select_${transactionId}_${date}`, sessionSeq),
+          customCallback: addSession(`edit_date_custom_${transactionId}`, sessionSeq),
+        });
         await sendTelegramMessageWithKeyboard(chatId, "Escolha a nova data:", keyboard);
       }
       return;

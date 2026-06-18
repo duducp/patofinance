@@ -100,15 +100,11 @@ export async function sendWizardStepMessage(
     ];
     await sendTelegramMessageWithKeyboard(chatId, step.prompt, keyboard);
   } else if (step.step_key === "date") {
-    const today = getTodayISOBR();
-    const yesterday = new Date(Date.now() - 86400000).toISOString().split("T")[0];
-    const keyboard = [
-      [
-        { text: "📅 Hoje", callback_data: addSession(`wiz_date_${today}`, sessionSeq) },
-        { text: "📅 Ontem", callback_data: addSession(`wiz_date_${yesterday}`, sessionSeq) },
-      ],
-      [{ text: "📆 Outra data", callback_data: addSession("custom_date", sessionSeq) }],
-    ];
+    const keyboard = buildDateKeyboard({
+      todayCallback: (date) => addSession(`wiz_date_${date}`, sessionSeq),
+      yesterdayCallback: (date) => addSession(`wiz_date_${date}`, sessionSeq),
+      customCallback: addSession("custom_date", sessionSeq),
+    });
     await sendTelegramMessageWithKeyboard(chatId, step.prompt, keyboard);
   } else if (step.input_type === "select") {
     const { data: options } = await supabase
@@ -348,6 +344,28 @@ export async function buildGroupKeyboard(
   }
 
   return keyboard;
+}
+
+/**
+ * Build a date selection keyboard (today / yesterday / other date).
+ * The caller provides callback builders for each option.
+ */
+export function buildDateKeyboard(
+  options: {
+    todayCallback: (date: string) => string;
+    yesterdayCallback: (date: string) => string;
+    customCallback: string;
+  },
+): InlineKeyboard {
+  const today = getTodayISOBR();
+  const yesterday = new Date(Date.now() - 86400000).toISOString().split("T")[0];
+  return [
+    [
+      { text: "📅 Hoje", callback_data: options.todayCallback(today) },
+      { text: "📅 Ontem", callback_data: options.yesterdayCallback(yesterday) },
+    ],
+    [{ text: "📆 Outra data", callback_data: options.customCallback }],
+  ];
 }
 
 export async function getCurrentWizardStep(
