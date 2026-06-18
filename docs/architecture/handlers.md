@@ -196,8 +196,9 @@ Alias: `handleEntity("category", …)`
 - Formats success message with frequency label and management buttons
 
 ### `advanceWizardToNextStep(supabase, userId, chatId, currentStep, sessionSeq, newStateData, messageId?)`
-- Finds next step by `step_order`
-- If `messageId` provided, calls `buildStepConfirmation` to edit current prompt with confirmation before advancing
+- **Confirmation edit always happens first** — before querying the next step, edits the current prompt via `buildStepConfirmation` when `messageId` is provided
+- This ensures the confirmation (`✅ 🔖 Tags: Nenhuma tag`) appears even when the current step is the **last step** (e.g., tags in gasto/receita wizards)
+- Then finds next step by `step_order`
 - Sends next step or completes wizard (calls `completeRecurrenceWizard` for recorrencia, `completeWizard` otherwise)
 
 ### `handleTransactionWizard(type, supabase, userId, chatId, state, input, userMessageId?)`

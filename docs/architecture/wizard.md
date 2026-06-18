@@ -151,7 +151,7 @@ if (stepKey === "amount") {
 }
 ```
 
-When the user clicks a button (select/keyboard) rather than typing, the `advanceWizardToNextStep` function handles the confirmation via `buildStepConfirmation`.
+When the user clicks a button (select/keyboard) rather than typing, the `advanceWizardToNextStep` function handles the confirmation via `buildStepConfirmation`. The confirmation edit happens **before** querying the next step, so it works correctly even when the current step is the **last one** (e.g., tags in gasto/receita wizards — shows `✅ 🔖 Tags: Nenhuma tag` before completing).
 
 ### Category Step Logic
 
@@ -190,7 +190,10 @@ When all steps are done for recorrencia:
 5. Send success message with frequency label
 
 ### `advanceWizardToNextStep`
-Detects `wizard_name === "recorrencia"` and calls `completeRecurrenceWizard` instead of `completeWizard` when at the final step.
+
+Key behavior:
+- **Confirmation edit first** — Edits current prompt in-place with `buildStepConfirmation` (`messageId` required). This runs **before** the next-step query, ensuring the confirmation always appears — even when the current step is the last one.
+- **Next step or complete** — If there's a next step, advances to it. Otherwise, detects `wizard_name === "recorrencia"` and calls `completeRecurrenceWizard` instead of `completeWizard`.
 
 ## Interaction with Callbacks
 
