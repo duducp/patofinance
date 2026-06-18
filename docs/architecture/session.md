@@ -205,10 +205,10 @@ Use when the total data could exceed 64 bytes:
 
 ```typescript
 // WRONG — user clicks → "botão expirou"
-{ text: "Nova Recorrência", callback_data: "rec_new" }
+{ text: "Nova recorrência", callback_data: "rec_new" }
 
 // RIGHT
-{ text: "Nova Recorrência", callback_data: addSession("rec_new", sessionSeq) }
+{ text: "Nova recorrência", callback_data: addSession("rec_new", sessionSeq) }
 ```
 
 ### Mistake 2: Not calling `incrementSessionSeq` before building keyboard
