@@ -18,9 +18,28 @@ handleXxx(supabase: any, userId: number, chatId: number, ...args) => Promise<voi
 | Pattern | Function | When to use |
 |---------|----------|-------------|
 | **Send** | `sendTelegramMessage[WithKeyboard]` | First interaction (slash command, new wizard step, confirmation) |
-| **Edit** | `editTelegramMessageWithKeyboard` | Update in-place (pagination, tag toggle, filter state change) |
+| **Edit** | `editTelegramMessageWithKeyboard` | Update in-place (pagination, tag toggle, filter state change, wizard step confirmation) |
 
-**Rule of thumb:** If the callback changes the *state of the current view* (next page, toggle tag), edit. If the callback *completes an action or starts a new flow* (confirm delete, select category), send new.
+**Rule of thumb:** If the callback changes the *state of the current view* (next page, toggle tag), edit. If the callback *completes an action or starts a new flow* (confirm delete), send new.
+
+**Wizard keyboard cleanup:** When the user selects an option via keyboard (category, group, date, type, frequency), the **original keyboard is edited** to show a confirmation (`✅ 🏷️ Categoria: Alimentação`) before the next step/sub-step prompt is sent as a new message. This keeps the chat clean — the edited message replaces the keyboard with a simple confirmation, and the next question appears below.
+
+**Edit flows cleanup (transaction & recurrence editing):** The same **edit-in-place** pattern applies when the user clicks a button to change a field. The action menu or selection keyboard is edited with a descriptive label before the next interface is sent:
+
+| Click | Original message → Edited to | Then |
+|-------|------------------------------|------|
+| Editar valor (text input) | Ação → `💰 Alterando valor...` | Envia prompt de texto |
+| Editar descrição (text input) | Ação → `📝 Alterando descrição...` | Envia prompt de texto |
+| Editar categoria (keyboard select) | Ação → `🏷️ Alterando categoria...` | Envia teclado de categorias |
+| Editar data (keyboard select) | Ação → `📅 Alterando data...` | Envia teclado de datas |
+| Editar grupo (keyboard select) | Ação → `📁 Alterando grupo...` | Envia teclado de grupos |
+| Editar frequência (keyboard select) | Ação → `🔄 Alterando frequência...` | Envia teclado de frequência |
+| Editar tags (keyboard select) | Ação → `🔖 Alterando tags...` | Envia teclado de tags |
+| Custom date (text input) | Teclado de data → `📅 Alterando data...` | Envia prompt de texto |
+| Nova categoria/grupo (text input, NL) | Teclado → `✏️ Digitando nova categoria...` | Envia prompt de texto |
+| Adicionar descrição (text input, Sim/Não) | Prompt Sim/Não → `✏️ Digitando descrição...` | Envia prompt de texto |
+
+**Regra geral:** Se o clique leva a um novo prompt (texto ou teclado de seleção), **sempre edite a mensagem original** com uma label descritiva antes de enviar o próximo prompt. Use labels com emoji consistente (💰 valor, 📝 descrição, 🏷️ categoria, 📁 grupo, 📅 data, 🔄 frequência, 🔖 tags, ✏️ digitar). A label deve descrever o que está sendo alterado no presente ("Alterando X...") ou no futuro próximo ("Digitando X..."), nunca usar pretérito.
 
 **Important:** Always call `await answerCallbackQuery(callbackQuery.id)` at the very start of every callback handler, before any DB queries.
 
@@ -294,3 +313,97 @@ async function updateFilterField(
 ```
 
 Replaces 5 duplicated `stmt_f_*` blocks (category, group, type, status, period) with 1-liner calls. Saves ~30 lines.
+
+## 17. In-Place Editing (Edit-in-Place)
+
+### Problem
+
+When a user clicks a button that requires additional input (typed text or selection), sending a **new** message without editing the original leaves the original message with buttons visible in the chat — creating "orphan" messages that clutter the conversation.
+
+### Solution
+
+Always **edit the callback message in-place** (`message.message_id`) before sending follow-up content. This creates a clean lifecycle per message: the original buttons are replaced, and the user sees only the active prompt.
+
+### Variant A: Text Input — 3-State Lifecycle
+
+For callbacks that need typed user input, a single message progresses through 3 states:
+
+```text
+[Buttons]  →  [Prompt]  →  [Confirmation]
+"Selecione"    "✏️ Digite..."   "✅ 🏷️ Categoria: X"
+```
+
+**Code pattern (callback handler):**
+
+```typescript
+// ✅ CORRECT: Edit callback message in-place, store message_id for later
+await editTelegramMessageWithKeyboard(chatId, message.message_id, "✏️ Digite o nome:", []);
+// Store message.message_id as promptMessageId in wizard state
+const key = "_categoryPromptMessageId";
+// ... update wizard state data with [key]: message.message_id
+```
+
+Then, when the user types, the confirmation handler edits the **same** message:
+
+```typescript
+// In advanceWithConfirmation or handleWizardInput:
+if (confirmText && promptMessageId) {
+  await editTelegramMessageWithKeyboard(chatId, promptMessageId, confirmText, []);
+}
+```
+
+**Examples:** `wizard_new_category`, `wizard_new_group`, `custom_date`.
+
+### Variant B: Edit → Send (Keyboard Selection)
+
+For callbacks that show a selection keyboard next, edit the original with a label then send the new UI:
+
+```typescript
+// ✅ CORRECT: Edit with descriptive label, then send
+await editTelegramMessageWithKeyboard(chatId, message.message_id, "💰 Alterando valor...", []);
+await sendTelegramMessage(chatId, "Informe o novo valor:");
+```
+
+**Examples:** `edit_amount`, `edit_category`, `edit_date`, `edit_group_`, `edit_tags_`, `rec_edit_field_*`, `tx_desc_sim_`, `rec_edit_set_freqtype_`.
+
+### ❌ Wrong Pattern (Orphan Message)
+
+```typescript
+// ❌ WRONG: Sends new message, original buttons stay visible
+await sendTelegramMessage(chatId, "✏️ Digite o nome da nova categoria:");
+// Original category selection screen with buttons is now orphaned
+```
+
+### Emoji + Label Convention
+
+Use consistent emoji-labels for the edit placeholder:
+
+| Field | Label |
+|-------|-------|
+| Valor | `💰 Alterando valor...` |
+| Descrição | `📝 Alterando descrição...` |
+| Categoria | `🏷️ Alterando categoria...` |
+| Grupo | `📁 Alterando grupo...` |
+| Data | `📅 Alterando data...` |
+| Frequência | `🔄 Alterando frequência...` |
+| Tags | `🔖 Alterando tags...` |
+| Digitar (novo) | `✏️ Digitando {label}...` |
+
+- Use **present tense** ("Alterando...", "Digitando..."), never past tense
+- Always send with `[]` (empty keyboard) to remove any existing inline buttons
+
+### Checklist
+
+When adding a new callback that needs additional input:
+
+1. [ ] Does it **edit** `message.message_id` before sending a new message?
+2. [ ] Does it use a **consistent emoji + label** from the table above?
+3. [ ] Is the `[]` (empty keyboard) passed to `editTelegramMessageWithKeyboard`?
+4. [ ] For typed input: is the **message_id stored** in wizard state for later confirmation?
+5. [ ] Does the **confirmation handler** edit that stored message_id?
+6. [ ] For keyboard selection: is the new UI sent via `sendTelegramMessage[WithKeyboard]`?
+
+### Related
+
+- Pattern #2 (Send vs Edit) for the general send/edit distinction
+- AGENTS.md > Wizard Visual Confirmation Pattern for wizard-specific lifecycle

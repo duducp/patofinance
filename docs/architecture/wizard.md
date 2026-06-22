@@ -61,16 +61,38 @@ State is stored in `wizard_states` table:
 - `data` field: JSONB accumulating user inputs
 - TTL: 10 minutes (auto-expired on read)
 
-## Step Renderers (`sendWizardStepMessage`)
+## Step Sender Functions (`sendWizardStepMessage`)
 
-Each step type renders differently:
+`sendWizardStepMessage` dispatches to **9 extracted step sender functions** via `switch` on `step.step_key`:
 
-| Input Type | UI |
-|------------|-----|
-| `text` | Plain text prompt, user types |
-| `select` | Inline keyboard from DB (categories or groups) |
-| `date` | Buttons: "Hoje", "Ontem", "Outra data" |
-| `tags` | Toggle buttons for existing tags + text input + done/skip |
+| Function | Step Keys | UI |
+|----------|-----------|-----|
+| `sendCategoryStep` | `category` | Inline keyboard: user's + system categories, "✏️ Nova categoria" button |
+| `sendGroupStep` | `group` | Inline keyboard: user's groups, "✏️ Novo grupo" button |
+| `sendTagsStep` | `tags` | Toggle buttons for existing tags + text input + done/skip buttons |
+| `sendDescriptionStep` | `description` | Plain text + "⏭️ Pular" button |
+| `sendDateStep` | `date`, `start_date` | Buttons: "📅 Hoje", "📅 Ontem", "📆 Outra data". `start_date` passes a different callback prefix |
+| `sendTypeStep` | `type` | Buttons: "💸 Despesa", "💰 Receita" |
+| `sendAmountStep` | `amount` | Plain text prompt (no buttons, user types) |
+| `sendGenericSelectStep` | any `select` type | Dynamic keyboard from `wizard_step_options` table |
+| `sendDefaultStep` | any other type | Plain text prompt fallback |
+
+### Pattern
+
+Each sender follows the same pattern:
+```typescript
+async function sendXxxStep(chatId, step, userId, supabase, sessionSeq, messageId?) {
+  const keyboard = await buildXxxKeyboard(...);  // or none for text steps
+  const sentMessageId = messageId
+    ? (await editTelegramMessageWithKeyboard(chatId, messageId, step.prompt, keyboard), null)
+    : await sendTelegramMessage[WithKeyboard](chatId, step.prompt, keyboard);
+  if (sentMessageId) {
+    await storePromptMessageId(supabase, userId, "_xxxPromptMessageId", sentMessageId);
+  }
+}
+```
+
+When `messageId` is provided, the existing message is **edited in-place** instead of sending new. For text-input steps (amount, description, tags, category, group), the returned `message_id` is stored in wizard state as `_<step>PromptMessageId` via `storePromptMessageId`.
 
 ## Visual Confirmation Pattern
 
@@ -96,6 +118,20 @@ This creates a clean conversation where each user response is confirmed in-place
 | tags (Concluir) | `_tagsPromptMessageId` | `✅ 🔖 Tags: #tag1 #tag2` / `Nenhuma tag` |
 | frequency detail | `_freqDetailPromptMessageId` | `✅ 🔄 Frequência: A cada 15 dias` / `Mensal (dia 15)` |
 
+### Keyboard Step Cleanup
+
+All keyboard/button steps now also follow the same cleanup pattern:
+
+| Button Clicked | Action |
+|----------------|--------|
+| Categoria/Grupo selecionado via teclado | `advanceWizardToNextStep` edita o teclado para `✅ 🏷️ Categoria: X` / `✅ 📁 Grupo: X` (via `buildStepConfirmation` com `message.message_id`) |
+| Data (Hoje/Ontem) | `advanceWizardToNextStep` edita o teclado para `✅ 📅 Data: DD/MM/AAAA` |
+| Tipo (Despesa/Receita) | `advanceWizardToNextStep` edita o teclado para `✅ 📋 Tipo: 💸 Despesa` / `💰 Receita` |
+| Frequência (Diária) | `advanceWizardToNextStep` edita o teclado para `✅ 🔄 Frequência: Diária` |
+| Frequência (não-diária) | O teclado é editado via `buildStepConfirmation` para `✅ 🔄 Frequência: Semanal` / `Mensal` / etc. antes de enviar o sub-passo de detalhe |
+| 📆 Outra data | O teclado de data é editado para `📆 Outra data` antes de enviar o prompt de digitação |
+| ✏️ Nova categoria/grupo | O teclado de categoria/grupo é editado para `✏️ Digitando nova categoria/novo grupo...` antes de enviar o prompt de digitação |
+
 ### Flow Diagram
 
 ```text
@@ -112,46 +148,95 @@ User types text         Handler reads _promptMessageId
 │ Delete message │    │ Send next step message     │
 │ (deleteMsg)    │    │ (sendTelegramMessage)       │
 └────────────────┘    └────────────────────────────┘
+
+User clicks button       Handler reads message.message_id
+       │                         │
+       ▼                         ▼
+┌────────────────┐    ┌──────────────────────────────────┐
+│ Button clicked │    │ Edit keyboard → "✅ ..."          │
+│ (callback)     │    │ (editTelegramMessageWithKeyboard) │
+└────────┬───────┘    └────────────┬─────────────────────┘
+         │                         │
+         │                         ▼
+         │            ┌──────────────────────────────────┐
+         └────────────┤ Send next step / sub-step prompt │
+                      │ (sendTelegramMessage[WithKeyboard])│
+                      └──────────────────────────────────┘
 ```
 
-### Implementation
+### Shared Constants
 
-In `sendWizardStepMessage`, after sending the prompt as a new message (`sentMessageId` is non-null), the shared `storePromptMessageId` helper stores the message ID:
+| Constant | Location | Description |
+|----------|----------|-------------|
+| `FREQ_LABELS` | `wizard.ts` (exported) | Maps frequency type keys to PT labels: `daily` → `"Diária"`, `weekly` → `"Semanal"`, `monthly` → `"Mensal"`, `annual` → `"Anual"`, `every_x_days` → `"A cada X dias"`. Used by `buildStepConfirmation`, `completeRecurrenceWizard`, and imported by `callbacks.ts` for `rec_edit_set_freqtype_` |
+
+### Internal Helpers
+
+| Helper | Purpose |
+|--------|---------|
+| `formatTags(tags)` | Ensures `#` prefix on all tags, filters empty values. Accepts array or space-separated string. Returns `string[]` |
+| `parseAmount(input)` | Validates and parses amount string (handles comma → dot). Returns `number | null` on failure |
+| `buildFreqDetailConfirm(freqType, day, month?)` | Builds confirmation text for frequency detail: `"A cada X dias"`, `"Mensal (dia X)"`, `"Anual (X de Mês)"` |
+| `advanceFreqDetailToTags(...)` | After frequency detail input, edits prompt, deletes user msg, sets wizard state to tags step, sends tags keyboard or completes |
+| `buildRecurrenceSuccessMsg(recurrenceId, data)` | Formats success message with recurrence details, frequency label, and management buttons |
+
+### Implementation Details
+
+- **Keyboard-to-next-step** (category, group, date, type, daily frequency): The generic callback handler passes `message.message_id` to `advanceWizardToNextStep`, which calls `buildStepConfirmation` to edit the keyboard message in-place before querying the next step.
+- **Keyboard-to-sub-step** (custom_date, wizard_new_category, wizard_new_group, frequency non-daily): The callback handler explicitly edits `message.message_id` before sending the follow-up prompt.
+- **Frequency special case**: The `wiz_frequency_` handler stores `frequency_type` in state data (not `frequency`). `buildStepConfirmation` handles this by checking `newStateData.frequency_type` when `step_key === "frequency"`. Labels include day-of-week for weekly, day for monthly, and day+month for annual.
+- **`custom_date` for `start_date` (recurrence wizard):** The `custom_date` callback handler detects `stepKey === "start_date"` and preserves the original step (`recorrencia_start_date`) instead of switching to `recorrencia_custom_date`. This is necessary because `handleRecurrenceWizard` only handles `recorrencia_start_date` (which already checks for `_customDatePromptMessageId`), not `recorrencia_custom_date`. The gasto/receita `date` step still uses the `_custom_date` suffix since `handleTransactionWizard` explicitly handles that pattern.
+
+### `advanceWithConfirmation` Helper
+
+Shared helper that eliminates **8 duplicated advance blocks** across `handleTransactionWizard` and `handleRecurrenceWizard`:
 
 ```typescript
-if (sentMessageId) {
-  await storePromptMessageId(supabase, userId, "_amountPromptMessageId", sentMessageId);
-}
-```
-
-This helper is used for all 5 text-input steps (amount, description, tags, category, group). Similarly, `getNextWizardStep` replaces inline next-step queries:
-
-```typescript
-const nextStep = await getNextWizardStep(supabase, wizardName, currentStep.step_order);
-if (nextStep) {
-  // advance to next step
-} else {
-  // complete wizard
-}
-```
-
-Both helpers are defined as internal (non-exported) functions in `wizard.ts`. See [`services.md`](services.md#handlerswizardts--wizard-helpers-internal) for full documentation.
-
-In the handler (`handleTransactionWizard` / `handleRecurrenceWizard`), read and apply:
-
-```typescript
-if (stepKey === "amount") {
-  const amountPromptMessageId = state.data?._amountPromptMessageId as number | undefined;
-  if (amountPromptMessageId && !isNaN(amountNum)) {
-    await editTelegramMessageWithKeyboard(chatId, amountPromptMessageId,
-      `✅ 💰 Valor: ${formatCurrencyBR(amountNum)}`, []);
-    if (userMessageId) await deleteTelegramMessage(chatId, userMessageId);
+async function advanceWithConfirmation(
+  supabase, userId, chatId, wizardName, currentStep, state,
+  stepKey, value, confirmText, promptMessageId, userMessageId, completeFn
+): Promise<void> {
+  const nextStep = await getNextWizardStep(supabase, wizardName, currentStep.step_order);
+  if (nextStep) {
+    await setWizardState(supabase, userId, `${wizardName}_${nextStep.step_key}`, {
+      ...state.data, [stepKey]: value,
+    });
+    if (confirmText && promptMessageId) {
+      await editTelegramMessageWithKeyboard(chatId, promptMessageId, confirmText, []);
+    }
+    if (userMessageId) {
+      await deleteTelegramMessage(chatId, userMessageId);
+    }
+    const nextSessionSeq = await getSessionSeq(supabase, userId);
+    await sendWizardStepMessage(chatId, nextStep, userId, supabase, nextSessionSeq);
+  } else {
+    await completeFn(supabase, userId, chatId, { ...state.data, [stepKey]: value });
   }
-  // advance to next step
 }
 ```
+
+Used for **amount, description, category, and group** steps in both wizards. Handles:
+1. Lookup next step via `getNextWizardStep`
+2. `setWizardState` with new value
+3. Edit prompt in-place with confirmation (if both `confirmText` and `promptMessageId` provided)
+4. Delete user message (if `userMessageId` provided)
+5. Send next step or call `completeFn`
 
 When the user clicks a button (select/keyboard) rather than typing, the `advanceWizardToNextStep` function handles the confirmation via `buildStepConfirmation`. The confirmation edit happens **before** querying the next step, so it works correctly even when the current step is the **last one** (e.g., tags in gasto/receita wizards — shows `✅ 🔖 Tags: Nenhuma tag` before completing).
+
+### `storePromptMessageId` and `getNextWizardStep`
+
+Two internal helpers shared across the wizard system:
+
+```typescript
+// Store messageId reference in wizard state for later in-place editing
+async function storePromptMessageId(supabase, userId, key, messageId): Promise<void>
+
+// Query next step after current step_order
+async function getNextWizardStep(supabase, wizardName, currentStepOrder): Promise<any>
+```
+
+`storePromptMessageId` is called by text-input step senders (amount, description, tags, category, group) to save the prompt's `message_id`. `getNextWizardStep` is used by `advanceWithConfirmation` and fallthrough code. See [`services.md`](services.md#handlerswizardts--wizard-helpers) for full docs.
 
 ### Category Step Logic
 

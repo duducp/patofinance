@@ -1,5 +1,8 @@
 # Services Layer
 
+> 📖 Register completo de todos os callbacks que seguem o padrão **edit-in-place** (19 callbacks): [`AGENTS.md` > In-Place Callbacks — Complete Register](../../AGENTS.md#in-place-callbacks--complete-register)
+> Padrão formal de in-place editing: [`patterns.md` > §17 In-Place Editing](patterns.md#17-in-place-editing-edit-in-place)
+
 ## `services/telegram.ts` — Telegram API Wrapper
 
 5 exported functions wrapping the Telegram Bot API:
@@ -19,23 +22,44 @@ Common behavior:
 
 ## `services/database.ts` — Data Access Layer
 
-11 exported functions:
+29 exported functions + 1 constant:
 
 | Function | Params | Returns |
 |----------|--------|---------|
 | `normalizeString(str)` | `string` | `string` — lowercase, strip accents, strip non-alnum |
-| `getOrCreateUser(supabase, telegramId)` | `(any, number)` | `user \| null` — read-only lookup |
+| `userOrNullFilter(userId)` | `number` | `string` — `.or()` filter for "user_id = X OR user_id IS NULL" |
+| `typeOrNullFilter(type)` | `string` | `string` — `.or()` filter for "transaction_type = X OR transaction_type IS NULL" |
+| `getOrCreateUser(supabase, telegramId)` | `(any, number)` | `user \| null` — read-only lookup via telegram_accounts |
 | `requireUser(supabase, userId, chatId)` | `(any, number, number)` | `user \| null` — sends error message if missing |
 | `getCategories(supabase, userId, type?)` | `(any, number, "expense"\|"income"?)` | `{name}[]` — filtered by transaction_type |
-| `getOrCreateCategory(supabase, userId, name, transactionType?)` | `(any, number, string, string?)` | `category_id \| null` |
+| `getOrCreateCategory(supabase, userId, name, transactionType?)` | `(any, number, string, string?)` | `category_id \| null` — exact normalized match, then insert |
 | `resolveCategoryForNL(supabase, userId, name, transactionType?)` | `(any, number, string, string?)` | `{id, name} \| null` — exact + trigram |
 | `getOrCreateGroup(supabase, userId, name)` | `(any, number, string\|null)` | `group_id \| null` — null name → default group |
-| `suggestSimilarCategories(supabase, userId, query, limit?)` | `(any, number, string, number)` | `{name, similarity}[]` |
-| `suggestSimilarGroups(supabase, userId, query, limit?)` | `(any, number, string, number)` | `{name, similarity}[]` |
-| `suggestSimilarTags(supabase, userId, query, limit?)` | `(any, number, string, number)` | `{tag, similarity}[]` |
+| `suggestSimilarCategories(supabase, userId, query, limit?)` | `(any, number, string, number)` | `{name, similarity}[]` — via pg_trgm RPC |
+| `suggestSimilarGroups(supabase, userId, query, limit?)` | `(any, number, string, number)` | `{name, similarity}[]` — via pg_trgm RPC |
+| `suggestSimilarTags(supabase, userId, query, limit?)` | `(any, number, string, number)` | `{tag, similarity}[]` — via pg_trgm RPC |
 | `sendSimilarityWarning(supabase, userId, chatId, type, query)` | `(any, number, number, string, string)` | `void` — sends Telegram message |
 | `getAllUserTags(supabase, userId)` | `(any, number)` | `string[]` — sorted, unique |
 | `getOrCreateUncategorizedCategory(supabase, userId)` | `(any, number)` | `category_id \| null` — returns system "Outros" as fallback |
+| `createTransaction(supabase, data)` | `(any, CreateTransactionData)` | `{error, id?}` — inserts transaction row |
+| `deduplicateByNormalizedName(items)` | `any[]` | `any[]` — user category overrides system with same normalized_name |
+| `deleteTransactionById(supabase, userId, transactionId)` | `(any, number, number\|string)` | `{success, error?}` — deletes owned transaction |
+| `getTransactionById(supabase, userId, transactionId, selectFields?)` | `(any, number, number\|string, string?)` | `transaction \| null` — with category/group joins |
+| `findGroupByName(supabase, userId, name)` | `(any, number, string)` | `{id, name} \| null` — ilike match |
+| `listTransactionsPaginated(supabase, userId, limit, page, tag?)` | `(any, number, number, number, string?)` | `{transactions, totalCount, hasMore}` — limit+1 fetch pattern |
+| `getRecurrences(supabase, userId, includeArchived?)` | `(any, number, boolean?)` | `any[]` — sorted by next_date ascending |
+| `getRecurrenceById(supabase, userId, recurrenceId)` | `(any, number, number)` | `any \| null` — with category/group joins |
+| `createRecurrence(supabase, data)` | `(any, RecurrenceData)` | `{error, id?}` — inserts recurrence row |
+| `updateRecurrence(supabase, userId, recurrenceId, updates)` | `(any, number, number, Record)` | `{error}` — sets updated_at timestamp |
+| `archiveRecurrence(supabase, userId, recurrenceId)` | `(any, number, number)` | `{error}` — sets is_archived + archived_at |
+| `activateRecurrence(supabase, userId, recurrenceId, newNextDate?)` | `(any, number, number, string?)` | `{error}` — clears archived flag, optionally sets next_date |
+| `drainNotificationQueue(supabase, userId)` | `(any, number)` | `string[]` — fetches undelivered messages, marks delivered |
+
+### Constants
+
+| Constant | Type | Purpose |
+|----------|------|---------|
+| `TRANSACTION_DETAIL_FIELDS` | `string` | Standard Supabase select string for transaction detail/edit views (id, type, amount, description, tags, transaction_date, recurrence_id, categories(name), groups(name)) |
 
 ### Category Resolution for NL (`resolveCategoryForNL`)
 
@@ -54,15 +78,34 @@ suggestSimilarCategories(userId, query, limit=3)
   → Returns up to 3 similar names with similarity scores
 ```
 
-## `handlers/wizard.ts` — Wizard Helpers (Internal)
+## `handlers/wizard.ts` — Wizard Helpers
 
-Three internal (non-exported) helpers shared across wizard handlers to reduce code duplication:
+### Shared Constants
+
+| Constant | Description |
+|----------|-------------|
+| `FREQ_LABELS` (exported) | `Record<string, string>` mapping frequency type keys to PT labels: `daily` → `"Diária"`, `weekly` → `"Semanal"`, `monthly` → `"Mensal"`, `annual` → `"Anual"`, `every_x_days` → `"A cada X dias"`. Used by `buildStepConfirmation`, `completeRecurrenceWizard`, and imported by `callbacks.ts` for `rec_edit_set_freqtype_` |
+
+### Internal (non-exported) Helpers
+
+| Function | Purpose |
+|----------|---------|
+| `storePromptMessageId(supabase, userId, key, messageId)` | Reads existing wizard state data, spreads it, and stores the given `key: messageId`. Used internally by `sendOrEditStep` for 5 text-input steps (category, group, tags, description, amount) to save the prompt `message_id` for later in-place editing |
+| `getNextWizardStep(supabase, wizardName, currentStepOrder)` | Queries `wizard_steps` for the next step after `currentStepOrder` within the given wizard. Returns `null` if this is the last step. Used by `advanceWithConfirmation` and fallthrough handlers |
+| `sendOrEditStep(chatId, messageId, prompt, keyboard, supabase, userId, storeKey)` | Eliminates duplicated send/edit/store pattern from 5 step senders. If `messageId` is provided: edits existing message in-place. If new message: sends with `sendTelegramMessageWithKeyboard` (if keyboard non-empty) or `sendTelegramMessage` (text-only). Stores the returned `message_id` via `storePromptMessageId` |
+| `buildStepConfirmation(step, newStateData)` | Builds confirmation text for a completed step (e.g., `"✅ 🔖 Tags: #mercado"`, `"✅ 🔄 Frequência: Mensal (dia 15)"`). Returns `null` if no confirmation. Called by `advanceWizardToNextStep` |
+| `advanceWithConfirmation(supabase, userId, chatId, wizardName, currentStep, state, stepKey, value, confirmText, promptMessageId, userMessageId, completeFn)` | Shared helper eliminating **8 duplicated advance blocks**: handles `setWizardState`, edit prompt in-place, delete user message, query next step, send next step or call `completeFn` |
+| `parseAmount(input)` | Validates and parses amount string (handles comma → dot). Returns `number | null` on failure |
+| `formatTags(tags)` | Ensures `#` prefix on all tags. Accepts array or space-separated string. Returns `string[]` |
+| `buildFreqDetailConfirm(freqType, day, month?)` | Builds frequency detail confirmation: `"A cada X dias"`, `"Mensal (dia X)"`, `"Anual (X de Mês)"` |
+| `advanceFreqDetailToTags(supabase, userId, chatId, state, extraData, freqDetailPromptMessageId?, userMessageId?)` | After frequency detail input: edits prompt, deletes user msg, sets state to tags step, sends tags keyboard or completes |
+| `buildRecurrenceSuccessMsg(recurrenceId, data)` | Formats success message with recurrence details, frequency label, and management buttons |
+| `handleTagsInput(supabase, userId, chatId, state, input, wizardName, currentStep, userMessageId?)` | Accumulates tags in wizard state, deduplicates, re-renders tag keyboard via `sendWizardStepMessage`, and deletes user message. Called by `handleWizardInput` when the current step is `tags` |
+### `handleWizardInput` (exported)
 
 | Function | Params | Purpose |
 |----------|--------|---------|
-| `storePromptMessageId(supabase, userId, key, messageId)` | `(any, number, string, number)` | Reads existing wizard state data, spreads it, and stores the given `key: messageId`. Used by `sendWizardStepMessage` in 5 places (category, group, tags, description, amount) to save the prompt `message_id` for later in-place editing |
-| `getNextWizardStep(supabase, wizardName, currentStepOrder)` | `(any, string, number)` | Queries `wizard_steps` for the next step after `currentStepOrder` within the given wizard. Uses `.maybeSingle()` — returns `null` if this is the last step. Used 10 times across `handleTransactionWizard` and `handleRecurrenceWizard` |
-| `buildStepConfirmation(step, newStateData)` | `(any, Record<string, any>)` | Builds confirmation text for a completed step (e.g., `"✅ 🔖 Tags: #mercado"`, `"✅ 🔄 Frequência: Mensal (dia 15)"`). Returns `null` if no confirmation should be shown. Called by `advanceWizardToNextStep` |
+| `handleWizardInput(supabase, userId, chatId, state, input, userMessageId?)` | `(any, number, number, WizardState, string, number?)` | Unified router for all wizard text input (gasto/receita/recorrencia). Deduces `wizardName` from `state.step` prefix, determines `type` (expense/income) and `completeFn` (completeWizard/completeRecurrenceWizard). Handles 3 special cases: custom_date (gasto/receita), freq_detail (recorrencia), start_date (recorrencia). Standard steps (amount, tags, category, group, description) use `advanceWithConfirmation` with the correct `completeFn`. Replaces the previously separate `handleTransactionWizard` + `handleRecurrenceWizard` |
 
 ### `advanceWizardToNextStep` (exported)
 
@@ -81,7 +124,7 @@ This ensures that when the user clicks "⏭️ Pular" or "✅ Concluir" on the *
 
 | Function | Params | Purpose |
 |----------|--------|---------|
-| `handleEntityRename(type, supabase, userId, chatId, entityName)` | `("category"\|"group", any, number, number, string)` | Starts a rename wizard: verifies the entity is not predefined/default, sends "✏️ Digite o novo nome" message, sets wizard state with step `rename_cat` or `rename_grp`. The user's next text input is handled by `handleTransactionWizard` which reads `state.data.name` |
+| `handleEntityRename(type, supabase, userId, chatId, entityName, messageId)` | `("category"\|"group", any, number, number, string, number)` | Starts a rename wizard: verifies the entity is not predefined/default, edits the callback message in-place with `editTelegramMessageWithKeyboard(chatId, messageId, ...)` to show "✏️ Digite o novo nome" prompt (removing action menu buttons), sets wizard state with step `rename_cat` or `rename_grp`. The user's next text input is handled by `handleWizardInput` which reads `state.data.name` |
 | `handleEntityDeletePrompt(type, supabase, userId, chatId, entityName, sessionSeq)` | `("category"\|"group", any, number, number, string, number)` | Shows delete confirmation dialog with entity name and transaction count. Prevents deletion of predefined/default entities. Uses `buildDeleteConfirmKeyboard` for the confirm/cancel buttons. Gender-aware labels ("a categoria" / "o grupo") |
 | `handleEntityDeleteExecute(type, supabase, userId, chatId, entityName)` | `("category"\|"group", any, number, number, string)` | Executes entity deletion: verifies not predefined/default, reassigns affected transactions to fallback ("Sem categoria" via `getOrCreateUncategorizedCategory` or "Pessoal" via `is_default` group lookup), deletes entity row, sends success message with reassignment count |
 
@@ -95,26 +138,17 @@ This ensures that when the user clicks "⏭️ Pular" or "✅ Concluir" on the *
 ### Usage Pattern
 
 ```typescript
-// storePromptMessageId — in sendWizardStepMessage
-const sentMessageId = await sendTelegramMessageWithKeyboard(chatId, step.prompt, keyboard);
-if (sentMessageId) {
-  await storePromptMessageId(supabase, userId, "_amountPromptMessageId", sentMessageId);
-}
+// sendOrEditStep — eliminates 5x duplicated send/edit/store pattern
+await sendOrEditStep(chatId, messageId, step.prompt, keyboard, supabase, userId, "_amountPromptMessageId");
 
-// getNextWizardStep — in handleTransactionWizard
-const nextStep = await getNextWizardStep(supabase, wizardName, currentStep.step_order);
-if (nextStep) {
-  await setWizardState(supabase, userId, `${wizardName}_${nextStep.step_key}`, {
-    ...state.data,
-    amount: value,
-  });
-  // ... edit prompt, delete user message, send next step
-} else {
-  await completeWizard(supabase, userId, chatId, { ...state.data, amount: value });
-}
+// advanceWithConfirmation — eliminates 8x duplicated pattern
+return await advanceWithConfirmation(
+  supabase, userId, chatId, wizardName, currentStep, state,
+  stepKey, value, confirmText, promptMessageId, userMessageId,
+  completeWizard // or completeRecurrenceWizard
+);
 
 // advanceWizardToNextStep — called by callback handlers (e.g., wiz_done_tags, wiz_freq_detail)
-// Confirmation edit runs FIRST, then next step query:
 await advanceWizardToNextStep(supabase, user.id, chatId, wizard.currentStep, sessionSeq, newStateData, message.message_id);
 
 // buildDeleteConfirmKeyboard — in callback handlers
@@ -123,13 +157,30 @@ const keyboard = buildDeleteConfirmKeyboard(
   addSession("cat_back", sessionSeq),
 );
 
-// buildDateKeyboard — in sendWizardStepMessage
+// buildDateKeyboard — in step sender functions
 const keyboard = buildDateKeyboard({
   todayCallback: (date) => addSession(`wiz_date_${date}`, sessionSeq),
   yesterdayCallback: (date) => addSession(`wiz_date_${date}`, sessionSeq),
   customCallback: addSession("custom_date", sessionSeq),
 });
 ```
+
+## `handlers/callbacks.ts` — Inline Keyboard Routing
+
+### Shared Helpers
+
+| Function | Description |
+|----------|-------------|
+| `removeUnusedEntities(supabase, userId, table, fkColumn, ownerColumn, flagColumn, flagValue)` | Queries transactions to find unused entity IDs, deletes them. Used by `confirm_cleanup` for both categories (`is_predefined = false`) and groups (`is_default = false`). Replaces previously duplicated inline blocks |
+| `handleGroupFilterCallback(supabase, telegramId, chatId, prefix, selectedValue)` | Routes balance/summary group filter buttons (`*_shwgrp`, `*_grp_*`) to show keyboard or execute filtered query |
+
+### `FREQ_LABELS` (exported from wizard.ts)
+
+Shared constant mapping frequency type keys to PT labels. Used by `rec_edit_set_freqtype_` callback handler, `buildStepConfirmation`, and `buildRecurrenceSuccessMsg`.
+
+### `handleWizardInput` (exported from wizard.ts)
+
+Unified router for all wizard text input. Called from `index.ts` when user sends text while in any wizard state (gasto/receita/recorrencia). Deduces wizard name from `state.step` prefix. See services.md for full signature.
 
 ## `services/deepseek.ts` — Natural Language Processing
 

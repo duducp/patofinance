@@ -1,5 +1,8 @@
 # Handlers Reference
 
+> 📖 Register completo de todos os callbacks que seguem o padrão **edit-in-place** (19 callbacks): [`AGENTS.md` > In-Place Callbacks — Complete Register](../../AGENTS.md#in-place-callbacks--complete-register)
+> Padrão formal de in-place editing: [`patterns.md` > §17 In-Place Editing](patterns.md#17-in-place-editing-edit-in-place)
+
 ## Module: `handlers/commands.ts` — Slash Commands
 
 All handler parameter convention: `(supabase, userId, chatId, ...args)` where `userId` is the Telegram ID (not internal DB id).
@@ -23,14 +26,6 @@ Lists all slash commands + NL example phrases.
 - Parses args via `parseCommand()` for `--data`, `--grupo`, `#tags`, amount, category
 - Checks similar entities before creating
 - Inserts transaction + shows success message
-
-### `handleStatement(supabase, userId, chatId, page?, typeFilter?, filters?)`
-- Complex handler with full filtering capability
-- Resolves period from filters or defaults to "this_month"
-- Shows income/expense sections separately
-- Pagination with `◀️ Anterior` / `▶️ Próximo` buttons
-- Filter toggle: income / expense / all
-- "Novo filtro" button opens filter panel
 
 ### `handleSummary(supabase, userId, chatId, args?)`
 - Delegates to `getSummaryData()` + `formatSummaryMessage()`
@@ -235,11 +230,6 @@ Lists all slash commands + NL example phrases.
 - Shows edit action buttons (same pattern as edit transaction fields)
 - Each field opens its own edit flow (text input or select)
 
-### `handleEditRecurrenceField(supabase, userId, chatId, recId, field)`
-- Editable fields: amount, description, category, group, frequency, tags, start_date
-- Text input: amount, description, start_date, frequency detail
-- Select: category, group, frequency type
-
 ## Module: `handlers/wizard.ts` — Wizards
 
 ### `getWizardState(supabase, userId)` → `WizardState | null`
@@ -252,10 +242,19 @@ Lists all slash commands + NL example phrases.
 - Deletes wizard state row
 
 ### `sendWizardStepMessage(chatId, step, userId, supabase, sessionSeq, messageId?)`
-- Renders step UI: text input, category select, group select, tags, date picker
+- **Dispatches to 9 step sender functions** via `switch` on `step.step_key`:
+  - `sendCategoryStep` / `sendGroupStep` — keyboard grids with "✏️ Nova" buttons
+  - `sendTagsStep` — toggle buttons + text input + done/skip
+  - `sendDescriptionStep` — text with "⏭️ Pular" button
+  - `sendDateStep` — "Hoje/Ontem/Outra data" buttons (also handles `start_date` via `prefix` param)
+  - `sendTypeStep` — "Despesa/Receita" buttons
+  - `sendAmountStep` — plain text (user types)
+  - `sendGenericSelectStep` — dynamic keyboard from `wizard_step_options` table
+  - `sendDefaultStep` — plain text fallback
+- All 9 use the shared `sendOrEditStep` helper to eliminate the duplicated send/edit pattern
 - `sessionSeq` — session protection sequence for callback data
 - `messageId?` — if provided, **edits** existing message in-place instead of sending new
-- For text-input steps (amount, description, tags), stores the returned `message_id` in wizard state as `_<step>PromptMessageId` for later in-place editing
+- For text-input steps (amount, description, tags), `sendOrEditStep` stores the returned `message_id` in wizard state as `_<step>PromptMessageId` for later in-place editing
 
 ### `completeWizard(supabase, userId, chatId, data)`
 - Creates transaction from accumulated wizard data
@@ -272,11 +271,12 @@ Lists all slash commands + NL example phrases.
 - Then finds next step by `step_order`
 - Sends next step or completes wizard (calls `completeRecurrenceWizard` for recorrencia, `completeWizard` otherwise)
 
-### `handleEntityRename(type, supabase, userId, chatId, entityName)`
+### `handleEntityRename(type, supabase, userId, chatId, entityName, messageId)`
 - Starts a rename wizard for a category or group
 - `type: "category" | "group"` — verifies the entity is not predefined/default before proceeding
+- `messageId: number` — edits the callback message in-place via `editTelegramMessageWithKeyboard(chatId, messageId, ...)` to show "✏️ Digite o novo nome" prompt, removing the action menu buttons
 - Sets wizard state with step `rename_cat` or `rename_grp` and the old name in data
-- The user's next text input is handled by `handleTransactionWizard` which reads `state.data.name`
+- The user's next text input is handled by `handleWizardInput` which reads `state.data.name`
 
 ### `handleEntityDeletePrompt(type, supabase, userId, chatId, entityName, sessionSeq)`
 - Shows a delete confirmation dialog with the entity's transaction count
@@ -291,15 +291,16 @@ Lists all slash commands + NL example phrases.
 - Deletes the entity row from categories/groups table
 - Sends success message with count of reassigned transactions
 
-### `handleTransactionWizard(type, supabase, userId, chatId, state, input, userMessageId?)`
-- Routes wizard input by step key
-- `userMessageId?` — when provided, the user's typed message is **deleted** after processing
-- **Amount step:** edits prompt in-place to `✅ 💰 Valor: R$ XX,XX`, deletes user message, advances
-- **Description step:** edits prompt to `✅ 📝 Descrição: texto`, deletes user message, advances
-- **Category/Group text input:** edits prompt to `✅ 🏷️ Categoria: nome` / `✅ 📁 Grupo: nome`, deletes user message, advances
-- **Tags step:** accumulates tags (multi-step text input), re-renders tag keyboard in-place, deletes user message
-- **Custom date:** edits prompt to `✅ 📅 Data: DD/MM/AAAA`, deletes user message, advances
-- **Default:** sets `[stepKey]: value` in wizard state and advances
+### `handleWizardInput(supabase, userId, chatId, state, input, userMessageId?)`
+- Unified router for all wizard text input (gasto/receita/recorrencia)
+- Deduces `wizardName` from `state.step` prefix (`"gasto"` → expense, `"receita"` → income, `"recorrencia"` → completion via `completeRecurrenceWizard`)
+- **Standard steps (amount, description, category, group):** Uses shared `advanceWithConfirmation` helper — edits prompt to `✅ 💰 Valor: R$ XX,XX` / `✅ 📝 Descrição: texto` / `✅ 🏷️ Categoria: nome` / `✅ 📁 Grupo: nome`, deletes user msg, advances or completes
+- **Amount step:** validates via `parseAmount` helper (handles comma → dot)
+- **Tags step:** accumulates tags via `handleTagsInput` (re-renders tag keyboard, deletes user msg)
+- **Custom date (gasto/receita only, `_custom_date`):** edits prompt to `✅ 📅 Data: DD/MM/AAAA`, advances to tags step or completes
+- **Recurrence frequency detail (`recorrencia_freq_detail`):** routes by freq type (every_x_days/monthly/annual via text, weekly via keyboard callback), uses `buildFreqDetailConfirm` + `advanceFreqDetailToTags` helpers
+- **Recurrence start date (`recorrencia_start_date`):** edits prompt to `✅ 📅 Data de início: DD/MM/AAAA`, deletes user message, completes via `completeRecurrenceWizard`
+- **Fallthrough:** sets `[stepKey]: value` in wizard state and advances, adds `type: "income"` for income wizard final data
 
 ### `toggleTagInWizardState(supabase, userId, tag)` → `string[]`
 - Toggles a tag on/off in the wizard state `data.tags` array
@@ -334,15 +335,6 @@ Lists all slash commands + NL example phrases.
 - Parses `state.step` (e.g., `"gasto_amount"`) into `wizardName` + `stepKey`
 - Returns `null` if no state exists or step definition is missing
 
-### `handleRecurrenceWizard(supabase, userId, chatId, state, input, userMessageId?)`
-- Routes recurrence wizard input by step key
-- `userMessageId?` — when provided, the user's typed message is **deleted** after processing
-- **Frequency detail:**
-  - `every_x_days`: validates interval, edits prompt to `✅ 🔄 Frequência: A cada X dias`, deletes user message
-  - `monthly`: validates day (1–31), edits prompt to `✅ 🔄 Frequência: Mensal (dia X)`, deletes user message
-  - `annual`: validates day + month, edits prompt to `✅ 🔄 Frequência: Anual (X de Mês)`, deletes user message
-- **Start date:** edits prompt to `✅ 📅 Data de início: DD/MM/AAAA`, deletes user message, completes wizard
-- **Amount/Description/Category/Group/Tags:** same visual confirmation pattern as `handleTransactionWizard`
 
 ## Module: `handlers/nl-processing.ts` — NL Routing
 
@@ -365,6 +357,10 @@ Lists all slash commands + NL example phrases.
 ## Module: `handlers/statement.ts` — Statement/Extrato Filter Panel
 
 Filte panel system for `/extrato` command with multi-select category, group, tag, type, and period filters.
+
+### `DEFAULT_FILTERS` (exported constant)
+- `ExtratoFilters` object with defaults: `{ category_id: null, group_id: null, tags: [], type: "all", period: "this_month", status: "all" }`
+- Used as fallback when no filter state exists
 
 ### `resolvePeriod(period)` → `{ start, end, label }`
 - Resolves period presets (`"this_month"`, `"last_month"`, `"last_15_days"`, etc.) to actual date ranges

@@ -2,14 +2,47 @@ import { InlineKeyboard, DeepSeekResponse, TelegramCallbackQuery } from "../type
 import { sendTelegramMessage, sendTelegramMessageWithKeyboard, editTelegramMessageWithKeyboard, answerCallbackQuery } from "../services/telegram.ts";
 import { getOrCreateUser, normalizeString, deleteTransactionById, userOrNullFilter, getOrCreateCategory, getOrCreateGroup, updateRecurrence } from "../services/database.ts";
 import { formatDateBR, parseDateBR, getTodayISOBR } from "../utils/formatting.ts";
+import { FREQ_LABELS } from "./wizard.ts";
+
 import { truncateCallbackData } from "../utils/rate-limiter.ts";
-import { getWizardState, setWizardState, clearWizardState, sendWizardStepMessage, getCurrentWizardStep, advanceWizardToNextStep, toggleTagInWizardState, buildTagKeyboard, buildCategoryKeyboard, buildGroupKeyboard, buildDateKeyboard, handleWizardSkip, handleEntityRename, handleEntityDeletePrompt, handleEntityDeleteExecute } from "./wizard.ts";
+import { getWizardState, setWizardState, clearWizardState, sendWizardStepMessage, getCurrentWizardStep, advanceWizardToNextStep, toggleTagInWizardState, buildTagKeyboard, buildCategoryKeyboard, buildGroupKeyboard, buildDateKeyboard, buildStepConfirmation, handleWizardSkip, handleEntityRename, handleEntityDeletePrompt, handleEntityDeleteExecute } from "./wizard.ts";
 import { executeNaturalLanguageAction } from "./nl-processing.ts";
 import { handleBalance, handleSummary, handleDetails, handleGroup, handleCategory, handleTransaction, showDetailsEditActions, showDetailsMainView } from "./commands.ts";
 import { handleRecurrences } from "./recurrences.ts";
 import { handleListTransactions, handleListByTag, handleSearch, showDeleteConfirmation } from "./management.ts";
 import { handleStatement, handleFilterCallback } from "./statement.ts";
 import { addSession, removeSession, validateCallbackSession, getSessionSeq, incrementSessionSeq } from "../utils/session.ts";
+
+/**
+ * Remove unused entities (categories or groups) that have no associated transactions.
+ */
+async function removeUnusedEntities(
+  supabase: any,
+  userId: number,
+  table: string,
+  fkColumn: string,
+  ownerColumn: number,
+  flagColumn: string,
+  flagValue: boolean,
+): Promise<void> {
+  const { data: usedIds } = await supabase
+    .from("transactions")
+    .select(fkColumn)
+    .eq("user_id", userId)
+    .not(fkColumn, "is", null);
+  const usedSet = new Set((usedIds || []).map((t: any) => t[fkColumn]));
+  const { data: allEntities } = await supabase
+    .from(table)
+    .select("id")
+    .eq("user_id", ownerColumn)
+    .eq(flagColumn, flagValue);
+  const unusedIds = (allEntities || [])
+    .filter((e: any) => !usedSet.has(e.id))
+    .map((e: any) => e.id);
+  if (unusedIds.length > 0) {
+    await supabase.from(table).delete().in("id", unusedIds);
+  }
+}
 
 async function handleGroupFilterCallback(
   supabase: any,
@@ -222,40 +255,8 @@ export async function handleCallbackQuery(
 
     // Handle cleanup (clean up unused categories/groups)
     if (selectedValue === "confirm_cleanup") {
-      // Find and delete unused categories
-      const { data: catCounts } = await supabase
-        .from("transactions")
-        .select("category_id")
-        .eq("user_id", user.id)
-        .not("category_id", "is", null);
-      const usedCatIds = new Set((catCounts || []).map((t: any) => t.category_id));
-      const { data: allCats } = await supabase
-        .from("categories")
-        .select("id")
-        .eq("user_id", user.id)
-        .eq("is_predefined", false);
-      const unusedCatIds = (allCats || []).filter((c: any) => !usedCatIds.has(c.id)).map((c: any) => c.id);
-      if (unusedCatIds.length > 0) {
-        await supabase.from("categories").delete().in("id", unusedCatIds);
-      }
-
-      // Find and delete unused non-default groups
-      const { data: grpCounts } = await supabase
-        .from("transactions")
-        .select("group_id")
-        .eq("user_id", user.id)
-        .not("group_id", "is", null);
-      const usedGrpIds = new Set((grpCounts || []).map((t: any) => t.group_id));
-      const { data: allGrps } = await supabase
-        .from("groups")
-        .select("id")
-        .eq("user_id", user.id)
-        .eq("is_default", false);
-      const unusedGrpIds = (allGrps || []).filter((g: any) => !usedGrpIds.has(g.id)).map((g: any) => g.id);
-      if (unusedGrpIds.length > 0) {
-        await supabase.from("groups").delete().in("id", unusedGrpIds);
-      }
-
+      await removeUnusedEntities(supabase, user.id, "categories", "category_id", user.id, "is_predefined", false);
+      await removeUnusedEntities(supabase, user.id, "groups", "group_id", user.id, "is_default", false);
       await sendTelegramMessage(chatId, "🧹 Itens sem uso removidos com sucesso!");
       return;
     }
@@ -300,6 +301,7 @@ export async function handleCallbackQuery(
       const state = await getWizardState(supabase, user.id);
       if (!state || state.step !== "tx_ask_desc") return;
       await setWizardState(supabase, user.id, `tx_await_desc_${txId}`, state.data);
+      await editTelegramMessageWithKeyboard(chatId, message.message_id, "✏️ Digitando descrição...", []);
       await sendTelegramMessage(chatId, "✏️ Digite a descrição:");
       return;
     }
@@ -423,7 +425,8 @@ export async function handleCallbackQuery(
         .from("wizard_states")
         .update({ step: `nl_creating_category_${intent}`, data: state.data })
         .eq("user_id", user.id);
-      await sendTelegramMessage(chatId, "✏️ Digite o nome da nova categoria:");
+      // Edit the NL category selection message in-place to show the prompt
+      await editTelegramMessageWithKeyboard(chatId, message.message_id, "✏️ Digite o nome da nova categoria:", []);
       return;
     }
 
@@ -540,6 +543,8 @@ export async function handleCallbackQuery(
     // Handle edit date custom (MUST come before edit_)
     if (selectedValue.startsWith("edit_date_custom_")) {
       const transactionId = selectedValue.replace("edit_date_custom_", "");
+      // Edit date keyboard to show "Outra data" as confirmation before sending prompt
+      await editTelegramMessageWithKeyboard(chatId, message.message_id, "📅 Alterando data...", []);
       await sendTelegramMessage(chatId, "Informe a nova data (formato: DD/MM/YYYY):");
       await setWizardState(supabase, user.id, "edit_date", { transaction_id: transactionId });
       return;
@@ -569,6 +574,7 @@ export async function handleCallbackQuery(
     // Handle edit group selection
     if (selectedValue.startsWith("edit_group_")) {
       const transactionId = selectedValue.replace("edit_group_", "");
+      await editTelegramMessageWithKeyboard(chatId, message.message_id, "📁 Alterando grupo...", []);
       const keyboard = await buildGroupKeyboard(supabase, user.id, sessionSeq, {
         callbackPrefix: `edit_group_sel_${transactionId}_`,
       });
@@ -607,6 +613,9 @@ export async function handleCallbackQuery(
     // Handle edit tags - show tag selection interface
     if (selectedValue.startsWith("edit_tags_")) {
       const transactionId = selectedValue.replace("edit_tags_", "");
+
+      // Edit the action menu in-place to show which field is being changed
+      await editTelegramMessageWithKeyboard(chatId, message.message_id, "🔖 Alterando tags...", []);
 
       // Get current transaction tags
       const { data: transaction } = await supabase.from("transactions").select("tags").eq("id", transactionId).eq("user_id", user.id).single();
@@ -680,12 +689,15 @@ export async function handleCallbackQuery(
     if (selectedValue.startsWith("edit_")) {
       const [action, transactionId] = selectedValue.replace("edit_", "").split("_");
       if (action === "amount") {
+        await editTelegramMessageWithKeyboard(chatId, message.message_id, "💰 Alterando valor...", []);
         await sendTelegramMessage(chatId, "Informe o novo valor:");
         await setWizardState(supabase, user.id, "edit_amount", { transaction_id: transactionId });
       } else if (action === "description" || action === "desc") {
+        await editTelegramMessageWithKeyboard(chatId, message.message_id, "📝 Alterando descrição...", []);
         await sendTelegramMessage(chatId, "Informe a nova descrição:");
         await setWizardState(supabase, user.id, "edit_description", { transaction_id: transactionId });
       } else if (action === "category") {
+        await editTelegramMessageWithKeyboard(chatId, message.message_id, "🏷️ Alterando categoria...", []);
         const keyboard = await buildCategoryKeyboard(supabase, user.id, sessionSeq, {
           callbackPrefix: `edit_cat_select_${transactionId}_`,
         });
@@ -695,6 +707,7 @@ export async function handleCallbackQuery(
           await sendTelegramMessage(chatId, "Nenhuma categoria disponível. Crie uma com /categoria");
         }
       } else if (action === "date") {
+        await editTelegramMessageWithKeyboard(chatId, message.message_id, "📅 Alterando data...", []);
         const keyboard = buildDateKeyboard({
           todayCallback: (date) => truncateCallbackData(`edit_date_select_${transactionId}_${date}`, sessionSeq),
           yesterdayCallback: (date) => truncateCallbackData(`edit_date_select_${transactionId}_${date}`, sessionSeq),
@@ -713,22 +726,23 @@ export async function handleCallbackQuery(
       const prompt = isCategory
         ? "✏️ Digite o nome da nova categoria:"
         : "✏️ Digite o nome do novo grupo:";
-      const msgId = await sendTelegramMessage(chatId, prompt);
-      // Overwrite the _categoryPromptMessageId / _groupPromptMessageId so the handler
-      // edits THIS prompt instead of the original category selection screen
-      if (msgId) {
-        const key = isCategory ? "_categoryPromptMessageId" : "_groupPromptMessageId";
-        const { data: currentState } = await supabase
-          .from("wizard_states")
-          .select("data")
-          .eq("user_id", user.id)
-          .maybeSingle();
-        if (currentState) {
-          await supabase.from("wizard_states").update({
-            data: { ...currentState.data, [key]: msgId },
-            expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
-          }).eq("user_id", user.id);
-        }
+
+      // Edit the callback message in-place to show the prompt (replaces the keyboard)
+      await editTelegramMessageWithKeyboard(chatId, message.message_id, prompt, []);
+
+      // Store the callback message ID as the promptMessageId so advanceWithConfirmation
+      // edits THIS message to the confirmation text (e.g., "✅ 🏷️ Categoria: Mercado")
+      const key = isCategory ? "_categoryPromptMessageId" : "_groupPromptMessageId";
+      const { data: currentState } = await supabase
+        .from("wizard_states")
+        .select("data")
+        .eq("user_id", user.id)
+        .maybeSingle();
+      if (currentState) {
+        await supabase.from("wizard_states").update({
+          data: { ...currentState.data, [key]: message.message_id },
+          expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+        }).eq("user_id", user.id);
       }
       return;
     }
@@ -797,11 +811,11 @@ export async function handleCallbackQuery(
 
     // Handle category/group: rename
     if (selectedValue.startsWith("cat_ren_")) {
-      await handleEntityRename("category", supabase, user.id, chatId, selectedValue.replace("cat_ren_", ""));
+      await handleEntityRename("category", supabase, user.id, chatId, selectedValue.replace("cat_ren_", ""), message.message_id);
       return;
     }
     if (selectedValue.startsWith("grp_ren_")) {
-      await handleEntityRename("group", supabase, user.id, chatId, selectedValue.replace("grp_ren_", ""));
+      await handleEntityRename("group", supabase, user.id, chatId, selectedValue.replace("grp_ren_", ""), message.message_id);
       return;
     }
 
@@ -854,14 +868,26 @@ export async function handleCallbackQuery(
 
     // Handle custom_date for wizards
     if (selectedValue === "custom_date") {
-      const state = await getWizardState(supabase, user.id);
-      if (!state) return;
-      const underscoreIndex = state.step.indexOf("_");
-      const currentWizardName = state.step.substring(0, underscoreIndex);
-      const msgId = await sendTelegramMessage(chatId, "📅 Informe a data (formato: DD/MM/YYYY):");
-      await setWizardState(supabase, user.id, `${currentWizardName}_custom_date`, {
-        ...state.data,
-        _customDatePromptMessageId: msgId,
+      const stateData = await getWizardState(supabase, user.id);
+      if (!stateData) return;
+      const underscoreIndex = stateData.step.indexOf("_");
+      const currentWizardName = stateData.step.substring(0, underscoreIndex);
+      const stepKey = stateData.step.substring(underscoreIndex + 1);
+
+      // Edit the callback message in-place to show the date prompt (replaces date keyboard)
+      await editTelegramMessageWithKeyboard(chatId, message.message_id, "📅 Informe a data (formato: DD/MM/YYYY):", []);
+
+      // For start_date (recurrence wizard), keep the original step so
+      // handleWizardInput processes the text input.
+      // For date steps (gasto/receita), use the _custom_date suffix which
+      // handleWizardInput explicitly handles.
+      const newStep = stepKey === "start_date"
+        ? stateData.step
+        : `${currentWizardName}_custom_date`;
+
+      await setWizardState(supabase, user.id, newStep, {
+        ...stateData.data,
+        _customDatePromptMessageId: message.message_id,
       });
       return;
     }
@@ -1040,11 +1066,20 @@ export async function handleCallbackQuery(
       const recId = parseInt(rest.substring(underscoreIdx + 1), 10);
       if (!isNaN(recId) && field) {
         if (field === "amount" || field === "description" || field === "start_date") {
+          const editLabels: Record<string, string> = {
+            amount: "💰 Alterando valor...",
+            description: "📝 Alterando descrição...",
+            start_date: "📅 Alterando data de início...",
+          };
           const prompts: Record<string, string> = {
             amount: "💰 Digite o novo valor:",
             description: "📝 Digite a nova descrição:",
             start_date: "📅 Digite a nova data de início (DD/MM/YYYY):",
           };
+
+          // Edit the action menu to show which field is being changed
+          await editTelegramMessageWithKeyboard(chatId, message.message_id, editLabels[field], []);
+
           const msgId = await sendTelegramMessage(chatId, prompts[field]);
           await setWizardState(supabase, user.id, `rec_edit_${field}`, {
             recurrence_id: recId,
@@ -1052,11 +1087,13 @@ export async function handleCallbackQuery(
           });
         } else if (field === "category" || field === "group" || field === "frequency" || field === "tags") {
           if (field === "category") {
+            await editTelegramMessageWithKeyboard(chatId, message.message_id, "🏷️ Alterando categoria...", []);
             const cb = await buildCategoryKeyboard(supabase, user.id, sessionSeq, {
               callbackPrefix: `rec_edit_set_cat_${recId}_`,
             });
             await sendTelegramMessageWithKeyboard(chatId, "🏷️ Selecione a nova categoria:", cb);
           } else if (field === "group") {
+            await editTelegramMessageWithKeyboard(chatId, message.message_id, "📁 Alterando grupo...", []);
             const cb = await buildGroupKeyboard(supabase, user.id, sessionSeq, {
               callbackPrefix: `rec_edit_set_grp_${recId}_`,
             });
@@ -1066,6 +1103,7 @@ export async function handleCallbackQuery(
               await sendTelegramMessage(chatId, "📁 Nenhum grupo encontrado. Crie um com /grupo");
             }
           } else if (field === "frequency") {
+            await editTelegramMessageWithKeyboard(chatId, message.message_id, "🔄 Alterando frequência...", []);
             const { data: stepData } = await supabase
               .from("wizard_steps")
               .select("id")
@@ -1085,6 +1123,7 @@ export async function handleCallbackQuery(
               await sendTelegramMessageWithKeyboard(chatId, "🔄 Selecione a nova frequência:", freqKeyboard);
             }
           } else if (field === "tags") {
+            await editTelegramMessageWithKeyboard(chatId, message.message_id, "🔖 Alterando tags...", []);
             const { keyboard, hasExistingTags } = await buildTagKeyboard(supabase, user.id, sessionSeq, {
               togglePrefix: `rec_edit_set_tag_${recId}_`,
             });
@@ -1143,6 +1182,11 @@ export async function handleCallbackQuery(
       const recId = parseInt(parts[0], 10);
       const freqType = parts.slice(1).join("_");
       if (!isNaN(recId) && freqType) {
+        const confirmLabel = FREQ_LABELS[freqType] || freqType;
+
+        // Edit the frequency keyboard to show confirmation before proceeding
+        await editTelegramMessageWithKeyboard(chatId, message.message_id, `✅ 🔄 Frequência: ${confirmLabel}`, []);
+
         if (freqType === "daily") {
           await updateRecurrence(supabase, user.id, recId, { frequency_type: freqType, frequency_interval: 1, frequency_month: null });
           await incrementSessionSeq(supabase, user.id);
@@ -1234,10 +1278,17 @@ export async function handleCallbackQuery(
       const freqWizard = await getCurrentWizardStep(supabase, user.id);
       if (!freqWizard || freqWizard.currentStep.wizard_name !== "recorrencia") return;
       const freq = selectedValue.replace("wiz_frequency_", "");
+      const newStateData = { ...freqWizard.state.data, frequency_type: freq, frequency_interval: freq === "daily" ? 1 : undefined };
+
       if (freq === "daily") {
-        const newStateData = { ...freqWizard.state.data, frequency_type: "daily", frequency_interval: 1 };
         await advanceWizardToNextStep(supabase, user.id, chatId, freqWizard.currentStep, sessionSeq, newStateData, message.message_id);
       } else {
+        // Edit frequency keyboard to show confirmation before sending detail prompt
+        const confirmText = buildStepConfirmation(freqWizard.currentStep, newStateData);
+        if (confirmText) {
+          await editTelegramMessageWithKeyboard(chatId, message.message_id, confirmText, []);
+        }
+
         await setWizardState(supabase, user.id, "recorrencia_freq_detail", {
           ...freqWizard.state.data,
           frequency_type: freq,

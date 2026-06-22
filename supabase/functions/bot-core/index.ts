@@ -24,8 +24,7 @@ import {
   getWizardState,
   setWizardState,
   clearWizardState,
-  handleTransactionWizard,
-  handleRecurrenceWizard,
+  handleWizardInput,
 } from "./handlers/wizard.ts";
 import {
   handleStart,
@@ -191,12 +190,8 @@ serve(async (req: Request): Promise<Response> => {
 
     const wizardState = await getWizardState(supabase, existingUser.id);
     if (wizardState && !text.startsWith("/")) {
-      if (wizardState.step.startsWith("recorrencia_")) {
-        await handleRecurrenceWizard(supabase, existingUser.id, message.chat.id, wizardState, text, message.message_id);
-      } else if (wizardState.step.startsWith("gasto_")) {
-        await handleTransactionWizard("expense", supabase, existingUser.id, message.chat.id, wizardState, text, message.message_id);
-      } else if (wizardState.step.startsWith("receita_")) {
-        await handleTransactionWizard("income", supabase, existingUser.id, message.chat.id, wizardState, text, message.message_id);
+      if (wizardState.step.startsWith("recorrencia_") || wizardState.step.startsWith("gasto_") || wizardState.step.startsWith("receita_")) {
+        await handleWizardInput(supabase, existingUser.id, message.chat.id, wizardState, text, message.message_id);
       } else if (wizardState.step.startsWith("tx_await_desc_")) {
         const txId = wizardState.step.replace("tx_await_desc_", "");
         const description = text.trim();

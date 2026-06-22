@@ -10,7 +10,7 @@ import { buildKeyboardGrid, buildEditKeyboard } from "../utils/keyboard.ts";
 import { findHelp } from "../utils/help-texts.ts";
 
 import { getSummaryData, formatSummaryMessage, formatFutureBlock, sendTransactionSuccess } from "./queries.ts";
-import { getWizardState, setWizardState, handleTransactionWizard } from "./wizard.ts";
+import { getWizardState, setWizardState, handleWizardInput } from "./wizard.ts";
 export { handleRecurrences, handleRecurrenceDetail, handleAdvanceRecurrence, handleSkipRecurrence, handleArchiveRecurrence, handleActivateRecurrence, handleEditRecurrence, handleManageRecurrences, handleAdvanceRecurrenceConfirm, handleSkipRecurrenceConfirm, handleArchiveRecurrenceConfirm, handleActivateRecurrenceConfirm } from "./recurrences.ts";
 
 export async function handleStart(chatId: number, firstName: string): Promise<void> {
@@ -224,11 +224,7 @@ export async function handleTransaction(
 
   const wizardState = await getWizardState(supabase, user.id);
   if (wizardState) {
-    if (type === "expense") {
-      await handleTransactionWizard("expense", supabase, user.id, chatId, wizardState, args[0] || "");
-    } else {
-      await handleTransactionWizard("income", supabase, user.id, chatId, wizardState, args[0] || "");
-    }
+    await handleWizardInput(supabase, user.id, chatId, wizardState, args[0] || "");
     return;
   }
 

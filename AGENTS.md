@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Telegram finance bot using Supabase Edge Functions + PostgreSQL.
+Telegram finance bot via Supabase Edge Functions + PostgreSQL.
 
 ## Quick Reference
 
@@ -16,12 +16,12 @@ make help             # List all commands
 
 ## Architecture
 
-Two Edge Functions:
+2 Edge Functions:
 
 | Function | Purpose |
 |----------|---------|
-| `bot-core` | Main webhook — processes Telegram messages, callbacks, wizards |
-| `auth-telegram` | Validates login codes from the web dashboard, creates Supabase Auth sessions |
+| `bot-core` | Main webhook — processes msgs, callbacks, wizards |
+| `auth-telegram` | Validates login codes from web dashboard, creates Supabase Auth sessions |
 
 ```text
 Telegram -> bot-core (webhook) -> Supabase DB -> Bot API response
@@ -36,45 +36,53 @@ Cron (pg_cron @ 06:00 BRT) -> process_recurrences() -> generates transactions
                                                  -> enqueues errors in notification_queue
 ```
 
-Runtime: **Deno** (not Node.js). Imports use `https://deno.land/std`, `https://esm.sh`.
+Runtime: **Deno** (not Node.js). Imports via `https://deno.land/std`, `https://esm.sh`.
 
-> 📖 Documentação detalhada de arquitetura em `docs/architecture/` — callbacks, database, handlers, wizard, patterns, overview.
+> 📖 Detalhes em `docs/architecture/` — callbacks, database, handlers, wizard, patterns, overview.
 
 ## Coding Patterns
 
-> 📖 Patterns detalhados com código: Handler convention, Send/Edit, Callback routing + ordering, Entity handler, Pagination, Parallel queries, Portuguese plurals, Session protection, Filter selectors, Error handling, TypeScript declarations, User resolution, Callback truncation — em [`docs/architecture/patterns.md`](docs/architecture/patterns.md)
+> 📖 Handler convention, Send/Edit, Callback routing + ordering, Entity handler, Pagination, Parallel queries, Portuguese plurals, Session protection, Filter selectors, Error handling, TypeScript declarations, User resolution, Callback truncation — em [`docs/architecture/patterns.md`](docs/architecture/patterns.md)
 
 ## NL Processing
 
-Natural language via DeepSeek API. Also used to parse period/date expressions in commands (`/saldo mes passado`, `/extrato janeiro 2025`, `/resumo ultimo mes`).
+Natural language via DeepSeek API. Parse period/date in commands (`/saldo mes passado`, `/extrato janeiro 2025`, `/resumo ultimo mes`).
 
-> 📖 Pipeline completo, architecture, category resolution, missing fields wizard, type disambiguation, intents — em [`docs/architecture/natural-language.md`](docs/architecture/natural-language.md)
+> 📖 Pipeline completo, category resolution, missing fields wizard, type disambiguation, intents — em [`docs/architecture/natural-language.md`](docs/architecture/natural-language.md)
 
 ## Documentation Must-Keep
 
-When adding new features or changing existing behavior, **always update ALL documentation**:
+When adding features or changing behavior, **always update ALL docs**:
 
 | Doc | What to update |
 |-----|----------------|
 | `README.md` | Command tables, feature list, NL examples |
-| `AGENTS.md` | Callback prefixes, handler functions, DB functions, file structure, patterns |
-| `docs/architecture/*.md` | Relevant architecture docs (callbacks, handlers, database, wizard, overview) |
-| `utils/help-texts.ts` | `/ajuda <comando>` text for each new command |
+| `AGENTS.md` | Callback prefixes, handler functions, DB functions, file structure, patterns. **In-Place Callbacks register** (19 callbacks) needs new entries if adding a callback with follow-up prompt |
+| `patterns.md` | Pattern #17 (In-Place Editing) — update Variant B examples, Emoji convention, or Checklist |
+| `callbacks.md` | Each callback's Message column (`Sends new` vs `Edits`/`Edits + sends new`) and Detail column with edit label |
+| `services.md` | New helpers: `advanceWithConfirmation`, `parseAmount`, `formatTags`, `FREQ_LABELS`, `removeUnusedEntities`. **Cross-reference** in-place register when adding new callbacks |
+| `handlers.md` | **Cross-reference** in-place register when adding new callback handlers that need follow-up prompts |
+| `database.md` | Schema changes, new tables/columns |
+| `wizard.md` | New wizard steps or state transitions |
+| `overview.md` | Architecture changes |
+| `utils/help-texts.ts` | `/ajuda <comando>` text per command |
 | `landing/index.html` | Command cards grid |
 
-**Rule of thumb:** A change that touches more than 2 files likely needs docs updates. Run `make test` and review all doc files before committing.
+**Rule:** New callback with follow-up prompt → update 5 places: AGENTS.md (register) + patterns.md (examples) + callbacks.md (Message+Detail) + services.md + handlers.md (cross-refs).
+
+**Rule:** Change touching >2 files likely needs docs updates. Run `make test` and review all doc files before commit.
 
 ## Critical Gotchas
 
-- **`verify_jwt = false`** in `supabase/config.toml` for local testing -- never commit with `true`
-- **Service Role Key** hardcoded for local dev (`your_service_role_key_here`) -- production uses env var
+- **`verify_jwt = false`** in `supabase/config.toml` for local testing — never commit with `true`
+- **Service Role Key** hardcoded for local dev (`your_service_role_key_here`) — prod uses env var
 - **Internal Supabase URL** is `http://kong:8000` inside Edge Functions, not `127.0.0.1:54321`
-- **Webhook secret token** must match between Telegram and Supabase secrets -- mismatch causes 401 errors
-- **TypeScript variable redeclaration** -- `const` in switch cases can cause boot errors. Use unique names per case.
-- **ALWAYS use CLI for deploy** -- `npx supabase functions deploy bot-core --no-verify-jwt`. The MCP tool `supabase_deploy_edge_function` doesn't read file content correctly.
-- **DeepSeek API key** required for natural language. Without it, bot only responds to slash commands.
-- **Callback data limit**: Telegram limits inline keyboard callback_data to 64 bytes. Use `truncateCallbackData()` from `rate-limiter.ts` (truncates at 60 chars) for any callback containing dynamic values (tags, category names, dates).
-- **Every callback handler MUST `return`**: Without an explicit return, the callback falls through to the generic wizard handler at the bottom of `handleCallbackQuery`, causing confusing errors.
+- **Webhook secret token** must match between Telegram and Supabase secrets — mismatch causes 401
+- **TypeScript variable redeclaration** — `const` in switch cases causes boot errors. Unique names per case.
+- **ALWAYS use CLI for deploy** — `npx supabase functions deploy bot-core --no-verify-jwt`. MCP tool doesn't read file content correctly.
+- **DeepSeek API key** required for NL. Without it, bot only responds to slash commands.
+- **Callback data limit**: Telegram limits `callback_data` to 64 bytes. Use `truncateCallbackData()` from `rate-limiter.ts` (truncates at 60 chars) for any callback with dynamic values (tags, category names, dates).
+- **Every callback handler MUST `return`**: Without explicit return, callback falls through to generic wizard handler at bottom of `handleCallbackQuery`, causing confusing errors.
 
 ## Debugging Tips
 
@@ -87,7 +95,7 @@ make dev-test-start
 # Test /despesa 50 alimentacao
 make dev-test-gasto
 
-# Test a custom webhook payload (edit the JSON inline)
+# Custom webhook payload
 curl -X POST http://127.0.0.1:54321/functions/v1/bot-core \
   -H "Content-Type: application/json" \
   -H "apikey: sb_publishable_ACJWlzQHlZjBrEguHvfOxg_3BJgxAaH" \
@@ -95,7 +103,7 @@ curl -X POST http://127.0.0.1:54321/functions/v1/bot-core \
   -d '{"update_id": 99, "message": {"message_id": 99, "from": {"id": 123, "first_name": "Test"}, "chat": {"id": 123, "type": "private"}, "date": 1234567890, "text": "/saldo"}}'
 ```
 
-**To test callbacks**, change the payload to use `callback_query` instead of `message`:
+**Test callbacks** via `callback_query` instead of `message`:
 
 ```bash
 curl -X POST http://127.0.0.1:54321/functions/v1/bot-core \
@@ -108,7 +116,7 @@ curl -X POST http://127.0.0.1:54321/functions/v1/bot-core \
 ### 2. View Logs
 
 ```bash
-# Local: tail function logs (runs the function in serve mode)
+# Local: tail function logs
 make dev-logs
 
 # Production: recent deployment logs
@@ -118,10 +126,9 @@ make prod-logs
 ### 3. Check Webhook Status
 
 ```bash
-# Verify webhook is set and working
 make prod-webhook-info
 
-# Expected output (condensed):
+# Expected:
 # {
 #   "ok": true,
 #   "result": {
@@ -134,130 +141,113 @@ make prod-webhook-info
 # }
 ```
 
-**If `last_error_message` is not null**, it will say why webhook calls are failing:
+**If `last_error_message` not null:**
 
-- `"502 Bad Gateway"` -> Function crashed on boot (check `make check` + `make lint`)
-- `"401 Unauthorized"` -> `TELEGRAM_SECRET_TOKEN` mismatch between Supabase secrets and webhook config
-- `"Read timed out"` -> Function took >10s to respond (check for slow DB queries or infinite loops)
+- `"502 Bad Gateway"` → Function crashed on boot (check `make check` + `make lint`)
+- `"401 Unauthorized"` → `TELEGRAM_SECRET_TOKEN` mismatch
+- `"Read timed out"` → Function took >10s (slow DB queries or infinite loops)
 
 ### 4. Diagnose Silent Callback Failures
 
-If clicking a button does nothing:
+If button does nothing:
 
-1. Check the callback prefix in `handleCallbackQuery` -- typos in `startsWith()` are the #1 cause
-2. Verify the `callback_data` you generate matches the prefix you check:
+1. Check prefix in `handleCallbackQuery` — typos in `startsWith()` are #1 cause
+2. Verify callback_data matches prefix:
    ```typescript
    // Generating: `my_prefix_${id}`
-   // Checking:   `selectedValue.startsWith("my_prefix_")` -- note trailing underscore!
+   // Checking:   `selectedValue.startsWith("my_prefix_")` — note trailing underscore!
    ```
-3. Check if the callback falls through to the generic wizard handler (every `if` needs `return;`)
-4. Check if `truncateCallbackData()` cut off a critical part of the callback data (e.g., the distinguishing suffix)
-5. Test the exact callback payload via curl (see #1 above)
+3. Check if callback falls through to generic wizard handler (every `if` needs `return;`)
+4. Check if `truncateCallbackData()` cut off critical part
+5. Test exact callback payload via curl
 
 ### 5. Type-Check and Lint
 
 ```bash
-# Quick type-check (catches 90% of bugs)
+# Quick type-check (catches 90%)
 make check
 
-# Full lint (catches unused vars, style issues)
+# Full lint
 make lint
 
 # Both + boot test
 make test
 ```
 
-**Common type errors and fixes:**
+**Common type errors:**
 
-- `TS2304: Cannot find name 'X'` -> Missing import (check the import block at the top of the file)
-- `TS2345: Argument of type 'X' is not assignable to parameter of type 'Y'` -> Wrong parameter passed to a handler (e.g., passed DB `user.id` instead of Telegram ID)
-- `TS2322: Type 'string | null' is not assignable to type 'string'` -> Add null check or default value
-- `TS7006: Parameter 'X' implicitly has an 'any' type` -> Add explicit type annotation
+- `TS2304: Cannot find name 'X'` → Missing import
+- `TS2345: Argument type mismatch` → Wrong parameter (e.g., DB `user.id` instead of Telegram ID)
+- `TS2322: string | null not assignable to string` → Add null check
+- `TS7006: Parameter has implicit any` → Add explicit type
 
 ### 6. Debug Deno Boot Errors
 
 ```bash
-# Test if the function boots without deploying
 make test-boot
 
-# If it fails, run deno check directly for detailed output:
+# Direct check for details:
 deno check supabase/functions/bot-core/index.ts
 ```
 
 **Common boot errors:**
-- `Uncaught SyntaxError: Identifier 'X' has already been declared` -> `const` redeclaration in switch/case. Rename variables to be unique per case block.
-- `Uncaught TypeError: Deno.env.get is not a function` -> Missing `--allow-env` permission (not applicable in Edge Functions; the runtime provides it)
-- `Uncaught TypeError: Cannot read properties of null (reading 'X')` -> Missing env var. Check that `TELEGRAM_BOT_TOKEN` and `SUPABASE_SERVICE_ROLE_KEY` are set.
+- `Uncaught SyntaxError: Identifier 'X' already declared` → `const` redeclaration in switch/case. Unique names per block.
+- `Uncaught TypeError: Deno.env.get is not a function` → Permissions (not applicable in Edge Functions)
+- `Uncaught TypeError: Cannot read properties of null` → Missing env var
 
 ### 7. Debug NL Processing
 
 ```bash
-# Check if common phrase matching works (bypasses API)
-# The bot logs what common phrase matched via console.log
-
-# To test if DeepSeek API key is set:
-# - If NL fails silently, try a slash command instead
-# - If slash commands work but NL returns "desculpe" -> API key issue or timeout
-
-# Check the nlCache (5min TTL): same query within 5min uses cached response
+# Common phrase matching logs matched phrase
+# If NL fails silently, try slash command instead
+# If slash commands work but NL returns "desculpe" → API key issue or timeout
+# nlCache (5min TTL): same query within 5min uses cached response
 ```
 
 ### 8. Supabase Dashboard
 
-Useful dashboard pages for debugging:
-- **Edge Functions** -> `bot-core` -> Logs: see function invocations and errors
-- **SQL Editor**: run ad-hoc queries to inspect data:
+Useful pages:
+- **Edge Functions** → `bot-core` → Logs
+- **SQL Editor**: ad-hoc queries:
   ```sql
-  -- Check user exists
   SELECT * FROM users WHERE telegram_id = 123;
-
-  -- Check recent transactions
   SELECT * FROM transactions WHERE user_id = 1 ORDER BY created_at DESC LIMIT 5;
-
-  -- Check wizard state
   SELECT * FROM wizard_states WHERE user_id = 1;
-
-  -- Check a callback data for truncation issues
   SELECT length('txlist_t#minha_tag_muito_longa_p1') as cb_length;
   ```
-- **Database** -> `wizard_states`: manually clear a stuck wizard state by deleting the row
+- **Database** → `wizard_states`: delete row to clear stuck state
 
 ### 9. Debug Deploy Issues
 
 ```bash
-# Deploy failed? Check the error message from:
 npx supabase functions deploy bot-core --no-verify-jwt
+# Errors: "Failed to parse config.toml", "Import failed", "Function size exceeds limit"
 
-# Common deploy errors:
-# - "Failed to parse config.toml" -> syntax error in config.toml
-# - "Import failed" -> missing or unreachable remote import
-# - "Function size exceeds limit" -> too many imports, use smaller deps
-
-# After successful deploy, verify:
+# After deploy, verify:
 curl -X POST "https://api.telegram.org/bot$(BOT_TOKEN)/getWebhookInfo" | jq '.result.last_error_message'
 ```
 
 ## Development Workflow
 
-**Rule: Always test Edge Functions locally before deploying to production.**
+**Rule: Always test locally before deploying to prod.**
 
-**Rule: Always use CLI for deploy, not the MCP tool.**
+**Rule: Always use CLI for deploy, not MCP tool.**
 
 ```bash
 make dev-deploy             # Deploy locally first
-make dev-test-start         # Test the change
+make dev-test-start         # Test change
 make dev-test-gasto         # Test another command
-# Only then:
-make prod-deploy            # Deploy to production (uses CLI)
+# Then:
+make prod-deploy            # Deploy to prod (uses CLI)
 ```
 
 **Deploy method:**
 
 ```bash
-# CORRECT - Use CLI
+# CORRECT
 npx supabase functions deploy bot-core --no-verify-jwt
 
-# WRONG - MCP tool doesn't read file content correctly
+# WRONG - MCP tool unreliable
 # supabase_deploy_edge_function (not reliable)
 ```
 
@@ -267,7 +257,7 @@ npx supabase functions deploy bot-core --no-verify-jwt
 
 ```bash
 make install            # Install Supabase CLI
-make install-login      # Login to Supabase (paste access token)
+make install-login      # Login to Supabase
 make install-link       # Link to project zjcfjqtlijktrikgvwrv
 ```
 
@@ -275,54 +265,55 @@ make install-link       # Link to project zjcfjqtlijktrikgvwrv
 
 ```bash
 make dev                # Start local Supabase
-make dev-stop           # Stop local Supabase
+make dev-stop           # Stop
 make dev-serve          # Run Edge Function locally (streams logs)
-make dev-logs           # Tail local function logs (alias for dev-serve)
-make dev-deploy         # Deploy Edge Function locally
+make dev-logs           # Alias for dev-serve
+make dev-deploy         # Deploy locally
 make dev-db-push        # Push migrations locally
-make dev-db-reset       # Reset local database
-make dev-test-start     # Test /start via curl
-make dev-test-gasto     # Test /despesa via curl
-make dev-test-saldo     # Test /saldo via curl
-make dev-test-receita   # Test /receita via curl
-make dev-test-detalhes  # Test /detalhes via curl
-make dev-test-callback  # Test a callback via curl
+make dev-db-reset       # Reset local DB
+make dev-test-start     # Test /start
+make dev-test-gasto     # Test /despesa
+make dev-test-saldo     # Test /saldo
+make dev-test-receita   # Test /receita
+make dev-test-detalhes  # Test /detalhes
+make dev-test-callback  # Test callback
 ```
 
 ### Production
 
 ```bash
-make prod-deploy        # Push migrations + deploy both Edge Functions
+make prod-deploy        # Push migrations + deploy both functions
 make prod-deploy-fn     # Deploy bot-core only
 make prod-deploy-auth   # Deploy auth-telegram only
-make prod-db-push       # Push migrations to production
-make prod-webhook-set   # Set Telegram webhook URL
+make prod-db-push       # Push migrations
+make prod-webhook-set   # Set webhook URL
 make prod-webhook-info  # Check webhook status
 make prod-webhook-delete# Delete webhook
-make prod-logs          # Show recent deployment logs
+make prod-logs          # Show recent logs
 ```
 
 ### Both
 
 ```bash
 make secrets            # Set TELEGRAM_BOT_TOKEN + TELEGRAM_SECRET_TOKEN
-make status             # Show Supabase project status
+make status             # Show project status
 make open               # Open Supabase Dashboard
 ```
 
 ### Landing
 
 ```bash
-make landing-open       # Open landing page locally (serves landing/ on port 8080)
+make landing-open       # Serve landing/ on port 8080
 ```
 
 ### Quality
+
 ```bash
-make check              # Type-check (deno check)
-make lint               # Lint (deno lint)
-make unit               # Run unit tests (33+ tests)
-make test-boot          # Verify function boots without error
-make help              # Show all available commands
+make check              # Type-check
+make lint               # Lint
+make unit               # Run unit tests
+make test-boot          # Verify function boots
+make help              # All commands
 make test               # check + lint + unit + test-boot
 ```
 
@@ -333,33 +324,107 @@ make test               # check + lint + unit + test-boot
 | `TELEGRAM_BOT_TOKEN` | Supabase Secrets | Bot token from @BotFather |
 | `TELEGRAM_SECRET_TOKEN` | Supabase Secrets | Webhook verification token |
 | `SUPABASE_URL` | Auto-set by Supabase | Internal URL (`http://kong:8000` locally) |
-| `SUPABASE_SERVICE_ROLE_KEY` | Auto-set by Supabase | Used to bypass RLS |
-| `DEEPSEEK_API_KEY` | Supabase Secrets | DeepSeek API key for NL processing |
+| `SUPABASE_SERVICE_ROLE_KEY` | Auto-set by Supabase | Bypass RLS |
+| `DEEPSEEK_API_KEY` | Supabase Secrets | DeepSeek API key for NL |
 
 ## Database
 
 Project ref: `zjcfjqtlijktrikgvwrv`
 
-> 📖 Schema completo, tabelas, stored procedures, migrations, extensões — em [`docs/architecture/database.md`](docs/architecture/database.md)
+> 📖 Schema, tabelas, stored procedures, migrations, extensões — em [`docs/architecture/database.md`](docs/architecture/database.md)
 
 ## Wizard Visual Confirmation Pattern
 
-Every wizard step now follows a **visual confirmation pattern**:
-- When the user responds (types text or clicks a button), the **prompt message is edited in-place** to show `✅ Ícone: valor informado`
-- **Typed messages are deleted** — keeps the chat clean
+Every wizard step follows **visual confirmation pattern**:
+- User responds → **prompt message edited in-place** to `✅ Ícone: valor informado`
+- **Typed msgs deleted** — keeps chat clean
 - New prompts always advance in **new messages**
+
+### Text Input Steps
 
 | Step | Confirmation |
 |------|-------------|
 | amount | `✅ 💰 Valor: R$ 50,00` |
 | description | `✅ 📝 Descrição: ...` / `Nenhuma descrição informada` |
-| category | `✅ 🏷️ Categoria: Alimentação` |
-| group | `✅ 📁 Grupo: Pessoal` |
-| date | `✅ 📅 Data: 15/07/2026` |
+| category (typed) | `✅ 🏷️ Categoria: Alimentação` |
+| group (typed) | `✅ 📁 Grupo: Pessoal` |
+| date (typed) | `✅ 📅 Data: 15/07/2026` |
 | tags | `✅ 🔖 Tags: #tag1 #tag2` / `Nenhuma tag` |
-| frequency | `✅ 🔄 Frequência: A cada 15 dias` / `Mensal (dia 15)` / `Anual (15 de Jan)` |
+| frequency detail | `✅ 🔄 Frequência: A cada 15 dias` / `Mensal (dia 15)` / `Anual (15 de Jan)` |
 
-**Implementation:** Each text-input step stores a `_<step>PromptMessageId` in `wizard_states.data` when the prompt is sent via the shared `storePromptMessageId` helper. When the user responds, the handler reads this ID, calls `editTelegramMessageWithKeyboard` to show the confirmation, and `deleteTelegramMessage` to remove the user's message. Next-step lookups use the shared `getNextWizardStep` helper instead of inline supabase queries. See [`docs/architecture/wizard.md`](docs/architecture/wizard.md) for full details.
+### Keyboard/Button Steps
+
+When user clicks button, **original keyboard edited in-place** to show chosen value before next prompt sent.
+
+| Button Clicked | Resulting Message |
+|---------------|------------------|
+| Categoria/Grupo via teclado | `✅ 🏷️ Categoria: Alimentação` / `✅ 📁 Grupo: Pessoal` |
+| Data (Hoje/Ontem) | `✅ 📅 Data: 15/07/2026` |
+| Tipo (Despesa/Receita) | `✅ 📋 Tipo: 💸 Despesa` / `💰 Receita` |
+| Frequência (Diária) | `✅ 🔄 Frequência: Diária` |
+| Frequência (não-diária) | Teclado → `✅ 🔄 Frequência: Semanal` antes do sub-passo |
+
+**Implementation:**
+- **Text-input steps:** Store `_<step>PromptMessageId` in `wizard_states.data` via `storePromptMessageId`. Handler reads ID, calls `editTelegramMessageWithKeyboard` for confirmation, `deleteTelegramMessage` for user msg.
+- **Keyboard-to-next-step** (category, group, date, type, daily freq): Generic callback passes `message.message_id` to `advanceWizardToNextStep`, which calls `buildStepConfirmation` to edit keyboard in-place before querying next step.
+- **Keyboard-to-sub-step** (frequency non-daily): Handler explicitly edits `message.message_id` via `editTelegramMessageWithKeyboard` before sending follow-up prompt.
+- **`wizard_new_category` / `wizard_new_group` (typed input):** Edits the category/group selection screen in-place to show `"✏️ Digite o nome..."`, stores `message.message_id` as `_categoryPromptMessageId` / `_groupPromptMessageId`. When user types, `advanceWithConfirmation` edits the **same** message to the confirmation (e.g., `"✅ 🏷️ Categoria: Mercado"`). Buttons → prompt → confirmation in one message.
+- **`custom_date` (all wizards):** Edits the date selection screen in-place to show `"📅 Informe a data..."`, stores `message.message_id` as `_customDatePromptMessageId`. `handleWizardInput` edits the same message to `"✅ 📅 Data: DD/MM/YYYY"`.
+- **`custom_date` for `start_date` (recurrence wizard):** Original step (`recorrencia_start_date`) preserved instead of switching to `_custom_date` suffix, so `handleWizardInput` processes input correctly.
+
+Next-step lookups use `getNextWizardStep` helper. See [`docs/architecture/wizard.md`](docs/architecture/wizard.md).
+
+### Edit Flows Cleanup
+
+Same **edit-in-place** pattern applies to transaction and recurrence edit flows:
+
+| Button Clicked | Resulting Message |
+|---------------|------------------|
+| **Transação —** 💰 Valor | Menu → `💰 Alterando valor...` |
+| **Transação —** 📝 Descrição | Menu → `📝 Alterando descrição...` |
+| **Transação —** 📝 Sim/Não descrição (wizard) | Prompt → `✏️ Digitando descrição...` |
+| **Transação —** 🏷️ Categoria (via teclado) | Menu → `🏷️ Alterando categoria...` |
+| **Transação —** 📁 Grupo (via teclado) | Menu → `📁 Alterando grupo...` |
+| **Transação —** 📅 Data (via teclado) | Menu → `📅 Alterando data...` |
+| **Transação —** 📆 Outra data | Teclado → `📅 Alterando data...` |
+| **Transação —** 🔖 Tags (via teclado) | Menu → `🔖 Alterando tags...` |
+| **Recorrência —** 💰 Valor | Menu → `💰 Alterando valor...` |
+| **Recorrência —** 📝 Descrição | Menu → `📝 Alterando descrição...` |
+| **Recorrência —** 🏷️ Categoria (via teclado) | Menu → `🏷️ Alterando categoria...` |
+| **Recorrência —** 📁 Grupo (via teclado) | Menu → `📁 Alterando grupo...` |
+| **Recorrência —** 🔄 Frequência (via teclado) | Menu → `🔄 Alterando frequência...` |
+| **Recorrência —** 🔖 Tags (via teclado) | Menu → `🔖 Alterando tags...` |
+| **Recorrência —** 📅 Data de início | Menu → `📅 Alterando data de início...` |
+| **Recorrência —** Frequência (Diária) | Teclado → `✅ 🔄 Frequência: Diária` |
+| **Recorrência —** Frequência (não-diária) | Teclado → `✅ 🔄 Frequência: Semanal/Mensal/etc` |
+
+### In-Place Callbacks — Complete Register
+
+All 17 callbacks that use the edit-in-place pattern (edit `message.message_id` before sending follow-up):
+
+| # | Callback | Edit Label | Follow-up | Context |
+|---|----------|------------|-----------|---------|
+| 1 | `edit_amount` | `💰 Alterando valor...` | Text prompt | Transaction edit menu |
+| 2 | `edit_desc` | `📝 Alterando descrição...` | Text prompt | Transaction edit menu |
+| 3 | `edit_category` | `🏷️ Alterando categoria...` | Keyboard (categories) | Transaction edit menu |
+| 4 | `edit_group_` | `📁 Alterando grupo...` | Keyboard (groups) | Transaction edit menu |
+| 5 | `edit_date` | `📅 Alterando data...` | Keyboard (dates) | Transaction edit menu |
+| 6 | `edit_date_custom_` | `📅 Alterando data...` | Text prompt | Date keyboard → custom |
+| 7 | `edit_tags_` | `🔖 Alterando tags...` | Keyboard (tags) | Transaction edit menu |
+| 8 | `tx_desc_sim_` | `✏️ Digitando descrição...` | Text prompt | Post-creation description |
+| 9 | `rec_edit_field_` (amount/desc/date) | `💰/📝/📅 Alterando...` | Text prompt | Recurrence edit menu |
+| 10 | `rec_edit_field_` (cat/group/freq) | `🏷️/📁/🔄 Alterando...` | Keyboard | Recurrence edit menu |
+| 11 | `rec_edit_field_` (tags) | `🔖 Alterando tags...` | Keyboard (tags) | Recurrence edit menu |
+| 12 | `rec_edit_set_freqtype_` (daily) | `✅ 🔄 Frequência: Diária` | Success message | Frequency keyboard → daily |
+| 13 | `rec_edit_set_freqtype_` (non-daily) | `✅ 🔄 Frequência: {label}` | Text prompt | Frequency keyboard → detail |
+| 14 | `wizard_new_category` | `✏️ Digite o nome da nova categoria:` | (in-place → confirmation) | Wizard category screen |
+| 15 | `wizard_new_group` | `✏️ Digite o nome do novo grupo:` | (in-place → confirmation) | Wizard group screen |
+| 16 | `custom_date` | `📅 Informe a data...` | (in-place → confirmation) | Wizard date screen |
+| 17 | `nl_create_cat` | `✏️ Digite o nome da nova categoria:` | (in-place) | NL category selection |
+| 18 | `cat_ren_` / `grp_ren_` | `✏️ Digite o novo nome para *X*:` | (in-place) | Entity action menu |
+| 19 | `wiz_frequency_` (non-daily) | `✅ 🔄 Frequência: {label}` | Text prompt/keyboard | Frequency keyboard → detail |
+
+**Rule:** Every callback that leads to a follow-up prompt (text or keyboard) MUST edit `message.message_id` in-place first with a descriptive label. See pattern #17 in `docs/architecture/patterns.md`.
 
 ## Exported Functions Reference
 
@@ -367,9 +432,9 @@ Every wizard step now follows a **visual confirmation pattern**:
 
 ### `handlers/callbacks.ts` -- Inline keyboard routing
 
-Routes ~50 callback prefixes via `handleCallbackQuery`. Key callbacks:
+Routes ~50 callback prefixes via `handleCallbackQuery`.
 
-> 📖 Prefixos completos com Send/Edit — em [`docs/architecture/callbacks.md`](docs/architecture/callbacks.md)
+> 📖 Prefixos com Send/Edit — em [`docs/architecture/callbacks.md`](docs/architecture/callbacks.md)
 
 ## File Structure
 
@@ -416,6 +481,6 @@ supabase/
         ├── statement.ts            # Statement filter panel, generic filter selectors
         ├── nl-processing.ts        # NL routing + wizard initiation
         ├── recurrences.ts          # 13 recurrence handlers (list/manage/detail/advance+confirm/skip+confirm/archive+confirm/activate+confirm/edit/transactions)
-        ├── callbacks.ts            # ~55 callback prefix handlers
-        └── wizard.ts               # 7 wizard functions (state + step + advance) + visual confirmation + internal helpers (storePromptMessageId, getNextWizardStep) + entity management (rename, delete prompt, delete execute)
+        ├── callbacks.ts            # ~55 callback prefix handlers + removeUnusedEntities helper
+        └── wizard.ts               # 9 step senders (sendCategory/Group/Tags/Description/Date/Type/Amount/GenericSelect/Default) + 3 state functions (get/set/clear) + 5 keyboard builders (category, group, tag, date, delete confirm) + 2 completion functions (completeWizard, completeRecurrenceWizard) + 1 router (handleWizardInput) + 3 entity management (rename, delete prompt, delete execute) + toggleTag + getCurrentStep + advanceToNext + handleSkip + buildStepConfirmation + 10 internal helpers (storePromptMsgId, getNextStep, sendOrEditStep, advanceWithConfirmation, parseAmount, formatTags, buildFreqDetailConfirm, advanceFreqDetailToTags, handleTagsInput, buildRecurrenceSuccessMsg) + FREQ_LABELS constant
 ```

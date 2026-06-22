@@ -7,6 +7,22 @@ import { addSession, getSessionSeq } from "../utils/session.ts";
 import { sendTransactionSuccess } from "./queries.ts";
 import { buildKeyboardGrid } from "../utils/keyboard.ts";
 
+// ========== Shared Constants ==========
+
+/** Simple frequency type labels (without detail). Used by edit flows. */
+export const FREQ_LABELS: Record<string, string> = {
+  daily: "Diária",
+  weekly: "Semanal",
+  monthly: "Mensal",
+  annual: "Anual",
+  every_x_days: "A cada X dias",
+};
+
+const DAYS_OF_WEEK = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+const MONTHS = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
+
+// ========== State Management ==========
+
 /**
  * Read the current wizard state for a user.
  * Returns null if no state exists or if it has expired (auto-clears expired states).
@@ -53,9 +69,14 @@ export async function setWizardState(
   }
 }
 
+export async function clearWizardState(supabase: any, userId: number): Promise<void> {
+  await supabase.from("wizard_states").delete().eq("user_id", userId);
+}
+
+// ========== Internal Helpers ==========
+
 /**
  * Store a messageId reference in the wizard state (used for editing prompts in-place).
- * Reads existing state data, spreads it, and adds/overwrites the given key.
  */
 async function storePromptMessageId(
   supabase: any,
@@ -78,7 +99,6 @@ async function storePromptMessageId(
 
 /**
  * Query the next wizard step after the current one.
- * Returns the step row or undefined if this is the last step.
  */
 async function getNextWizardStep(
   supabase: any,
@@ -97,346 +117,255 @@ async function getNextWizardStep(
 }
 
 /**
- * Delete the wizard state for a user (clears any in-progress wizard).
+ * Advance wizard with visual confirmation: edit prompt, delete user msg,
+ * set state, send next step. Shared across all text-input steps.
  */
-export async function clearWizardState(supabase: any, userId: number): Promise<void> {
-  await supabase.from("wizard_states").delete().eq("user_id", userId);
-}
-
-/**
- * Render a wizard step to the user: builds the appropriate keyboard
- * (category, group, tags, description, date, or generic select) and
- * sends or edits the message.
- */
-export async function sendWizardStepMessage(
-  chatId: number,
-  step: any,
-  userId: number,
+async function advanceWithConfirmation(
   supabase: any,
-  sessionSeq: number,
-  messageId?: number
+  userId: number,
+  chatId: number,
+  wizardName: string,
+  currentStep: any,
+  state: WizardState,
+  stepKey: string,
+  value: string,
+  confirmText: string | null,
+  promptMessageId: number | undefined,
+  userMessageId: number | undefined,
+  completeFn: (supabase: any, userId: number, chatId: number, data: Record<string, any>) => Promise<void>,
 ): Promise<void> {
-  if (step.step_key === "category") {
-    const wizardType = step.wizard_name === "receita" ? "income" : step.wizard_name === "gasto" ? "expense" : undefined;
-    const keyboard = await buildCategoryKeyboard(supabase, userId, sessionSeq, {
-      callbackPrefix: "wiz_category_",
-      wizardType,
-      extraButtons: [[{ text: "✏️ Nova categoria", callback_data: addSession("wizard_new_category", sessionSeq) }]],
+  const nextStep = await getNextWizardStep(supabase, wizardName, currentStep.step_order);
+  if (nextStep) {
+    await setWizardState(supabase, userId, `${wizardName}_${nextStep.step_key}`, {
+      ...state.data,
+      [stepKey]: value,
     });
-    let sentMessageId: number | null = null;
-    if (messageId) {
-      await editTelegramMessageWithKeyboard(chatId, messageId, step.prompt, keyboard);
-    } else {
-      sentMessageId = await sendTelegramMessageWithKeyboard(chatId, step.prompt, keyboard);
+    if (confirmText && promptMessageId) {
+      await editTelegramMessageWithKeyboard(chatId, promptMessageId, confirmText, []);
     }
-    if (sentMessageId) {
-      await storePromptMessageId(supabase, userId, "_categoryPromptMessageId", sentMessageId);
+    if (userMessageId) {
+      await deleteTelegramMessage(chatId, userMessageId);
     }
-  } else if (step.step_key === "group") {
-    const keyboard = await buildGroupKeyboard(supabase, userId, sessionSeq, {
-      callbackPrefix: "wiz_group_",
-      extraButtons: [[{ text: "✏️ Novo grupo", callback_data: addSession("wizard_new_group", sessionSeq) }]],
-    });
-    let sentMessageId: number | null = null;
-    if (messageId) {
-      await editTelegramMessageWithKeyboard(chatId, messageId, step.prompt, keyboard);
-    } else {
-      sentMessageId = await sendTelegramMessageWithKeyboard(chatId, step.prompt, keyboard);
-    }
-    if (sentMessageId) {
-      await storePromptMessageId(supabase, userId, "_groupPromptMessageId", sentMessageId);
-    }
-  } else if (step.step_key === "tags") {
-    const { keyboard, currentTags, hasExistingTags } = await buildTagKeyboard(supabase, userId, sessionSeq, {
-      togglePrefix: "wiz_tag_",
-    });
-
-    // Only add Concluir button if there are existing tags to select
-    if (hasExistingTags) {
-      keyboard.push([
-        { text: "✅ Concluir", callback_data: addSession("wiz_done_tags", sessionSeq) },
-        { text: "⏭️ Pular", callback_data: addSession("wizard_skip_tags", sessionSeq) },
-      ]);
-    } else {
-      keyboard.push([
-        { text: "⏭️ Pular", callback_data: addSession("wizard_skip_tags", sessionSeq) },
-      ]);
-    }
-
-    let prompt = step.prompt;
-    if (currentTags.length > 0) {
-      prompt += `\n\n✅ Selecionadas: ${currentTags.join(" ")}`;
-    } else if (hasExistingTags) {
-      prompt += "\n\n💡 Clique nas tags para selecionar ou digite uma nova.";
-    } else {
-      prompt += "\n\n💡 Digite uma ou mais tags para criar.\nExemplo: `#mercado #alimentacao`";
-    }
-
-    let sentMessageId: number | null = null;
-    if (messageId) {
-      await editTelegramMessageWithKeyboard(chatId, messageId, prompt, keyboard);
-    } else {
-      sentMessageId = await sendTelegramMessageWithKeyboard(chatId, prompt, keyboard);
-    }
-    // Store the message_id so we can edit it later when user types tags
-    if (sentMessageId) {
-      await storePromptMessageId(supabase, userId, "_tagsPromptMessageId", sentMessageId);
-    }
-  } else if (step.step_key === "description") {
-    const keyboard: InlineKeyboard = [
-      [{ text: "⏭️ Pular", callback_data: addSession("wizard_skip_description", sessionSeq) }],
-    ];
-    let sentMessageId: number | null = null;
-    if (messageId) {
-      await editTelegramMessageWithKeyboard(chatId, messageId, step.prompt, keyboard);
-    } else {
-      sentMessageId = await sendTelegramMessageWithKeyboard(chatId, step.prompt, keyboard);
-    }
-    // Store the message_id so we can edit it later when user types a description
-    if (sentMessageId) {
-      await storePromptMessageId(supabase, userId, "_descPromptMessageId", sentMessageId);
-    }
-  } else if (step.step_key === "date") {
-    const keyboard = buildDateKeyboard({
-      todayCallback: (date) => addSession(`wiz_date_${date}`, sessionSeq),
-      yesterdayCallback: (date) => addSession(`wiz_date_${date}`, sessionSeq),
-      customCallback: addSession("custom_date", sessionSeq),
-    });
-    if (messageId) {
-      await editTelegramMessageWithKeyboard(chatId, messageId, step.prompt, keyboard);
-    } else {
-      await sendTelegramMessageWithKeyboard(chatId, step.prompt, keyboard);
-    }
-  } else if (step.step_key === "start_date") {
-    const keyboard = buildDateKeyboard({
-      todayCallback: (date) => addSession(`wiz_start_date_${date}`, sessionSeq),
-      yesterdayCallback: (date) => addSession(`wiz_start_date_${date}`, sessionSeq),
-      customCallback: addSession("custom_date", sessionSeq),
-    });
-    if (messageId) {
-      await editTelegramMessageWithKeyboard(chatId, messageId, step.prompt, keyboard);
-    } else {
-      await sendTelegramMessageWithKeyboard(chatId, step.prompt, keyboard);
-    }
-  } else if (step.step_key === "type") {
-    const keyboard: InlineKeyboard = [
-      [{ text: "💸 Despesa", callback_data: addSession("wiz_type_expense", sessionSeq) }],
-      [{ text: "💰 Receita", callback_data: addSession("wiz_type_income", sessionSeq) }],
-    ];
-    if (messageId) {
-      await editTelegramMessageWithKeyboard(chatId, messageId, step.prompt, keyboard);
-    } else {
-      await sendTelegramMessageWithKeyboard(chatId, step.prompt, keyboard);
-    }
-  } else if (step.step_key === "amount") {
-    // Amount is a text input step - just show the prompt without keyboard
-    let sentMessageId: number | null = null;
-    if (messageId) {
-      await editTelegramMessageWithKeyboard(chatId, messageId, step.prompt, []);
-    } else {
-      sentMessageId = await sendTelegramMessage(chatId, step.prompt);
-    }
-    // Store the message_id so we can edit it later when user types the amount
-    if (sentMessageId) {
-      await storePromptMessageId(supabase, userId, "_amountPromptMessageId", sentMessageId);
-    }
-  } else if (step.input_type === "select") {
-    const { data: options } = await supabase
-      .from("wizard_step_options")
-      .select("value, label")
-      .eq("step_id", step.id)
-      .order("sort_order");
-    if (options && options.length > 0) {
-      const prefix = `wiz_${step.step_key}_`;
-      const keyboard = options.map((o: any) => [{ text: o.label, callback_data: addSession(`${prefix}${o.value}`, sessionSeq) }]);
-      if (messageId) {
-        await editTelegramMessageWithKeyboard(chatId, messageId, step.prompt, keyboard);
-      } else {
-        await sendTelegramMessageWithKeyboard(chatId, step.prompt, keyboard);
-      }
-    } else {
-      if (messageId) {
-        await editTelegramMessageWithKeyboard(chatId, messageId, step.prompt, []);
-      } else {
-        await sendTelegramMessage(chatId, step.prompt);
-      }
-    }
+    const nextSessionSeq = await getSessionSeq(supabase, userId);
+    await sendWizardStepMessage(chatId, nextStep, userId, supabase, nextSessionSeq);
   } else {
-    if (messageId) {
-      await editTelegramMessageWithKeyboard(chatId, messageId, step.prompt, []);
-    } else {
-      await sendTelegramMessage(chatId, step.prompt);
+    await completeFn(supabase, userId, chatId, {
+      ...state.data,
+      [stepKey]: value,
+    });
+  }
+}
+
+/**
+ * Build a labeled confirmation string for a freq detail step.
+ */
+function buildFreqDetailConfirm(freqType: string, day: number, month?: number): string {
+  if (freqType === "every_x_days") return `✅ 🔄 Frequência: A cada ${day} dias`;
+  if (freqType === "monthly") return `✅ 🔄 Frequência: Mensal (dia ${day})`;
+  if (freqType === "annual") {
+    return `✅ 🔄 Frequência: Anual (${day} de ${MONTHS[(month || 1) - 1]})`;
+  }
+  return "";
+}
+
+/**
+ * After frequency detail input, advance to tags step or complete.
+ */
+async function advanceFreqDetailToTags(
+  supabase: any,
+  userId: number,
+  chatId: number,
+  state: WizardState,
+  extraData: Record<string, any>,
+  freqDetailPromptMessageId: number | undefined,
+  userMessageId: number | undefined,
+): Promise<void> {
+  if (freqDetailPromptMessageId && extraData._confirmText) {
+    await editTelegramMessageWithKeyboard(chatId, freqDetailPromptMessageId, extraData._confirmText, []);
+  }
+  if (userMessageId) {
+    await deleteTelegramMessage(chatId, userMessageId);
+  }
+  delete extraData._confirmText;
+
+  await setWizardState(supabase, userId, "recorrencia_tags", {
+    ...state.data,
+    ...extraData,
+  });
+  const { data: tagsStep } = await supabase
+    .from("wizard_steps")
+    .select("*")
+    .eq("wizard_name", "recorrencia")
+    .eq("step_key", "tags")
+    .single();
+  if (tagsStep) {
+    const seq = await getSessionSeq(supabase, userId);
+    await sendWizardStepMessage(chatId, tagsStep, userId, supabase, seq);
+  } else {
+    await completeRecurrenceWizard(supabase, userId, chatId, {
+      ...state.data,
+      ...extraData,
+    });
+  }
+}
+
+// ========== Step Senders ==========
+
+/**
+ * Send a new wizard step message or edit an existing one, then store the message ID
+ * for future editing if this is a new message.
+ * Handles both keyboard and text-only prompts.
+ */
+async function sendOrEditStep(
+  chatId: number,
+  messageId: number | undefined,
+  prompt: string,
+  keyboard: InlineKeyboard,
+  supabase: any,
+  userId: number,
+  storeKey?: string,
+): Promise<void> {
+  const sentMessageId = messageId
+    ? (await editTelegramMessageWithKeyboard(chatId, messageId, prompt, keyboard), null)
+    : keyboard.length > 0
+      ? await sendTelegramMessageWithKeyboard(chatId, prompt, keyboard)
+      : await sendTelegramMessage(chatId, prompt);
+  if (sentMessageId && storeKey) {
+    await storePromptMessageId(supabase, userId, storeKey, sentMessageId);
+  }
+}
+
+async function sendCategoryStep(
+  chatId: number, step: any, userId: number, supabase: any, sessionSeq: number, messageId?: number
+): Promise<void> {
+  const wizardType = step.wizard_name === "receita" ? "income" : step.wizard_name === "gasto" ? "expense" : undefined;
+  const keyboard = await buildCategoryKeyboard(supabase, userId, sessionSeq, {
+    callbackPrefix: "wiz_category_",
+    wizardType,
+    extraButtons: [[{ text: "✏️ Nova categoria", callback_data: addSession("wizard_new_category", sessionSeq) }]],
+  });
+  await sendOrEditStep(chatId, messageId, step.prompt, keyboard, supabase, userId, "_categoryPromptMessageId");
+}
+
+async function sendGroupStep(
+  chatId: number, step: any, userId: number, supabase: any, sessionSeq: number, messageId?: number
+): Promise<void> {
+  const keyboard = await buildGroupKeyboard(supabase, userId, sessionSeq, {
+    callbackPrefix: "wiz_group_",
+    extraButtons: [[{ text: "✏️ Novo grupo", callback_data: addSession("wizard_new_group", sessionSeq) }]],
+  });
+  await sendOrEditStep(chatId, messageId, step.prompt, keyboard, supabase, userId, "_groupPromptMessageId");
+}
+
+async function sendTagsStep(
+  chatId: number, step: any, userId: number, supabase: any, sessionSeq: number, messageId?: number
+): Promise<void> {
+  const { keyboard, currentTags, hasExistingTags } = await buildTagKeyboard(supabase, userId, sessionSeq, {
+    togglePrefix: "wiz_tag_",
+  });
+
+  // Add accumulated tags (typed by user) that aren't in DB yet as toggle buttons
+  // Check by comparing against existing button text (stripping ✅ prefix)
+  if (currentTags.length > 0) {
+    const keyboardTags = new Set<string>();
+    for (const row of keyboard) {
+      for (const btn of row) {
+        keyboardTags.add(btn.text.replace("✅ ", ""));
+      }
+    }
+    for (const tag of currentTags) {
+      if (!keyboardTags.has(tag)) {
+        keyboard.push([{
+          text: `✅ ${tag}`,
+          callback_data: addSession(`wiz_tag_${tag}`, sessionSeq),
+        }]);
+      }
     }
   }
+
+  const hasContent = hasExistingTags || currentTags.length > 0;
+
+  if (hasContent) {
+    keyboard.push([
+      { text: "✅ Concluir", callback_data: addSession("wiz_done_tags", sessionSeq) },
+      { text: "⏭️ Pular", callback_data: addSession("wizard_skip_tags", sessionSeq) },
+    ]);
+  } else {
+    keyboard.push([
+      { text: "⏭️ Pular", callback_data: addSession("wizard_skip_tags", sessionSeq) },
+    ]);
+  }
+
+  let prompt = step.prompt;
+  if (hasContent) {
+    prompt += "\n\n💡 Clique nas tags para alternar ou digite uma nova.";
+  } else {
+    prompt += "\n\n💡 Digite uma ou mais tags para criar.\nExemplo: `#mercado #alimentacao`";
+  }
+
+  await sendOrEditStep(chatId, messageId, prompt, keyboard, supabase, userId, "_tagsPromptMessageId");
 }
 
-/**
- * Finalize a wizard: insert the transaction with all accumulated data
- * (amount, category, group, tags, date, description), clear wizard state,
- * and send a success message.
- */
-export async function completeWizard(
-  supabase: any,
-  userId: number,
-  chatId: number,
-  data: Record<string, any>
+async function sendDescriptionStep(
+  chatId: number, step: any, userId: number, supabase: any, sessionSeq: number, messageId?: number
 ): Promise<void> {
-  await clearWizardState(supabase, userId);
-  const type = data.type || "expense";
-  const amount = parseFloat(data.amount);
-  if (isNaN(amount) || amount <= 0) {
-    await sendTelegramMessage(chatId, "❌ Valor inválido. Tente novamente.");
-    return;
-  }
-  // Check for similar existing categories
-  if (data.category) {
-    await sendSimilarityWarning(supabase, userId, chatId, "category", data.category);
-  }
-
-  const categoryId = data.category ? await getOrCreateCategory(supabase, userId, data.category, type) : null;
-
-  // Check for similar existing groups
-  if (data.group) {
-    await sendSimilarityWarning(supabase, userId, chatId, "group", data.group);
-  }
-
-  const groupId = await getOrCreateGroup(supabase, userId, data.group || null);
-  const tags = Array.isArray(data.tags)
-    ? data.tags.map((t: string) => t.startsWith("#") ? t : `#${t}`).filter((t: string) => t)
-    : data.tags
-      ? data.tags.split(" ").filter((t: string) => t).map((t: string) => t.startsWith("#") ? t : `#${t}`)
-      : [];
-  const date = data.date || getTodayISOBR();
-  const desc = data.description || data.category || "";
-  const { data: inserted, error } = await supabase
-    .from("transactions")
-    .insert({
-      user_id: userId,
-      group_id: groupId,
-      category_id: categoryId,
-      type,
-      amount,
-      description: desc,
-      tags,
-      transaction_date: date,
-    })
-    .select("id")
-    .single();
-  if (error) {
-    await sendTelegramMessage(chatId, "❌ Ops! Algo deu errado ao registrar. Tente novamente.");
-    return;
-  }
-  const txId = inserted?.id;
-  await sendTransactionSuccess(supabase, chatId, userId, type, {
-    amount,
-    category: data.category,
-    group: data.group,
-    date,
-    description: data.description,
-    tags,
-    transactionId: txId,
-  });
+  const keyboard: InlineKeyboard = [
+    [{ text: "⏭️ Pular", callback_data: addSession("wizard_skip_description", sessionSeq) }],
+  ];
+  await sendOrEditStep(chatId, messageId, step.prompt, keyboard, supabase, userId, "_descPromptMessageId");
 }
 
-/**
- * Finalize a recurrence wizard: create the recurrence record with all
- * accumulated data (amount, category, group, tags, frequency, start date),
- * clear wizard state, and send a success message.
- */
-export async function completeRecurrenceWizard(
-  supabase: any,
-  userId: number,
-  chatId: number,
-  data: Record<string, any>
+async function sendDateStep(
+  chatId: number, step: any, _userId: number, supabase: any, sessionSeq: number, messageId?: number, prefix = "wiz_date_"
 ): Promise<void> {
-  await clearWizardState(supabase, userId);
-  const type = data.type || "expense";
-  const amount = parseFloat(data.amount);
-  if (isNaN(amount) || amount <= 0) {
-    await sendTelegramMessage(chatId, "❌ Valor inválido. Tente novamente.");
-    return;
-  }
-
-  const categoryId = data.category ? await getOrCreateCategory(supabase, userId, data.category, type) : null;
-  const groupId = await getOrCreateGroup(supabase, userId, data.group || null);
-
-  const tags = Array.isArray(data.tags)
-    ? data.tags.map((t: string) => t.startsWith("#") ? t : `#${t}`).filter((t: string) => t)
-    : data.tags
-      ? data.tags.split(" ").filter((t: string) => t).map((t: string) => t.startsWith("#") ? t : `#${t}`)
-      : [];
-
-  const startDate = data.start_date || getTodayISOBR();
-  const desc = data.description || "";
-
-  const { error, id: recurrenceId } = await createRecurrence(supabase, {
-    userId,
-    type,
-    amount,
-    description: desc,
-    categoryId,
-    groupId,
-    tags,
-    frequencyType: data.frequency_type,
-    frequencyInterval: data.frequency_interval || null,
-    frequencyMonth: data.frequency_month || null,
-    nextDate: startDate,
+  const keyboard = buildDateKeyboard({
+    todayCallback: (date) => addSession(`${prefix}${date}`, sessionSeq),
+    yesterdayCallback: (date) => addSession(`${prefix}${date}`, sessionSeq),
+    customCallback: addSession("custom_date", sessionSeq),
   });
-
-  if (error) {
-    await sendTelegramMessage(chatId, "❌ Ops! Algo deu errado ao criar a recorrência. Tente novamente.");
-    return;
-  }
-
-  const sessionSeq = await getSessionSeq(supabase, userId);
-
-  const freqLabels: Record<string, string> = {
-    daily: "Diária",
-    weekly: `Semanal (dia ${["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"][data.frequency_interval || 0]})`,
-    monthly: `Mensal (dia ${data.frequency_interval})`,
-    annual: `Anual`,
-    every_x_days: `A cada ${data.frequency_interval} dias`,
-  };
-
-  const icon = type === "expense" ? "💸" : "💰";
-  const hasDesc = desc && desc.trim().length > 0;
-  const safeDesc = hasDesc ? sanitizeMarkdown(desc) : "";
-  const tagsStr = Array.isArray(tags) && tags.length > 0
-    ? tags.map((t: string) => sanitizeMarkdown(t)).join(" ")
-    : null;
-
-  let msg = `🔄 *Recorrência criada com sucesso!*\n\n`;
-  if (recurrenceId) {
-    msg += `🆔 *ID:* #${recurrenceId}\n`;
-  }
-  msg += `${icon} *Valor:* ${formatCurrencyBR(amount)}\n`;
-
-  if (hasDesc) {
-    msg += `📝 *Descrição:* ${safeDesc}\n`;
-  }
-
-  msg += `🏷️ *Categoria:* ${data.category || "—"}\n` +
-    `📁 *Grupo:* ${data.group || "Pessoal"}\n` +
-    `🔄 *Frequência:* ${freqLabels[data.frequency_type] || data.frequency_type}\n`;
-
-  if (tagsStr) {
-    msg += `🔖 *Tags:* ${tagsStr}\n`;
-  }
-
-  msg += `📅 *Primeira ocorrência:* ${formatDateBR(startDate)}`;
-
-  const successKeyboard: InlineKeyboard = [];
-  if (recurrenceId) {
-    successKeyboard.push([{ text: "🔍 Ver Detalhes", callback_data: addSession(`rec_show_${recurrenceId}`, sessionSeq) }]);
-  }
-  successKeyboard.push([{ text: "📋 Ver Recorrências", callback_data: addSession("rec_back", sessionSeq) }]);
-
-  await sendTelegramMessageWithKeyboard(chatId, msg, successKeyboard);
+  await sendOrEditStep(chatId, messageId, step.prompt, keyboard, supabase, _userId);
 }
+
+async function sendTypeStep(
+  chatId: number, step: any, _userId: number, _supabase: any, sessionSeq: number, messageId?: number
+): Promise<void> {
+  const keyboard: InlineKeyboard = [
+    [{ text: "💸 Despesa", callback_data: addSession("wiz_type_expense", sessionSeq) }],
+    [{ text: "💰 Receita", callback_data: addSession("wiz_type_income", sessionSeq) }],
+  ];
+  await sendOrEditStep(chatId, messageId, step.prompt, keyboard, _supabase, _userId);
+}
+
+async function sendAmountStep(
+  chatId: number, step: any, userId: number, supabase: any, _sessionSeq: number, messageId?: number
+): Promise<void> {
+  await sendOrEditStep(chatId, messageId, step.prompt, [], supabase, userId, "_amountPromptMessageId");
+}
+
+async function sendGenericSelectStep(
+  chatId: number, step: any, _userId: number, supabase: any, sessionSeq: number, messageId?: number
+): Promise<void> {
+  const { data: options } = await supabase
+    .from("wizard_step_options")
+    .select("value, label")
+    .eq("step_id", step.id)
+    .order("sort_order");
+  const keyboard: InlineKeyboard = (options && options.length > 0)
+    ? options.map((o: any) => [{ text: o.label, callback_data: addSession(`wiz_${step.step_key}_${o.value}`, sessionSeq) }])
+    : [];
+  await sendOrEditStep(chatId, messageId, step.prompt, keyboard, supabase, _userId);
+}
+
+async function sendDefaultStep(
+  chatId: number, step: any, _userId: number, _supabase: any, _sessionSeq: number, messageId?: number
+): Promise<void> {
+  await sendOrEditStep(chatId, messageId, step.prompt, [], _supabase, _userId);
+}
+
+// ========== Tag & Keyboard Builders ==========
 
 /**
  * Toggle a tag in the wizard state and return the new tags array.
- * Shared by both edit_tag_tog_ and wiz_tag_ handlers.
  */
 export async function toggleTagInWizardState(
   supabase: any,
@@ -467,7 +396,6 @@ export async function toggleTagInWizardState(
 
 /**
  * Build a tag selection keyboard with ✅ indicators for selected tags.
- * Reads current tags from wizard state. Returns the keyboard and current tags.
  */
 export async function buildTagKeyboard(
   supabase: any,
@@ -516,7 +444,6 @@ export async function buildTagKeyboard(
 
 /**
  * Build a category selection keyboard grid.
- * Queries categories, deduplicates by normalized_name, optionally filters by type.
  */
 export async function buildCategoryKeyboard(
   supabase: any,
@@ -560,7 +487,6 @@ export async function buildCategoryKeyboard(
 
 /**
  * Build a group selection keyboard grid.
- * Queries groups for the user, builds grid with callback prefix.
  */
 export async function buildGroupKeyboard(
   supabase: any,
@@ -595,9 +521,213 @@ export async function buildGroupKeyboard(
   return keyboard;
 }
 
+// ========== Step Rendering ==========
+
 /**
- * Build a confirmation text for the step that was just completed.
- * Returns null if no confirmation should be shown (e.g., text input steps).
+ * Render a wizard step: dispatch to the appropriate step sender.
+ */
+export function sendWizardStepMessage(
+  chatId: number,
+  step: any,
+  userId: number,
+  supabase: any,
+  sessionSeq: number,
+  messageId?: number
+): Promise<void> {
+  switch (step.step_key) {
+    case "category":
+      return sendCategoryStep(chatId, step, userId, supabase, sessionSeq, messageId);
+    case "group":
+      return sendGroupStep(chatId, step, userId, supabase, sessionSeq, messageId);
+    case "tags":
+      return sendTagsStep(chatId, step, userId, supabase, sessionSeq, messageId);
+    case "description":
+      return sendDescriptionStep(chatId, step, userId, supabase, sessionSeq, messageId);
+    case "date":
+      return sendDateStep(chatId, step, userId, supabase, sessionSeq, messageId);
+    case "start_date":
+      return sendDateStep(chatId, step, userId, supabase, sessionSeq, messageId, "wiz_start_date_");
+    case "type":
+      return sendTypeStep(chatId, step, userId, supabase, sessionSeq, messageId);
+    case "amount":
+      return sendAmountStep(chatId, step, userId, supabase, sessionSeq, messageId);
+    default:
+      if (step.input_type === "select") {
+        return sendGenericSelectStep(chatId, step, userId, supabase, sessionSeq, messageId);
+      }
+      return sendDefaultStep(chatId, step, userId, supabase, sessionSeq, messageId);
+  }
+}
+
+// ========== Completion Functions ==========
+
+/**
+ * Format tags array for DB insertion: ensure # prefix, filter empty.
+ */
+function formatTags(tags: any): string[] {
+  if (Array.isArray(tags)) {
+    return tags.map((t: string) => t.startsWith("#") ? t : `#${t}`).filter((t: string) => t);
+  }
+  if (tags) {
+    return tags.split(" ").filter((t: string) => t).map((t: string) => t.startsWith("#") ? t : `#${t}`);
+  }
+  return [];
+}
+
+/**
+ * Finalize a wizard: insert the transaction.
+ */
+export async function completeWizard(
+  supabase: any,
+  userId: number,
+  chatId: number,
+  data: Record<string, any>
+): Promise<void> {
+  await clearWizardState(supabase, userId);
+  const type = data.type || "expense";
+  const amount = parseFloat(data.amount);
+  if (isNaN(amount) || amount <= 0) {
+    await sendTelegramMessage(chatId, "❌ Valor inválido. Tente novamente.");
+    return;
+  }
+
+  if (data.category) {
+    await sendSimilarityWarning(supabase, userId, chatId, "category", data.category);
+  }
+
+  const categoryId = data.category ? await getOrCreateCategory(supabase, userId, data.category, type) : null;
+
+  if (data.group) {
+    await sendSimilarityWarning(supabase, userId, chatId, "group", data.group);
+  }
+
+  const groupId = await getOrCreateGroup(supabase, userId, data.group || null);
+  const tags = formatTags(data.tags);
+  const date = data.date || getTodayISOBR();
+  const desc = data.description || data.category || "";
+
+  const { data: inserted, error } = await supabase
+    .from("transactions")
+    .insert({
+      user_id: userId,
+      group_id: groupId,
+      category_id: categoryId,
+      type,
+      amount,
+      description: desc,
+      tags,
+      transaction_date: date,
+    })
+    .select("id")
+    .single();
+
+  if (error) {
+    await sendTelegramMessage(chatId, "❌ Ops! Algo deu errado ao registrar. Tente novamente.");
+    return;
+  }
+
+  await sendTransactionSuccess(supabase, chatId, userId, type, {
+    amount,
+    category: data.category,
+    group: data.group,
+    date,
+    description: data.description,
+    tags,
+    transactionId: inserted?.id,
+  });
+}
+
+/**
+ * Build success message for recurrence creation.
+ */
+function buildRecurrenceSuccessMsg(recurrenceId: number | null, data: Record<string, any>): string {
+  const type = data.type || "expense";
+  const amount = parseFloat(data.amount);
+  const icon = type === "expense" ? "💸" : "💰";
+  const desc = data.description || "";
+  const hasDesc = desc && desc.trim().length > 0;
+  const safeDesc = hasDesc ? sanitizeMarkdown(desc) : "";
+  const tags = formatTags(data.tags);
+  const tagsStr = tags.length > 0 ? tags.map((t: string) => sanitizeMarkdown(t)).join(" ") : null;
+  const freqLabelsMap: Record<string, string> = {
+    daily: "Diária",
+    weekly: `Semanal (dia ${DAYS_OF_WEEK[data.frequency_interval || 0]})`,
+    monthly: `Mensal (dia ${data.frequency_interval})`,
+    annual: "Anual",
+    every_x_days: `A cada ${data.frequency_interval} dias`,
+  };
+  const startDate = data.start_date || getTodayISOBR();
+
+  let msg = `🔄 *Recorrência criada com sucesso!*\n\n`;
+  if (recurrenceId) msg += `🆔 *ID:* #${recurrenceId}\n`;
+  msg += `${icon} *Valor:* ${formatCurrencyBR(isNaN(amount) ? 0 : amount)}\n`;
+  if (hasDesc) msg += `📝 *Descrição:* ${safeDesc}\n`;
+  msg += `🏷️ *Categoria:* ${data.category || "—"}\n`;
+  msg += `📁 *Grupo:* ${data.group || "Pessoal"}\n`;
+  msg += `🔄 *Frequência:* ${freqLabelsMap[data.frequency_type] || data.frequency_type}\n`;
+  if (tagsStr) msg += `🔖 *Tags:* ${tagsStr}\n`;
+  msg += `📅 *Primeira ocorrência:* ${formatDateBR(startDate)}`;
+  return msg;
+}
+
+/**
+ * Finalize a recurrence wizard: create the recurrence record.
+ */
+export async function completeRecurrenceWizard(
+  supabase: any,
+  userId: number,
+  chatId: number,
+  data: Record<string, any>
+): Promise<void> {
+  await clearWizardState(supabase, userId);
+  const type = data.type || "expense";
+  const amount = parseFloat(data.amount);
+  if (isNaN(amount) || amount <= 0) {
+    await sendTelegramMessage(chatId, "❌ Valor inválido. Tente novamente.");
+    return;
+  }
+
+  const categoryId = data.category ? await getOrCreateCategory(supabase, userId, data.category, type) : null;
+  const groupId = await getOrCreateGroup(supabase, userId, data.group || null);
+  const tags = formatTags(data.tags);
+  const startDate = data.start_date || getTodayISOBR();
+  const desc = data.description || "";
+
+  const { error, id: recurrenceId } = await createRecurrence(supabase, {
+    userId,
+    type,
+    amount,
+    description: desc,
+    categoryId,
+    groupId,
+    tags,
+    frequencyType: data.frequency_type,
+    frequencyInterval: data.frequency_interval || null,
+    frequencyMonth: data.frequency_month || null,
+    nextDate: startDate,
+  });
+
+  if (error) {
+    await sendTelegramMessage(chatId, "❌ Ops! Algo deu errado ao criar a recorrência. Tente novamente.");
+    return;
+  }
+
+  const sessionSeq = await getSessionSeq(supabase, userId);
+  const msg = buildRecurrenceSuccessMsg(recurrenceId ?? null, data);
+
+  const successKeyboard: InlineKeyboard = [];
+  if (recurrenceId) {
+    successKeyboard.push([{ text: "🔍 Ver Detalhes", callback_data: addSession(`rec_show_${recurrenceId}`, sessionSeq) }]);
+  }
+  successKeyboard.push([{ text: "📋 Ver Recorrências", callback_data: addSession("rec_back", sessionSeq) }]);
+
+  await sendTelegramMessageWithKeyboard(chatId, msg, successKeyboard);
+}
+
+// ========== Confirmation Builders ==========
+
+/**
+ * Build a confirmation text for the step just completed.
  */
 export function buildStepConfirmation(
   step: any,
@@ -605,13 +735,8 @@ export function buildStepConfirmation(
 ): string | null {
   const value = newStateData[step.step_key];
   if (!value && value !== 0) {
-    // For description and tags, show confirmation even when skipped/empty
-    if (step.step_key === "description") {
-      return "✅ 📝 Descrição: Nenhuma descrição informada";
-    }
-    if (step.step_key === "tags") {
-      return "✅ 🔖 Tags: Nenhuma tag";
-    }
+    if (step.step_key === "description") return "✅ 📝 Descrição: Nenhuma descrição informada";
+    if (step.step_key === "tags") return "✅ 🔖 Tags: Nenhuma tag";
     return null;
   }
 
@@ -636,16 +761,21 @@ export function buildStepConfirmation(
   } else if (step.step_key === "date" || step.step_key === "start_date") {
     displayValue = formatDateBR(value);
   } else if (step.step_key === "frequency") {
-    const freqLabels: Record<string, string> = {
-      daily: "Diária",
-      weekly: "Semanal",
-      monthly: "Mensal",
-      annual: "Anual",
-      every_x_days: `A cada ${newStateData.frequency_interval || "?"} dias`,
-    };
-    displayValue = freqLabels[value] || value;
+    const freqValue = newStateData.frequency_type || value;
+    displayValue = FREQ_LABELS[freqValue] || freqValue;
+    // Build detailed label if intervals available
+    if (newStateData.frequency_interval !== undefined) {
+      if (freqValue === "weekly") {
+        displayValue = `Semanal (${DAYS_OF_WEEK[newStateData.frequency_interval || 0]})`;
+      } else if (freqValue === "monthly") {
+        displayValue = `Mensal (dia ${newStateData.frequency_interval || "?"})`;
+      } else if (freqValue === "annual") {
+        displayValue = `Anual (${newStateData.frequency_interval || "?"} de ${MONTHS[(newStateData.frequency_month || 1) - 1]})`;
+      } else if (freqValue === "every_x_days") {
+        displayValue = `A cada ${newStateData.frequency_interval} dias`;
+      }
+    }
   } else if (step.step_key === "tags") {
-    // value could be an array or empty
     const tags = Array.isArray(value) ? value : [];
     displayValue = tags.length > 0 ? tags.join(" ") : "Nenhuma tag";
   } else if (step.step_key === "amount") {
@@ -659,8 +789,7 @@ export function buildStepConfirmation(
 }
 
 /**
- * Build a date selection keyboard (today / yesterday / other date).
- * The caller provides callback builders for each option.
+ * Build a date selection keyboard.
  */
 export function buildDateKeyboard(
   options: {
@@ -681,8 +810,7 @@ export function buildDateKeyboard(
 }
 
 /**
- * Build a delete confirmation keyboard (✅ Sim, excluir / ❌ Não, manter).
- * Shared by showDeleteConfirmation and handleEntityDeletePrompt.
+ * Build a delete confirmation keyboard.
  */
 export function buildDeleteConfirmKeyboard(
   confirmCallback: string,
@@ -696,9 +824,10 @@ export function buildDeleteConfirmKeyboard(
   ];
 }
 
+// ========== Wizard Actions ==========
+
 /**
- * Handle a wizard skip action: set the current step's value to empty and advance.
- * Shared by wizard_skip_description and wizard_skip_tags handlers.
+ * Handle a wizard skip action: set step value to empty and advance.
  */
 export async function handleWizardSkip(
   supabase: any,
@@ -713,16 +842,18 @@ export async function handleWizardSkip(
   await advanceWizardToNextStep(supabase, userId, chatId, wizard.currentStep, sessionSeq, newStateData, messageId);
 }
 
+// ========== Entity Management ==========
+
 /**
  * Start a rename wizard for a category or group.
- * Verifies the entity is not a predefined/default one, then sets wizard state.
  */
 export async function handleEntityRename(
   type: "category" | "group",
   supabase: any,
   userId: number,
   chatId: number,
-  entityName: string
+  entityName: string,
+  messageId: number
 ): Promise<void> {
   const isCategory = type === "category";
   const table = isCategory ? "categories" : "groups";
@@ -743,13 +874,13 @@ export async function handleEntityRename(
   }
 
   const wizardStep = isCategory ? "rename_cat" : "rename_grp";
-  await sendTelegramMessage(chatId, `✏️ Digite o novo nome para *${entityName}*:`);
+  // Edit the entity action menu in-place to show the rename prompt (removes the buttons)
+  await editTelegramMessageWithKeyboard(chatId, messageId, `✏️ Digite o novo nome para *${entityName}*:`, []);
   await setWizardState(supabase, userId, wizardStep, { name: entityName });
 }
 
 /**
  * Show a delete confirmation prompt for a category or group.
- * Queries entity and transaction count, then shows confirm/cancel keyboard.
  */
 export async function handleEntityDeletePrompt(
   type: "category" | "group",
@@ -793,7 +924,6 @@ export async function handleEntityDeletePrompt(
 
 /**
  * Execute entity deletion: reassign transactions to fallback, then delete.
- * Prevents deletion of predefined/default entities.
  */
 export async function handleEntityDeleteExecute(
   type: "category" | "group",
@@ -829,7 +959,6 @@ export async function handleEntityDeleteExecute(
     .eq("user_id", userId)
     .eq(fkColumn, entity.id);
 
-  // Reassign affected transactions
   let fallbackId: string | null = null;
   if (isCategory) {
     fallbackId = await getOrCreateUncategorizedCategory(supabase, userId);
@@ -847,9 +976,10 @@ export async function handleEntityDeleteExecute(
   );
 }
 
+// ========== Step Resolution & Navigation ==========
+
 /**
  * Read the current wizard state and resolve the corresponding wizard_step row.
- * Returns null if no state exists or the step definition is missing.
  */
 export async function getCurrentWizardStep(
   supabase: any,
@@ -866,8 +996,8 @@ export async function getCurrentWizardStep(
 }
 
 /**
- * Move to the next wizard step: find the next step by order, update state,
- * and render it. If there is no next step, finalize the wizard.
+ * Move to the next wizard step: confirm current step editorially, find next,
+ * update state, render it. If no next step, finalize the wizard.
  */
 export async function advanceWizardToNextStep(
   supabase: any,
@@ -878,8 +1008,6 @@ export async function advanceWizardToNextStep(
   newStateData: Record<string, any>,
   messageId?: number
 ): Promise<void> {
-  // Edit current message with confirmation BEFORE querying next step,
-  // so it also works when this is the last step (no nextStep)
   if (messageId) {
     const confirmText = buildStepConfirmation(currentStep, newStateData);
     if (confirmText) {
@@ -897,29 +1025,80 @@ export async function advanceWizardToNextStep(
     .single();
 
   if (nextStep) {
-
     await supabase.from("wizard_states").update({
       step: `${nextStep.wizard_name}_${nextStep.step_key}`,
       data: newStateData,
       expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
     }).eq("user_id", userId);
     await sendWizardStepMessage(chatId, nextStep, userId, supabase, sessionSeq);
+  } else if (currentStep.wizard_name === "recorrencia") {
+    await completeRecurrenceWizard(supabase, userId, chatId, newStateData);
   } else {
-    if (currentStep.wizard_name === "recorrencia") {
-      await completeRecurrenceWizard(supabase, userId, chatId, newStateData);
-    } else {
-      await completeWizard(supabase, userId, chatId, newStateData);
-    }
+    await completeWizard(supabase, userId, chatId, newStateData);
   }
 }
 
+// ========== Text Input Handlers ==========
+
 /**
- * Route text input from the user through the current wizard step.
- * Handles amount validation, tag accumulation, custom date parsing,
- * and advancing/ completing the wizard as appropriate.
+ * Parse and validate amount from user input.
  */
-export async function handleTransactionWizard(
-  type: "expense" | "income",
+function parseAmount(input: string): number | null {
+  const amount = parseFloat(input.replace(",", "."));
+  if (isNaN(amount) || amount <= 0) return null;
+  return amount;
+}
+
+/**
+ * Handle tag input: accumulate tags in wizard state and re-render.
+ */
+async function handleTagsInput(
+  supabase: any,
+  userId: number,
+  chatId: number,
+  state: WizardState,
+  input: string,
+  _wizardName: string,
+  currentStep: any,
+  userMessageId?: number
+): Promise<void> {
+  const tagsPromptMessageId = state.data?._tagsPromptMessageId as number | undefined;
+  const currentTags: string[] = state.data?.tags
+    ? (Array.isArray(state.data.tags) ? state.data.tags : [state.data.tags])
+    : [];
+  const newTags = input.split(" ").filter((t: string) => t.trim());
+  const formattedTags = newTags.map((t: string) => t.startsWith("#") ? t : `#${t}`);
+  // Dedup: only add tags not already in currentTags, also dedup within same input
+  const existingSet = new Set(currentTags);
+  const uniqueNewTags = formattedTags.filter((t: string) => {
+    if (existingSet.has(t)) return false;
+    existingSet.add(t); // prevent duplicates within the same input
+    return true;
+  });
+  const accumulatedTags = [...currentTags, ...uniqueNewTags];
+
+  for (const tag of newTags) {
+    await sendSimilarityWarning(supabase, userId, chatId, "tag", tag);
+  }
+
+  await setWizardState(supabase, userId, state.step, {
+    ...state.data,
+    tags: accumulatedTags,
+  });
+  const tagsSessionSeq = await getSessionSeq(supabase, userId);
+  await sendWizardStepMessage(chatId, currentStep, userId, supabase, tagsSessionSeq, tagsPromptMessageId);
+  if (userMessageId) {
+    await deleteTelegramMessage(chatId, userMessageId);
+  }
+}
+
+// ========== Wizard Input Router ==========
+
+/**
+ * Route text input through any wizard (gasto/receita/recorrencia).
+ * Deduces wizard name and type from the state.step prefix.
+ */
+export async function handleWizardInput(
   supabase: any,
   userId: number,
   chatId: number,
@@ -927,10 +1106,23 @@ export async function handleTransactionWizard(
   input: string,
   userMessageId?: number
 ): Promise<void> {
-  const wizardName = type === "expense" ? "gasto" : "receita";
-  const prefix = `${wizardName}_`;
+  // Deduce wizard name from state step: "gasto_amount" → "gasto", "recorrencia_tags" → "recorrencia"
+  const underscoreIndex = state.step.indexOf("_");
+  const wizardName = state.step.substring(0, underscoreIndex);
 
-  if (state.step === `${wizardName}_custom_date`) {
+  // Determine type and completion function
+  let type: "expense" | "income" | undefined;
+  let completeFn: (supabase: any, userId: number, chatId: number, data: Record<string, any>) => Promise<void>;
+
+  if (wizardName === "recorrencia") {
+    completeFn = completeRecurrenceWizard;
+  } else {
+    type = wizardName === "receita" ? "income" : "expense";
+    completeFn = completeWizard;
+  }
+
+  // ========== Special case: custom date (gasto/receita only) ==========
+  if (wizardName !== "recorrencia" && state.step === `${wizardName}_custom_date`) {
     const parsed = parseDateBR(input);
     if (!parsed) {
       await sendTelegramMessage(chatId, "Formato inválido. Use DD/MM/YYYY (ex: 15/01/2024)");
@@ -954,340 +1146,69 @@ export async function handleTransactionWizard(
       const tagsSessionSeq = await getSessionSeq(supabase, userId);
       await sendWizardStepMessage(chatId, tagsStep, userId, supabase, tagsSessionSeq);
     } else {
-      await completeWizard(supabase, userId, chatId, { ...state.data, date: parsed, type });
+      await completeFn(supabase, userId, chatId, { ...state.data, date: parsed, type });
     }
     return;
   }
 
-  const stepKey = state.step.replace(prefix, "");
-  const { data: currentStep } = await supabase
-    .from("wizard_steps")
-    .select("*")
-    .eq("wizard_name", wizardName)
-    .eq("step_key", stepKey)
-    .single();
-
-  if (!currentStep) {
-    const cmd = type === "expense" ? "/despesa" : "/receita";
-    await sendTelegramMessage(chatId, `❌ Ops! Algo deu errado com o wizard. Tente novamente com ${cmd}`);
-    return;
-  }
-
-  let value = input;
-  if (currentStep.input_type === "text" && stepKey === "amount") {
-    const amount = parseFloat(input.replace(",", "."));
-    if (isNaN(amount) || amount <= 0) {
-      await sendTelegramMessage(chatId, "Por favor, informe um valor válido (ex: 50,00 ou 50)");
-      return;
-    }
-    value = amount.toString();
-  }
-
-  // For tags step, accumulate instead of replace, and re-render in-place
-  if (stepKey === "tags") {
-    const tagsPromptMessageId = state.data?._tagsPromptMessageId as number | undefined;
-    const currentTags: string[] = state.data?.tags
-      ? (Array.isArray(state.data.tags) ? state.data.tags : [state.data.tags])
-      : [];
-    const newTags = input.split(" ").filter((t: string) => t.trim());
-    const formattedTags = newTags.map((t: string) => t.startsWith("#") ? t : `#${t}`);
-    const accumulatedTags = [...currentTags, ...formattedTags];
-
-    // Check for similar existing tags
-    for (const tag of newTags) {
-      await sendSimilarityWarning(supabase, userId, chatId, "tag", tag);
-    }
-
-    await setWizardState(supabase, userId, state.step, {
-      ...state.data,
-      tags: accumulatedTags,
-    });
-    const tagsSessionSeq = await getSessionSeq(supabase, userId);
-    await sendWizardStepMessage(chatId, currentStep, userId, supabase, tagsSessionSeq, tagsPromptMessageId);
-    // Delete the user's typed message
-    if (userMessageId) {
-      await deleteTelegramMessage(chatId, userMessageId);
-    }
-    return;
-  }
-
-  // For category text input (user typed a new name), edit prompt and delete user's message
-  if (stepKey === "category") {
-    const catPromptMessageId = state.data?._categoryPromptMessageId as number | undefined;    const nextStep = await getNextWizardStep(supabase, wizardName, currentStep.step_order);
-
-    if (nextStep) {
-      await setWizardState(supabase, userId, `${wizardName}_${nextStep.step_key}`, {
-        ...state.data,
-        category: value,
-      });
-
-      if (catPromptMessageId) {
-        await editTelegramMessageWithKeyboard(chatId, catPromptMessageId, `✅ 🏷️ Categoria: ${value}`, []);
-      }
-      if (userMessageId) {
-        await deleteTelegramMessage(chatId, userMessageId);
-      }
-
-      const nextSessionSeq = await getSessionSeq(supabase, userId);
-      await sendWizardStepMessage(chatId, nextStep, userId, supabase, nextSessionSeq);
-    } else {
-      await completeWizard(supabase, userId, chatId, {
-        ...state.data,
-        category: value,
-      });
-    }
-    return;
-  }
-
-  // For group text input (user typed a new name), edit prompt and delete user's message
-  if (stepKey === "group") {
-    const grpPromptMessageId = state.data?._groupPromptMessageId as number | undefined;    const nextStep = await getNextWizardStep(supabase, wizardName, currentStep.step_order);
-
-    if (nextStep) {
-      await setWizardState(supabase, userId, `${wizardName}_${nextStep.step_key}`, {
-        ...state.data,
-        group: value,
-      });
-
-      if (grpPromptMessageId) {
-        await editTelegramMessageWithKeyboard(chatId, grpPromptMessageId, `✅ 📁 Grupo: ${value}`, []);
-      }
-      if (userMessageId) {
-        await deleteTelegramMessage(chatId, userMessageId);
-      }
-
-      const nextSessionSeq = await getSessionSeq(supabase, userId);
-      await sendWizardStepMessage(chatId, nextStep, userId, supabase, nextSessionSeq);
-    } else {
-      await completeWizard(supabase, userId, chatId, {
-        ...state.data,
-        group: value,
-      });
-    }
-    return;
-  }
-
-  // For amount step, edit the prompt message and delete user's message
-  if (stepKey === "amount") {
-    const amountPromptMessageId = state.data?._amountPromptMessageId as number | undefined;
-    const amountNum = parseFloat(value);    const nextStep = await getNextWizardStep(supabase, wizardName, currentStep.step_order);
-
-    if (nextStep) {
-      await setWizardState(supabase, userId, `${wizardName}_${nextStep.step_key}`, {
-        ...state.data,
-        amount: value,
-      });
-
-      if (amountPromptMessageId && !isNaN(amountNum)) {
-        await editTelegramMessageWithKeyboard(chatId, amountPromptMessageId, `✅ 💰 Valor: ${formatCurrencyBR(amountNum)}`, []);
-      }
-      if (userMessageId) {
-        await deleteTelegramMessage(chatId, userMessageId);
-      }
-
-      const nextSessionSeq = await getSessionSeq(supabase, userId);
-      await sendWizardStepMessage(chatId, nextStep, userId, supabase, nextSessionSeq);
-    } else {
-      // shouldn't happen - amount is never the last step
-      await completeWizard(supabase, userId, chatId, {
-        ...state.data,
-        amount: value,
-      });
-    }
-    return;
-  }
-
-  // For description step, edit the prompt message and delete user's message
-  if (stepKey === "description") {
-    const descPromptMessageId = state.data?._descPromptMessageId as number | undefined;    const nextStep = await getNextWizardStep(supabase, wizardName, currentStep.step_order);
-
-    if (nextStep) {
-      await setWizardState(supabase, userId, `${wizardName}_${nextStep.step_key}`, {
-        ...state.data,
-        description: value,
-      });
-
-      // Edit the prompt message to show what was typed
-      if (descPromptMessageId) {
-        await editTelegramMessageWithKeyboard(chatId, descPromptMessageId, `✅ 📝 Descrição: ${sanitizeMarkdown(value)}`, []);
-      }
-      // Delete the user's typed message
-      if (userMessageId) {
-        await deleteTelegramMessage(chatId, userMessageId);
-      }
-
-      const nextSessionSeq = await getSessionSeq(supabase, userId);
-      await sendWizardStepMessage(chatId, nextStep, userId, supabase, nextSessionSeq);
-    } else {
-      await completeWizard(supabase, userId, chatId, {
-        ...state.data,
-        description: value,
-      });
-    }
-    return;
-  }  const nextStep = await getNextWizardStep(supabase, wizardName, currentStep.step_order);
-
-  if (nextStep) {
-    await setWizardState(supabase, userId, `${wizardName}_${nextStep.step_key}`, {
-      ...state.data,
-      [stepKey]: value,
-    });
-    const nextSessionSeq = await getSessionSeq(supabase, userId);
-    await sendWizardStepMessage(chatId, nextStep, userId, supabase, nextSessionSeq);
-  } else {
-    const finalData = type === "income"
-      ? { ...state.data, [stepKey]: value, type: "income" }
-      : { ...state.data, [stepKey]: value };
-    await completeWizard(supabase, userId, chatId, finalData);
-  }
-}
-
-/**
- * Route text input from the user through the recurrence wizard steps.
- * Handles frequency detail input (every_x_days, weekly, monthly, annual),
- * start_date parsing, tag accumulation, and advancing/completing the wizard.
- */
-export async function handleRecurrenceWizard(
-  supabase: any,
-  userId: number,
-  chatId: number,
-  state: WizardState,
-  input: string,
-  userMessageId?: number
-): Promise<void> {
-  const prefix = "recorrencia_";
-
-  if (state.step === "recorrencia_freq_detail") {
-    // Edit the prompt with confirmation and delete user's message before processing
+  // ========== Special case: recurrence frequency detail ==========
+  if (wizardName === "recorrencia" && state.step === "recorrencia_freq_detail") {
     const freqDetailPromptMessageId = state.data?._freqDetailPromptMessageId as number | undefined;
     const freqType = state.data.frequency_type;
-    if (freqType === "every_x_days" || freqType === "weekly" || freqType === "monthly" || freqType === "annual") {
-      const value = input.trim();
-      if (freqType === "every_x_days") {
-        const interval = parseInt(value, 10);
-        if (isNaN(interval) || interval < 1) {
-          await sendTelegramMessage(chatId, "Informe um número válido de dias (ex: 15).");
-          return;
-        }
-        if (freqDetailPromptMessageId) {
-          await editTelegramMessageWithKeyboard(chatId, freqDetailPromptMessageId, `✅ 🔄 Frequência: A cada ${interval} dias`, []);
-        }
-        if (userMessageId) {
-          await deleteTelegramMessage(chatId, userMessageId);
-        }
-        await setWizardState(supabase, userId, "recorrencia_tags", {
-          ...state.data,
-          frequency_interval: interval,
-        });
-        const { data: tagsStep } = await supabase
-          .from("wizard_steps")
-          .select("*")
-          .eq("wizard_name", "recorrencia")
-          .eq("step_key", "tags")
-          .single();
-        if (tagsStep) {
-          const seq = await getSessionSeq(supabase, userId);
-          await sendWizardStepMessage(chatId, tagsStep, userId, supabase, seq);
-        } else {
-          await completeRecurrenceWizard(supabase, userId, chatId, {
-            ...state.data,
-            frequency_interval: interval,
-          });
-        }
-      } else if (freqType === "monthly") {
-        const day = parseInt(value, 10);
-        if (isNaN(day) || day < 1 || day > 31) {
-          await sendTelegramMessage(chatId, "Informe um dia válido (1 a 31).");
-          return;
-        }
-        if (freqDetailPromptMessageId) {
-          await editTelegramMessageWithKeyboard(chatId, freqDetailPromptMessageId, `✅ 🔄 Frequência: Mensal (dia ${day})`, []);
-        }
-        if (userMessageId) {
-          await deleteTelegramMessage(chatId, userMessageId);
-        }
-        await setWizardState(supabase, userId, "recorrencia_tags", {
-          ...state.data,
-          frequency_interval: day,
-        });
-        const { data: tagsStep } = await supabase
-          .from("wizard_steps")
-          .select("*")
-          .eq("wizard_name", "recorrencia")
-          .eq("step_key", "tags")
-          .single();
-        if (tagsStep) {
-          const seq = await getSessionSeq(supabase, userId);
-          await sendWizardStepMessage(chatId, tagsStep, userId, supabase, seq);
-        } else {
-          await completeRecurrenceWizard(supabase, userId, chatId, {
-            ...state.data,
-            frequency_interval: day,
-          });
-        }
-      } else if (freqType === "annual") {
-        const parts = value.split(/[\/\s-]+/);
-        const day = parseInt(parts[0], 10);
-        if (isNaN(day) || day < 1 || day > 31) {
-          await sendTelegramMessage(chatId, "Informe um dia válido (1 a 31). Ex: 15/01");
-          return;
-        }
-        const month = parts[1] ? parseInt(parts[1], 10) : NaN;
-        if (isNaN(month) || month < 1 || month > 12) {
-          await sendTelegramMessage(chatId, "Informe um mês válido (1 a 12). Ex: 15/01");
-          return;
-        }
-        if (freqDetailPromptMessageId) {
-          const months = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
-          await editTelegramMessageWithKeyboard(chatId, freqDetailPromptMessageId, `✅ 🔄 Frequência: Anual (${day} de ${months[month - 1]})`, []);
-        }
-        if (userMessageId) {
-          await deleteTelegramMessage(chatId, userMessageId);
-        }
-        await setWizardState(supabase, userId, "recorrencia_tags", {
-          ...state.data,
-          frequency_interval: day,
-          frequency_month: month,
-        });
-        const { data: tagsStep } = await supabase
-          .from("wizard_steps")
-          .select("*")
-          .eq("wizard_name", "recorrencia")
-          .eq("step_key", "tags")
-          .single();
-        if (tagsStep) {
-          const seq = await getSessionSeq(supabase, userId);
-          await sendWizardStepMessage(chatId, tagsStep, userId, supabase, seq);
-        } else {
-          await completeRecurrenceWizard(supabase, userId, chatId, {
-            ...state.data,
-            frequency_interval: day,
-            frequency_month: month,
-          });
-        }
-      } else {
-        await setWizardState(supabase, userId, "recorrencia_tags", {
-          ...state.data,
-          frequency_interval: parseInt(value, 10) || 1,
-        });
-        const { data: tagsStep } = await supabase
-          .from("wizard_steps")
-          .select("*")
-          .eq("wizard_name", "recorrencia")
-          .eq("step_key", "tags")
-          .single();
-        if (tagsStep) {
-          const seq = await getSessionSeq(supabase, userId);
-          await sendWizardStepMessage(chatId, tagsStep, userId, supabase, seq);
-        } else {
-          await completeRecurrenceWizard(supabase, userId, chatId, state.data);
-        }
+    const value = input.trim();
+
+    if (freqType === "weekly") {
+      await sendTelegramMessage(chatId, "Por favor, selecione o dia da semana nos botões acima.");
+      return;
+    }
+
+    if (freqType === "every_x_days") {
+      const interval = parseInt(value, 10);
+      if (isNaN(interval) || interval < 1) {
+        await sendTelegramMessage(chatId, "Informe um número válido de dias (ex: 15).");
+        return;
       }
+      return await advanceFreqDetailToTags(supabase, userId, chatId, state, {
+        frequency_interval: interval,
+        _confirmText: buildFreqDetailConfirm(freqType, interval),
+      }, freqDetailPromptMessageId, userMessageId);
+    }
+
+    if (freqType === "monthly") {
+      const day = parseInt(value, 10);
+      if (isNaN(day) || day < 1 || day > 31) {
+        await sendTelegramMessage(chatId, "Informe um dia válido (1 a 31).");
+        return;
+      }
+      return await advanceFreqDetailToTags(supabase, userId, chatId, state, {
+        frequency_interval: day,
+        _confirmText: buildFreqDetailConfirm(freqType, day),
+      }, freqDetailPromptMessageId, userMessageId);
+    }
+
+    if (freqType === "annual") {
+      const parts = value.split(/[\/\s-]+/);
+      const day = parseInt(parts[0], 10);
+      if (isNaN(day) || day < 1 || day > 31) {
+        await sendTelegramMessage(chatId, "Informe um dia válido (1 a 31). Ex: 15/01");
+        return;
+      }
+      const month = parts[1] ? parseInt(parts[1], 10) : NaN;
+      if (isNaN(month) || month < 1 || month > 12) {
+        await sendTelegramMessage(chatId, "Informe um mês válido (1 a 12). Ex: 15/01");
+        return;
+      }
+      return await advanceFreqDetailToTags(supabase, userId, chatId, state, {
+        frequency_interval: day,
+        frequency_month: month,
+        _confirmText: buildFreqDetailConfirm(freqType, day, month),
+      }, freqDetailPromptMessageId, userMessageId);
     }
     return;
   }
 
-  if (state.step === "recorrencia_start_date") {
+  // ========== Special case: recurrence start date ==========
+  if (wizardName === "recorrencia" && state.step === "recorrencia_start_date") {
     const parsed = parseDateBR(input);
     if (!parsed) {
       await sendTelegramMessage(chatId, "Formato inválido. Use DD/MM/YYYY (ex: 15/01/2024)");
@@ -1300,187 +1221,80 @@ export async function handleRecurrenceWizard(
     if (userMessageId) {
       await deleteTelegramMessage(chatId, userMessageId);
     }
-    await completeRecurrenceWizard(supabase, userId, chatId, {
+    await completeFn(supabase, userId, chatId, {
       ...state.data,
       start_date: parsed,
     });
     return;
   }
 
+  // ========== Standard steps (amount, description, category, group, tags, etc.) ==========
+  const prefix = `${wizardName}_`;
   const stepKey = state.step.replace(prefix, "");
   const { data: currentStep } = await supabase
     .from("wizard_steps")
     .select("*")
-    .eq("wizard_name", "recorrencia")
+    .eq("wizard_name", wizardName)
     .eq("step_key", stepKey)
     .single();
 
   if (!currentStep) {
-    await sendTelegramMessage(chatId, "❌ Ops! Algo deu errado com o wizard. Tente novamente com /recorrencia");
+    const cmd = wizardName === "recorrencia" ? "/recorrencia" : type === "expense" ? "/despesa" : "/receita";
+    await sendTelegramMessage(chatId, `❌ Ops! Algo deu errado com o wizard. Tente novamente com ${cmd}`);
     return;
   }
 
   let value = input;
-  if (currentStep.input_type === "text" && stepKey === "amount") {
-    const amount = parseFloat(input.replace(",", "."));
-    if (isNaN(amount) || amount <= 0) {
+  let confirmText: string | null = null;
+  let promptMessageId: number | undefined;
+
+  if (stepKey === "amount") {
+    const amount = parseAmount(input);
+    if (amount === null) {
       await sendTelegramMessage(chatId, "Por favor, informe um valor válido (ex: 50,00 ou 50)");
       return;
     }
     value = amount.toString();
+    promptMessageId = state.data?._amountPromptMessageId as number | undefined;
+    confirmText = `✅ 💰 Valor: ${formatCurrencyBR(amount)}`;
+    return await advanceWithConfirmation(supabase, userId, chatId, wizardName, currentStep, state, stepKey, value, confirmText, promptMessageId, userMessageId, completeFn);
   }
 
-  // For tags step, accumulate instead of replace, and re-render in-place
   if (stepKey === "tags") {
-    const tagsPromptMessageId = state.data?._tagsPromptMessageId as number | undefined;
-    const currentTags: string[] = state.data?.tags
-      ? (Array.isArray(state.data.tags) ? state.data.tags : [state.data.tags])
-      : [];
-    const newTags = input.split(" ").filter((t: string) => t.trim());
-    const formattedTags = newTags.map((t: string) => t.startsWith("#") ? t : `#${t}`);
-    const accumulatedTags = [...currentTags, ...formattedTags];
-
-    for (const tag of newTags) {
-      await sendSimilarityWarning(supabase, userId, chatId, "tag", tag);
-    }
-
-    await setWizardState(supabase, userId, state.step, {
-      ...state.data,
-      tags: accumulatedTags,
-    });
-    const tagsSessionSeq = await getSessionSeq(supabase, userId);
-    await sendWizardStepMessage(chatId, currentStep, userId, supabase, tagsSessionSeq, tagsPromptMessageId);
-    // Delete the user's typed message
-    if (userMessageId) {
-      await deleteTelegramMessage(chatId, userMessageId);
-    }
-    return;
+    return await handleTagsInput(supabase, userId, chatId, state, input, wizardName, currentStep, userMessageId);
   }
 
-  // For category text input (user typed a new name), edit prompt and delete user's message
   if (stepKey === "category") {
-    const catPromptMessageId = state.data?._categoryPromptMessageId as number | undefined;    const nextStep = await getNextWizardStep(supabase, "recorrencia", currentStep.step_order);
-
-    if (nextStep) {
-      await setWizardState(supabase, userId, `recorrencia_${nextStep.step_key}`, {
-        ...state.data,
-        category: value,
-      });
-
-      if (catPromptMessageId) {
-        await editTelegramMessageWithKeyboard(chatId, catPromptMessageId, `✅ 🏷️ Categoria: ${value}`, []);
-      }
-      if (userMessageId) {
-        await deleteTelegramMessage(chatId, userMessageId);
-      }
-
-      const nextSessionSeq = await getSessionSeq(supabase, userId);
-      await sendWizardStepMessage(chatId, nextStep, userId, supabase, nextSessionSeq);
-    } else {
-      await completeRecurrenceWizard(supabase, userId, chatId, {
-        ...state.data,
-        category: value,
-      });
-    }
-    return;
+    promptMessageId = state.data?._categoryPromptMessageId as number | undefined;
+    confirmText = `✅ 🏷️ Categoria: ${value}`;
+    return await advanceWithConfirmation(supabase, userId, chatId, wizardName, currentStep, state, stepKey, value, confirmText, promptMessageId, userMessageId, completeFn);
   }
 
-  // For group text input (user typed a new name), edit prompt and delete user's message
   if (stepKey === "group") {
-    const grpPromptMessageId = state.data?._groupPromptMessageId as number | undefined;    const nextStep = await getNextWizardStep(supabase, "recorrencia", currentStep.step_order);
-
-    if (nextStep) {
-      await setWizardState(supabase, userId, `recorrencia_${nextStep.step_key}`, {
-        ...state.data,
-        group: value,
-      });
-
-      if (grpPromptMessageId) {
-        await editTelegramMessageWithKeyboard(chatId, grpPromptMessageId, `✅ 📁 Grupo: ${value}`, []);
-      }
-      if (userMessageId) {
-        await deleteTelegramMessage(chatId, userMessageId);
-      }
-
-      const nextSessionSeq = await getSessionSeq(supabase, userId);
-      await sendWizardStepMessage(chatId, nextStep, userId, supabase, nextSessionSeq);
-    } else {
-      await completeRecurrenceWizard(supabase, userId, chatId, {
-        ...state.data,
-        group: value,
-      });
-    }
-    return;
+    promptMessageId = state.data?._groupPromptMessageId as number | undefined;
+    confirmText = `✅ 📁 Grupo: ${value}`;
+    return await advanceWithConfirmation(supabase, userId, chatId, wizardName, currentStep, state, stepKey, value, confirmText, promptMessageId, userMessageId, completeFn);
   }
 
-  // For amount step, edit the prompt message and delete user's message
-  if (stepKey === "amount") {
-    const amountPromptMessageId = state.data?._amountPromptMessageId as number | undefined;
-    const amountNum = parseFloat(value);    const nextStep = await getNextWizardStep(supabase, "recorrencia", currentStep.step_order);
-
-    if (nextStep) {
-      await setWizardState(supabase, userId, `recorrencia_${nextStep.step_key}`, {
-        ...state.data,
-        amount: value,
-      });
-
-      if (amountPromptMessageId && !isNaN(amountNum)) {
-        await editTelegramMessageWithKeyboard(chatId, amountPromptMessageId, `✅ 💰 Valor: ${formatCurrencyBR(amountNum)}`, []);
-      }
-      if (userMessageId) {
-        await deleteTelegramMessage(chatId, userMessageId);
-      }
-
-      const nextSessionSeq = await getSessionSeq(supabase, userId);
-      await sendWizardStepMessage(chatId, nextStep, userId, supabase, nextSessionSeq);
-    } else {
-      await completeRecurrenceWizard(supabase, userId, chatId, {
-        ...state.data,
-        amount: value,
-      });
-    }
-    return;
-  }
-
-  // For description step, edit the prompt message and delete user's message
   if (stepKey === "description") {
-    const descPromptMessageId = state.data?._descPromptMessageId as number | undefined;    const nextStep = await getNextWizardStep(supabase, "recorrencia", currentStep.step_order);
+    promptMessageId = state.data?._descPromptMessageId as number | undefined;
+    confirmText = `✅ 📝 Descrição: ${sanitizeMarkdown(value)}`;
+    return await advanceWithConfirmation(supabase, userId, chatId, wizardName, currentStep, state, stepKey, value, confirmText, promptMessageId, userMessageId, completeFn);
+  }
 
-    if (nextStep) {
-      await setWizardState(supabase, userId, `recorrencia_${nextStep.step_key}`, {
-        ...state.data,
-        description: value,
-      });
-
-      if (descPromptMessageId) {
-        await editTelegramMessageWithKeyboard(chatId, descPromptMessageId, `✅ 📝 Descrição: ${sanitizeMarkdown(value)}`, []);
-      }
-      if (userMessageId) {
-        await deleteTelegramMessage(chatId, userMessageId);
-      }
-
-      const nextSessionSeq = await getSessionSeq(supabase, userId);
-      await sendWizardStepMessage(chatId, nextStep, userId, supabase, nextSessionSeq);
-    } else {
-      await completeRecurrenceWizard(supabase, userId, chatId, {
-        ...state.data,
-        description: value,
-      });
-    }
-    return;
-  }  const nextStep = await getNextWizardStep(supabase, "recorrencia", currentStep.step_order);
-
+  // Fallthrough for unknown steps
+  const nextStep = await getNextWizardStep(supabase, wizardName, currentStep.step_order);
   if (nextStep) {
-    await setWizardState(supabase, userId, `recorrencia_${nextStep.step_key}`, {
+    await setWizardState(supabase, userId, `${wizardName}_${nextStep.step_key}`, {
       ...state.data,
       [stepKey]: value,
     });
     const nextSessionSeq = await getSessionSeq(supabase, userId);
     await sendWizardStepMessage(chatId, nextStep, userId, supabase, nextSessionSeq);
   } else {
-    await completeRecurrenceWizard(supabase, userId, chatId, {
-      ...state.data,
-      [stepKey]: value,
-    });
+    const finalData = type === "income"
+      ? { ...state.data, [stepKey]: value, type: "income" }
+      : { ...state.data, [stepKey]: value };
+    await completeFn(supabase, userId, chatId, finalData);
   }
 }

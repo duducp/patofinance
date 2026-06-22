@@ -2,6 +2,9 @@
 
 All inline keyboard interactions are routed through `handleCallbackQuery()` in `handlers/callbacks.ts`.
 
+> 📖 Register completo de todos os callbacks que seguem o padrão **edit-in-place** (19 callbacks): [`AGENTS.md` > In-Place Callbacks — Complete Register](../AGENTS.md#in-place-callbacks--complete-register)
+> Padrão formal de in-place editing: [`docs/architecture/patterns.md` > §17 In-Place Editing](patterns.md#17-in-place-editing-edit-in-place)
+
 ## Architecture
 
 Every callback goes through:
@@ -112,35 +115,36 @@ Telegram limits `callback_data` to 64 bytes. Use `truncateCallbackData()` (trunc
 | Prefix | Action | Message |
 |--------|--------|---------|
 | `nl_type_expense` / `nl_type_income` | Type disambiguation | Sends new |
+| `nl_create_cat` | Create new category (typed name) | Edits | Edits NL category selection screen in-place to show `"✏️ Digite o nome da nova categoria:"` |
 | `nl_cat_{name}` | Category selection | Sends new |
 | `nl_grp_{name}` | Group selection | Sends new |
 | `nl_period_{key}` | Period selection | Sends new |
 
 ### Edit Transaction
 
-| Prefix | Action | Message |
-|--------|--------|---------|
-| `edit_show_{id}` | Show edit dialog | Sends new |
-| `edit_amount_{id}` | Prompt new amount | Sends new |
-| `edit_category_{id}` | Show category picker | Sends new |
-| `edit_cat_select_{id}_{name}` | Confirm category | Sends new |
-| `edit_desc_{id}` | Prompt new description | Sends new |
-| `edit_date_{id}` | Show date options | Sends new |
-| `edit_date_select_{id}_{date}` | Confirm date | Sends new |
-| `edit_date_custom_{id}` | Custom date input | Sends new |
-| `edit_group_{id}` | Show group picker | Sends new |
-| `edit_group_sel_{id}_{name}` | Confirm group | Sends new |
-| `edit_tags_{id}` | Tag management UI | Sends new |
-| `edit_tag_tog_{id}_{tag}` | Toggle tag | Edits |
-| `edit_tags_done_{id}` | Confirm tags | Sends new |
-| `edit_tags_clr_{id}` | Clear tags | Sends new |
+| Prefix | Action | Message | Detail |
+|--------|--------|---------|--------|
+| `edit_show_{id}` | Show edit dialog | Sends new | |
+| `edit_amount_{id}` | Prompt new amount | Edits + sends new | **Edits** action menu to `💰 Alterando valor...` before sending text prompt |
+| `edit_category_{id}` | Show category picker | Edits + sends new | **Edits** action menu to `🏷️ Alterando categoria...` before sending category keyboard |
+| `edit_cat_select_{id}_{name}` | Confirm category | Sends new | |
+| `edit_desc_{id}` | Prompt new description | Edits + sends new | **Edits** action menu to `📝 Alterando descrição...` before sending text prompt |
+| `edit_date_{id}` | Show date options | Edits + sends new | **Edits** action menu to `📅 Alterando data...` before sending date keyboard |
+| `edit_date_select_{id}_{date}` | Confirm date | Sends new | |
+| `edit_date_custom_{id}` | Custom date input | Edits + sends new | **Edits** date keyboard to `📅 Alterando data...` before sending text prompt |
+| `edit_group_{id}` | Show group picker | Edits + sends new | **Edits** action menu to `📁 Alterando grupo...` before sending group keyboard |
+| `edit_group_sel_{id}_{name}` | Confirm group | Sends new | |
+| `edit_tags_{id}` | Tag management UI | Edits + sends new | **Edits** action menu to `🔖 Alterando tags...` before sending tag toggle keyboard |
+| `edit_tag_tog_{id}_{tag}` | Toggle tag | Edits | |
+| `edit_tags_done_{id}` | Confirm tags | Sends new | |
+| `edit_tags_clr_{id}` | Clear tags | Sends new | |
 
 ### Entity Management (Category/Group)
 
 | Prefix | Action | Message |
 |--------|--------|---------|
 | `cat_sel_{name}` / `grp_sel_{name}` | Select entity (system categories show "Categoria padrão" — no rename/delete) | Sends new |
-| `cat_ren_{name}` / `grp_ren_{name}` | Rename prompt | Sends new |
+| `cat_ren_{name}` / `grp_ren_{name}` | Rename prompt | Edits | Edits entity action menu in-place to show `"✏️ Digite o novo nome para *X*:"` |
 | `cat_del_{name}` / `grp_del_{name}` | Delete confirmation | Sends new |
 | `cat_del_yes_{name}` / `grp_del_yes_{name}` | Confirm delete | Sends new |
 | `cat_back` / `grp_back` | Back to list | Sends new |
@@ -164,17 +168,19 @@ Telegram limits `callback_data` to 64 bytes. Use `truncateCallbackData()` (trunc
 
 | Prefix | Action | Message | Detail |
 |--------|--------|---------|--------|
-| `wiz_category_{name}` | Select category by name | Delegates | Generic step handler at bottom of `handleCallbackQuery` |
-| `wiz_group_{name}` | Select group by name | Delegates | Generic step handler |
-| `wiz_date_{date}` | Select date (today/yesterday) | Delegates | Generic step handler |
-| `wiz_start_date_{date}` | Select start date for recurrence | Delegates | Generic step handler |
-| `wizard_new_category` | Type custom category name | Sends new | Keeps same step; typed name is picked up by handler |
-| `wizard_new_group` | Type custom group name | Sends new | Keeps same step; typed name is picked up by handler |
-| `wiz_tag_{tag}` | Toggle tag on/off | Edits | Reads/writes `wizard_states.data.tags` array |
-| `wiz_done_tags` | Confirm tag selection | Delegates | Calls `advanceWizardToNextStep` with current data |
-| `wizard_skip_tags` | Skip tags step | Delegates | Calls `handleWizardSkip` |
-| `wizard_skip_description` | Skip description step | Delegates | Calls `handleWizardSkip` |
-| `custom_date` | Custom date input | Sends new | Stores `_customDatePromptMessageId` in state data for later in-place editing |
+| `wiz_category_{name}` | Select category by name | Delegates | Generic step handler via `advanceWizardToNextStep` with `message.message_id`. Edits keyboard to `✅ 🏷️ Categoria: {name}` |
+| `wiz_group_{name}` | Select group by name | Delegates | Same pattern — edits keyboard to `✅ 📁 Grupo: {name}` |
+| `wiz_date_{date}` | Select date (today/yesterday) | Delegates | Generic step handler — edits keyboard to `✅ 📅 Data: {date}` |
+| `wiz_start_date_{date}` | Select start date for recurrence | Delegates | Generic step handler — edits keyboard to `✅ 📅 Data de início: {date}` |
+| `wizard_new_category` | Type custom category name | Edits | Edits category selection screen in-place to show prompt, stores `message.message_id` as `_categoryPromptMessageId`. When user types, handler edits the **same** message to confirmation (e.g., `"✅ 🏷️ Categoria: Mercado"`) — buttons → prompt → confirmation in one message |
+| `wizard_new_group` | Type custom group name | Edits | Edits group selection screen in-place to show prompt, stores `message.message_id` as `_groupPromptMessageId`. Same pattern as `wizard_new_category` |
+| `wiz_tag_{tag}` | Toggle tag on/off | Edits | Reads/writes `wizard_states.data.tags` array. Re-renders tag keyboard with ✅ indicators |
+| `wiz_done_tags` | Confirm tag selection | Delegates | Calls `advanceWizardToNextStep` with current data — edits tag keyboard to show `✅ 🔖 Tags: ...` |
+| `wizard_skip_tags` | Skip tags step | Delegates | Calls `handleWizardSkip` — edits tag keyboard to `✅ 🔖 Tags: Nenhuma tag` |
+| `wizard_skip_description` | Skip description step | Delegates | Calls `handleWizardSkip` — edits description keyboard to `✅ 📝 Descrição: Nenhuma descrição informada` |
+| `tx_desc_sim_{id}` | Add description after creation | Edits + sends new | **Edits** Sim/Não prompt to `✏️ Digitando descrição...` before sending text input prompt |
+| `tx_desc_nao_{id}` | Skip description after creation | Sends new | |
+| `custom_date` | Custom date input | Edits | Edits date selection screen in-place to show prompt, stores `message.message_id` as `_customDatePromptMessageId`. When user types, handler edits the **same** message to confirmation (e.g., `"✅ 📅 Data: 15/07/2026"`). For `start_date` steps (recurrence), keeps original step name so `handleWizardInput` processes the input |
 
 ### Wizard — Recurrence (recorrencia)
 
@@ -187,13 +193,13 @@ Telegram limits `callback_data` to 64 bytes. Use `truncateCallbackData()` (trunc
 | `wiz_frequency_{freq}` | Select frequency type | Sends new | `daily` → advances directly. `weekly` → shows day-of-week keyboard. `monthly`/`annual`/`every_x_days` → shows text prompt, stores `_freqDetailPromptMessageId` |
 | `wiz_freq_detail_{i}` | Weekly day-of-week (0–6) | Delegates | Calls `advanceWizardToNextStep` with `frequency_type: "weekly"` |
 | `wiz_start_date_{date}` | Select start date (today/yesterday) | Delegates | Generic step handler |
-| `wizard_new_category` | Typed new category name | Sends new | Same as transaction wizard |
-| `wizard_new_group` | Typed new group name | Sends new | Same as transaction wizard |
+| `wizard_new_category` | Typed new category name | Edits | Edits category selection screen in-place to show prompt, stores message.message_id. Same as transaction wizard |
+| `wizard_new_group` | Typed new group name | Edits | Same as `wizard_new_category` |
 | `wiz_tag_{tag}` | Toggle tag | Edits | Same as transaction wizard |
 | `wiz_done_tags` | Confirm tags | Delegates | Same as transaction wizard |
 | `wizard_skip_tags` | Skip tags | Delegates | Same as transaction wizard |
 | `wizard_skip_description` | Skip description | Delegates | Same as transaction wizard |
-| `custom_date` | Custom start date input | Sends new | Same as transaction wizard, stores `_customDatePromptMessageId` |
+| `custom_date` | Custom start date input | Edits | Edits date selection screen in-place to show prompt, stores message.message_id. Same as transaction wizard |
 
 **Note:** Recurrence frequency step options (`daily`, `weekly`, `monthly`, `annual`, `every_x_days`) come from `wizard_step_options` table and use prefix `wiz_frequency_`. The `wiz_frequency_daily` handler is intercepted before the generic wizard handler to store `frequency_type` and `frequency_interval` correctly.
 
@@ -235,10 +241,17 @@ This handles: category selection, group selection, date presets, type selection,
 | `rec_archive_yes_{id}` | Execute archive | Sends new |
 | `rec_activate_{id}` | Reactivate archived recurrence | Sends new |
 | `rec_edit_{id}` | Show edit action menu | Sends new |
-| `rec_edit_field_{id}_{field}` | Show field-specific edit wizard | Sends new |
-| `rec_edit_set_cat_{id}_{name}` | Confirm category change | Sends new |
-| `rec_edit_set_grp_{id}_{name}` | Confirm group change | Sends new |
-| `rec_edit_set_freqtype_{id}_{freq}` | Confirm frequency type change | Sends new |
+| `rec_edit_field_{id}_amount` | Prompt new amount | Edits + sends new | **Edits** action menu to `💰 Alterando valor...` before sending text prompt |
+| `rec_edit_field_{id}_description` | Prompt new description | Edits + sends new | **Edits** action menu to `📝 Alterando descrição...` before sending text prompt |
+| `rec_edit_field_{id}_start_date` | Prompt new start date | Edits + sends new | **Edits** action menu to `📅 Alterando data de início...` before sending text prompt |
+| `rec_edit_field_{id}_category` | Show category picker | Edits + sends new | **Edits** action menu to `🏷️ Alterando categoria...` before sending category keyboard |
+| `rec_edit_field_{id}_group` | Show group picker | Edits + sends new | **Edits** action menu to `📁 Alterando grupo...` before sending group keyboard |
+| `rec_edit_field_{id}_frequency` | Show frequency keyboard | Edits + sends new | **Edits** action menu to `🔄 Alterando frequência...` before sending frequency keyboard |
+| `rec_edit_field_{id}_tags` | Show tag toggle UI | Edits + sends new | **Edits** action menu to `🔖 Alterando tags...` before sending tag keyboard |
+| `rec_edit_set_cat_{id}_{name}` | Confirm category change | Sends new | |
+| `rec_edit_set_grp_{id}_{name}` | Confirm group change | Sends new | |
+| `rec_edit_set_freqtype_{id}_daily` | Confirm daily frequency | Edits + sends new | **Edits** frequency keyboard to `✅ 🔄 Frequência: Diária` before sending success message |
+| `rec_edit_set_freqtype_{id}_{freq}` | Confirm non-daily frequency | Edits + sends new | **Edits** frequency keyboard to `✅ 🔄 Frequência: Semanal/Mensal/etc` before sending detail prompt |
 | `rec_edit_set_tag_{id}_{tag}` | Toggle tag in recurrence edit | Edits |
 | `rec_edit_set_tag_{id}_done` | Confirm recurrence tags | Sends new |
 | `rec_edit_set_tag_{id}_clr` | Clear recurrence tags | Sends new |
